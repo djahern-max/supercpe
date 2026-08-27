@@ -285,6 +285,61 @@
   gap: var(--space-md);
 }
 
+.immutableNote {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+}
+
+.subsectionTitle {
+  margin: var(--space-sm) 0 0;
+  font-size: 0.9375rem;
+}
+
+.devRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  max-width: 32rem;
+}
+
+.checkboxLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 0.9375rem;
+}
+
+.reviewForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  max-width: 32rem;
+}
+
+.linkButton {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.publishRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+}
+
 .dangerButton {
   padding: var(--space-sm) var(--space-md);
   border: 1px solid var(--color-error);

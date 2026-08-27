@@ -12,16 +12,30 @@ from app.schemas.course import (
     CoursePublicSummary,
     PublicLesson,
     PublicObjectiveGroup,
+    PublicPerson,
 )
-from app.services import courses, credit
+from app.services import courses, credit, development
 
 router = APIRouter(prefix="/courses")
+
+
+def _person(sme) -> PublicPerson | None:
+    """Name and credentials only — never a license number (those live in
+    the 9.02.2(4) record, not the announcement)."""
+    if sme is None:
+        return None
+    return PublicPerson(name=sme.name, credentials=sme.credentials)
 
 
 def _summary_fields(course: Course) -> dict:
     ordered = sorted(course.lessons, key=lambda cl: cl.position)
     recommended_credit, credit_basis = credit.public_credit(course)
+    current_review = development.current_review(course)
     return {
+        "developed_by": _person(course.developer),
+        "reviewed_by": _person(current_review.reviewer if current_review else None),
+        "last_reviewed": current_review.reviewed_at if current_review else None,
+        "last_documented_date": development.last_documented_date(course),
         "recommended_credit": recommended_credit,
         "credit_basis": credit_basis,
         "course_code": course.course_code,

@@ -11,8 +11,14 @@ import {
   getCourse,
   listAttempts,
   listPackages,
+  listSmes,
   moveLesson,
+  publishCourse,
   recomputeCredit,
+  recordCourseReview,
+  setCourseDeveloper,
+  setCourseReviewCycle,
+  unpublishCourse,
   updateCourse,
   updateLessonVersion,
 } from "../../api/admin";
@@ -24,6 +30,19 @@ const DERIVED_FIELDS = [
   { name: "prerequisites", label: "Prerequisites" },
   { name: "advance_preparation", label: "Advance preparation" },
 ];
+
+// 4.01.1, quoted beside the technology checkbox.
+const TECHNOLOGY_SENTENCE =
+  "If technology is used in the development of the program, the content " +
+  "developer is responsible for reviewing the content for accuracy (4.01.1).";
+
+const EMPTY_REVIEW_FORM = {
+  reviewer_id: "",
+  reviewed_at: new Date().toISOString().slice(0, 10),
+  decision: "approved",
+  notes: "",
+  impractical_basis: "",
+};
 
 function formatDuration(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -60,6 +79,14 @@ function AdminCourseDetail() {
   const [attachErrors, setAttachErrors] = useState(null);
   const [creditErrors, setCreditErrors] = useState(null);
   const [showCalculation, setShowCalculation] = useState(false);
+  const [smes, setSmes] = useState(null);
+  const [developerSmeId, setDeveloperSmeId] = useState("");
+  const [usedTechnology, setUsedTechnology] = useState(true);
+  const [developerErrors, setDeveloperErrors] = useState(null);
+  const [reviewForm, setReviewForm] = useState(EMPTY_REVIEW_FORM);
+  const [showImpractical, setShowImpractical] = useState(false);
+  const [reviewErrors, setReviewErrors] = useState(null);
+  const [publishErrors, setPublishErrors] = useState(null);
 
   const handleAuthFailure = useCallback(() => {
     clearToken();
@@ -72,6 +99,12 @@ function AdminCourseDetail() {
     setCourse(data);
     setTitle(data.title);
     setDescription(data.description);
+    setDeveloperSmeId(
+      data.development.developer_id !== null
+        ? String(data.development.developer_id)
+        : ""
+    );
+    setUsedTechnology(data.development.developer_used_technology);
   }, []);
 
   const refresh = useCallback(() => {
@@ -92,6 +125,9 @@ function AdminCourseDetail() {
     listAttempts(code, token)
       .then(setAttempts)
       .catch(() => setAttempts([]));
+    listSmes(token)
+      .then(setSmes)
+      .catch(() => setSmes([]));
   }, [token, code, applyCourse, handleAuthFailure]);
 
   useEffect(() => {
@@ -164,16 +200,49 @@ function AdminCourseDetail() {
   }
 
   const dirty = title !== course.title || description !== course.description;
+  const published = course.status === "published";
   const attachedIds = new Set(course.lessons.map((lesson) => lesson.package_id));
   const attachable = (packages ?? []).filter(
     (pkg) => !pkg.attached_to && pkg.course_code === course.course_code
   );
+  const development = course.development;
+  const blockFindings = course.readiness.filter((f) => f.level === "block");
+  const developerDirty =
+    developerSmeId !==
+      (development.developer_id !== null
+        ? String(development.developer_id)
+        : "") || usedTechnology !== development.developer_used_technology;
 
   const handleSave = () =>
     mutate(
       () => updateCourse(code, { title: title.trim(), description }, token),
       setEditErrors
     );
+
+  const handleSaveDeveloper = () =>
+    mutate(
+      () =>
+        setCourseDeveloper(code, Number(developerSmeId), usedTechnology, token),
+      setDeveloperErrors
+    );
+
+  const handleRecordReview = async () => {
+    const body = {
+      reviewer_id: Number(reviewForm.reviewer_id),
+      reviewed_at: reviewForm.reviewed_at,
+      decision: reviewForm.decision,
+      notes: reviewForm.notes,
+      impractical_basis: reviewForm.impractical_basis.trim() || null,
+    };
+    const ok = await mutate(
+      () => recordCourseReview(code, body, token),
+      setReviewErrors
+    );
+    if (ok) {
+      setReviewForm(EMPTY_REVIEW_FORM);
+      setShowImpractical(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!window.confirm(`Delete course ${course.course_code}? Its lessons are detached, not deleted.`)) {
@@ -201,6 +270,12 @@ function AdminCourseDetail() {
       </p>
 
       <section className={styles.card}>
+        {published && (
+          <p className={styles.immutableNote}>
+            This course is published and its content is immutable. Unpublish it
+            to edit, then record a new review before republishing (4.02).
+          </p>
+        )}
         <label className={styles.label} htmlFor="course-title">
           Title
         </label>
@@ -208,6 +283,7 @@ function AdminCourseDetail() {
           id="course-title"
           className={styles.input}
           value={title}
+          disabled={published}
           onChange={(event) => setTitle(event.target.value)}
         />
         <label className={styles.label} htmlFor="course-description">
@@ -219,9 +295,10 @@ function AdminCourseDetail() {
           className={styles.textarea}
           rows={4}
           value={description}
+          disabled={published}
           onChange={(event) => setDescription(event.target.value)}
         />
-        {dirty && (
+        {dirty && !published && (
           <button className={styles.button} type="button" onClick={handleSave}>
             Save
           </button>
@@ -360,6 +437,12 @@ function AdminCourseDetail() {
 
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Lessons</h2>
+        {published && (
+          <p className={styles.muted}>
+            Lesson controls are disabled while the course is published; its
+            content is immutable.
+          </p>
+        )}
         <ErrorPanel errors={lessonErrors} />
         {course.lessons.length === 0 && (
           <p className={styles.muted}>No lessons attached yet.</p>
@@ -388,7 +471,7 @@ function AdminCourseDetail() {
                     <button
                       className={styles.smallButton}
                       type="button"
-                      disabled={index === 0}
+                      disabled={published || index === 0}
                       onClick={() =>
                         mutate(
                           () => moveLesson(code, lesson.package_id, "up", token),
@@ -401,7 +484,7 @@ function AdminCourseDetail() {
                     <button
                       className={styles.smallButton}
                       type="button"
-                      disabled={index === course.lessons.length - 1}
+                      disabled={published || index === course.lessons.length - 1}
                       onClick={() =>
                         mutate(
                           () => moveLesson(code, lesson.package_id, "down", token),
@@ -415,6 +498,7 @@ function AdminCourseDetail() {
                       <button
                         className={styles.smallButton}
                         type="button"
+                        disabled={published}
                         onClick={() =>
                           mutate(
                             () =>
@@ -434,6 +518,7 @@ function AdminCourseDetail() {
                     <button
                       className={styles.smallButtonDanger}
                       type="button"
+                      disabled={published}
                       onClick={() =>
                         mutate(
                           () => detachLesson(code, lesson.package_id, token),
@@ -449,6 +534,241 @@ function AdminCourseDetail() {
             </tbody>
           </table>
         )}
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Development &amp; Review</h2>
+
+        <div className={styles.devRow}>
+          <label className={styles.label} htmlFor="course-developer">
+            Developer (4.01.1)
+          </label>
+          <select
+            id="course-developer"
+            className={styles.input}
+            value={developerSmeId}
+            onChange={(event) => setDeveloperSmeId(event.target.value)}
+          >
+            <option value="">— none —</option>
+            {(smes ?? []).map((sme) => (
+              <option key={sme.id} value={String(sme.id)}>
+                {sme.name}
+                {sme.credentials ? `, ${sme.credentials}` : ""}
+              </option>
+            ))}
+          </select>
+          <label className={styles.checkboxLine}>
+            <input
+              type="checkbox"
+              checked={usedTechnology}
+              onChange={(event) => setUsedTechnology(event.target.checked)}
+            />
+            Technology was used in development
+          </label>
+          <span className={styles.muted}>{TECHNOLOGY_SENTENCE}</span>
+          {developerDirty && developerSmeId !== "" && (
+            <button
+              className={styles.smallButton}
+              type="button"
+              onClick={handleSaveDeveloper}
+            >
+              Save developer
+            </button>
+          )}
+        </div>
+        <ErrorPanel errors={developerErrors} />
+
+        <div className={styles.devRow}>
+          <label className={styles.label} htmlFor="review-cycle">
+            Review cycle (4.01)
+          </label>
+          <select
+            id="review-cycle"
+            className={styles.input}
+            value={development.review_cycle}
+            onChange={(event) =>
+              mutate(
+                () => setCourseReviewCycle(code, event.target.value, token),
+                setDeveloperErrors
+              )
+            }
+          >
+            <option value="annual">Annual — the subject changes frequently</option>
+            <option value="biennial">Biennial — at least every two years</option>
+          </select>
+          {development.review_due_at !== null && (
+            <span className={styles.muted}>
+              Next review due {development.review_due_at}.
+            </span>
+          )}
+          {development.last_documented_date !== null && (
+            <span className={styles.muted}>
+              Last documented date (4.01): {development.last_documented_date}.
+            </span>
+          )}
+        </div>
+
+        <h3 className={styles.subsectionTitle}>Review history</h3>
+        {development.reviews.length === 0 && (
+          <p className={styles.muted}>
+            No reviews recorded. 4.02 requires a review by someone other than
+            the developer before first publication.
+          </p>
+        )}
+        {development.reviews.length > 0 && (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Reviewer</th>
+                <th>Date</th>
+                <th>Decision</th>
+                <th>Notes</th>
+                <th>Standing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {development.reviews.map((review) => (
+                <tr key={review.id}>
+                  <td>
+                    {review.reviewer_name}
+                    {review.reviewer_credentials
+                      ? `, ${review.reviewer_credentials}`
+                      : ""}
+                  </td>
+                  <td>{review.reviewed_at}</td>
+                  <td>{review.decision.replace("_", " ")}</td>
+                  <td>
+                    {review.notes}
+                    {review.impractical_basis && (
+                      <span className={styles.muted}>
+                        {" "}
+                        Advance review impractical: {review.impractical_basis}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {review.is_current
+                      ? "current"
+                      : review.is_superseded
+                        ? "superseded by a content change"
+                        : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <h3 className={styles.subsectionTitle}>Record a review</h3>
+        <div className={styles.reviewForm}>
+          <select
+            className={styles.input}
+            value={reviewForm.reviewer_id}
+            onChange={(event) =>
+              setReviewForm({ ...reviewForm, reviewer_id: event.target.value })
+            }
+          >
+            <option value="">Reviewer…</option>
+            {(smes ?? []).map((sme) => (
+              <option key={sme.id} value={String(sme.id)}>
+                {sme.name}
+                {sme.credentials ? `, ${sme.credentials}` : ""}
+              </option>
+            ))}
+          </select>
+          <input
+            className={styles.input}
+            type="date"
+            value={reviewForm.reviewed_at}
+            onChange={(event) =>
+              setReviewForm({ ...reviewForm, reviewed_at: event.target.value })
+            }
+          />
+          <select
+            className={styles.input}
+            value={reviewForm.decision}
+            onChange={(event) =>
+              setReviewForm({ ...reviewForm, decision: event.target.value })
+            }
+          >
+            <option value="approved">Approved</option>
+            <option value="changes_requested">Changes requested</option>
+          </select>
+          <input
+            className={styles.input}
+            placeholder="Notes"
+            value={reviewForm.notes}
+            onChange={(event) =>
+              setReviewForm({ ...reviewForm, notes: event.target.value })
+            }
+          />
+          {!showImpractical ? (
+            <button
+              className={styles.linkButton}
+              type="button"
+              onClick={() => setShowImpractical(true)}
+            >
+              Advance review was impractical (4.02.1)…
+            </button>
+          ) : (
+            <textarea
+              className={styles.textarea}
+              rows={2}
+              placeholder="The documented basis for the lack of advance content review (4.02.1)"
+              value={reviewForm.impractical_basis}
+              onChange={(event) =>
+                setReviewForm({
+                  ...reviewForm,
+                  impractical_basis: event.target.value,
+                })
+              }
+            />
+          )}
+          <button
+            className={styles.button}
+            type="button"
+            disabled={reviewForm.reviewer_id === "" || !reviewForm.reviewed_at}
+            onClick={handleRecordReview}
+          >
+            Record review
+          </button>
+          <span className={styles.muted}>
+            Reviews are immutable once recorded; corrections are new reviews.
+          </span>
+        </div>
+        <ErrorPanel errors={reviewErrors} />
+
+        <div className={styles.publishRow}>
+          {published ? (
+            <button
+              className={styles.dangerButton}
+              type="button"
+              onClick={() =>
+                mutate(() => unpublishCourse(code, token), setPublishErrors)
+              }
+            >
+              Unpublish
+            </button>
+          ) : (
+            <button
+              className={styles.button}
+              type="button"
+              onClick={() =>
+                mutate(() => publishCourse(code, token), setPublishErrors)
+              }
+            >
+              Publish
+            </button>
+          )}
+          <span className={styles.muted}>
+            {published
+              ? `Published ${new Date(development.published_at).toLocaleString()}. Content is immutable while published.`
+              : blockFindings.length === 0
+                ? "Readiness is clean; the course can publish."
+                : `${blockFindings.length} blocking finding${blockFindings.length === 1 ? "" : "s"} below.`}
+          </span>
+        </div>
+        <ErrorPanel errors={publishErrors} />
       </section>
 
       <section className={styles.card}>
@@ -582,7 +902,7 @@ function AdminCourseDetail() {
                     <button
                       className={styles.smallButton}
                       type="button"
-                      disabled={attachedIds.has(pkg.id)}
+                      disabled={published || attachedIds.has(pkg.id)}
                       onClick={async () => {
                         const ok = await mutate(
                           () => attachLesson(code, { package_id: pkg.id }, token),

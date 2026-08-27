@@ -65,7 +65,13 @@ def start(db: Session, course: Course, preview_id: str) -> Attempt:
                 "be taken until it is recomputed"
             ]
         )
-    blocks = [f for f in readiness.check(db, course) if f.level == "block"]
+    # PUBLISH_ONLY_CODES gate publish, not the assessment: a draft course's
+    # assessment is well-formed before a developer or review is recorded.
+    blocks = [
+        f
+        for f in readiness.check(db, course)
+        if f.level == "block" and f.code not in readiness.PUBLISH_ONLY_CODES
+    ]
     if blocks:
         raise AssessmentRuleViolation(
             ["the assessment is not well-formed yet: " + f.message for f in blocks]

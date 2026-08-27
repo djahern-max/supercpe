@@ -39,6 +39,23 @@ def touch(course: Course) -> None:
     course.content_updated_at = datetime.now(timezone.utc)
 
 
+def _refuse_if_published(course: Course) -> None:
+    """A published course is immutable: every mutation that would call
+    `touch` refuses here. Changing published content means unpublishing,
+    editing, and reviewing again — 4.02 requires review after each
+    significant revision, and the stale-review block enforces it on the way
+    back to published."""
+    if course.status == "published":
+        raise CourseRuleViolation(
+            [
+                f"course {course.course_code} is published and its content "
+                "is immutable; unpublish it first, then edit and record a "
+                "new review (4.02 requires review after each significant "
+                "revision)"
+            ]
+        )
+
+
 def _recompute_credit(db: Session, course: Course) -> None:
     """Every mutation that goes through `touch` ends here, so an admin never
     sees a stale credit on a course they just edited; staleness exists for
@@ -77,14 +94,14 @@ def update_course(
     title: str | None = None,
     description: str | None = None,
 ) -> Course:
-    changed = False
-    if title is not None and title != course.title:
-        course.title = title
-        changed = True
-    if description is not None and description != course.description:
-        course.description = description
-        changed = True
-    if changed:
+    wants_title = title is not None and title != course.title
+    wants_description = description is not None and description != course.description
+    if wants_title or wants_description:
+        _refuse_if_published(course)
+        if wants_title:
+            course.title = title
+        if wants_description:
+            course.description = description
         touch(course)
         db.commit()
         _recompute_credit(db, course)
@@ -144,6 +161,7 @@ def _check_course_code(course: Course, package: LessonPackage) -> None:
 def attach_package(
     db: Session, course: Course, package_id: int, position: int | None = None
 ) -> Course:
+    _refuse_if_published(course)
     package = db.get(LessonPackage, package_id)
     if package is None:
         raise CourseRuleViolation([f"package {package_id} does not exist"])
@@ -204,6 +222,7 @@ def attach_package(
 
 
 def detach_package(db: Session, course: Course, package_id: int) -> Course:
+    _refuse_if_published(course)
     lesson = next(
         (cl for cl in course.lessons if cl.package_id == package_id), None
     )
@@ -226,6 +245,7 @@ def detach_package(db: Session, course: Course, package_id: int) -> Course:
 def move_lesson(
     db: Session, course: Course, package_id: int, direction: str
 ) -> Course:
+    _refuse_if_published(course)
     ordered = _ordered(course)
     index = next(
         (i for i, cl in enumerate(ordered) if cl.package_id == package_id), None
@@ -261,6 +281,7 @@ def move_lesson(
 def update_version(
     db: Session, course: Course, package_id: int, new_package_id: int
 ) -> Course:
+    _refuse_if_published(course)
     lesson = next(
         (cl for cl in course.lessons if cl.package_id == package_id), None
     )
@@ -326,4 +347,39 @@ def get_published(db: Session, course_code: str) -> Course | None:
     course = get_course(db, course_code)
     if course is None or course.status != "published":
         return None
+    return course
+
+
+def publish(db: Session, course: Course) -> Course:
+    """The publish gate: refuses with every block readiness finding at
+    once. Touches no content, so `content_updated_at` is unchanged and the
+    review stays current."""
+    # Deferred import: readiness imports this module.
+    from app.services import readiness
+
+    if course.status == "published":
+        raise CourseRuleViolation(
+            [f"course {course.course_code} is already published"]
+        )
+    blocks = [
+        finding.message
+        for finding in readiness.check(db, course)
+        if finding.level == "block"
+    ]
+    if blocks:
+        raise CourseRuleViolation(blocks)
+    course.status = "published"
+    course.published_at = datetime.now(timezone.utc)
+    db.commit()
+    return course
+
+
+def unpublish(db: Session, course: Course) -> Course:
+    if course.status != "published":
+        raise CourseRuleViolation(
+            [f"course {course.course_code} is not published"]
+        )
+    course.status = "draft"
+    course.unpublished_at = datetime.now(timezone.utc)
+    db.commit()
     return course

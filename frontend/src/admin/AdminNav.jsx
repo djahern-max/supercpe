@@ -17,6 +17,12 @@ function AdminNav() {
         Packages
       </NavLink>
       <NavLink
+        to="/admin/smes"
+        className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
+      >
+        Experts
+      </NavLink>
+      <NavLink
         to="/admin/sponsor"
         className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
       >

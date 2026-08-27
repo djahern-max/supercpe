@@ -109,8 +109,13 @@ def test_satisfied_course_has_no_review_findings(db_session):
 
     # 486 s + 5 x 1.85 -> 17.35 min -> 0.347 -> 0.2 credit -> 0 review
     # questions required, 2 assessment questions required (both present,
-    # covering the lone objective).
-    findings = readiness.check(db_session, course)
+    # covering the lone objective). The 008 development findings are out of
+    # this test's scope: no developer or review exists here.
+    findings = [
+        f
+        for f in readiness.check(db_session, course)
+        if f.code not in readiness.PUBLISH_ONLY_CODES
+    ]
     assert findings == []
     # The comparison is still reported even with nothing to find.
     counts = readiness.review_counts(db_session, course)

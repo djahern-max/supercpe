@@ -13,19 +13,24 @@ from app.schemas.course import (
     CourseCreate,
     CourseCreditAdmin,
     CourseDetailAdmin,
+    CourseDevelopmentAdmin,
     CourseLessonItem,
+    CourseReviewOut,
     CourseSummaryAdmin,
     CourseUpdate,
     CreditLessonRowOut,
+    DeveloperRequest,
     MoveRequest,
     ObjectiveGroup,
     QuestionGroup,
     ReadinessFinding,
+    ReviewCreate,
     ReviewCountsOut,
+    ReviewCycleRequest,
     UpdateVersionRequest,
 )
 from app.schemas.package import ValidationErrors
-from app.services import courses, credit, readiness
+from app.services import courses, credit, development, readiness
 from app.services import questions as questions_service
 from app.services.courses import CourseRuleViolation
 
@@ -125,6 +130,45 @@ def _question_groups(db: Session, course: Course) -> list[QuestionGroup]:
     return groups
 
 
+def _review_out(course: Course, review, current) -> CourseReviewOut:
+    return CourseReviewOut(
+        id=review.id,
+        reviewer_id=review.reviewer_id,
+        reviewer_name=review.reviewer.name,
+        reviewer_credentials=review.reviewer.credentials,
+        reviewed_at=review.reviewed_at,
+        content_updated_at_reviewed=review.content_updated_at_reviewed,
+        decision=review.decision,
+        notes=review.notes,
+        impractical_basis=review.impractical_basis,
+        recorded_by=review.recorded_by,
+        created_at=review.created_at,
+        is_current=current is not None and review.id == current.id,
+        is_superseded=development.is_superseded(course, review),
+    )
+
+
+def _development_panel(course: Course) -> CourseDevelopmentAdmin:
+    current = development.current_review(course)
+    return CourseDevelopmentAdmin(
+        developer_id=course.developer_id,
+        developer_name=course.developer.name if course.developer else None,
+        developer_credentials=(
+            course.developer.credentials if course.developer else None
+        ),
+        developer_used_technology=course.developer_used_technology,
+        review_cycle=course.review_cycle,
+        published_at=course.published_at,
+        unpublished_at=course.unpublished_at,
+        review_due_at=development.review_due_at(course),
+        last_documented_date=development.last_documented_date(course),
+        reviews=[
+            _review_out(course, review, current)
+            for review in development.sorted_reviews(course)
+        ],
+    )
+
+
 def _detail(db: Session, course: Course) -> CourseDetailAdmin:
     return CourseDetailAdmin(
         id=course.id,
@@ -152,6 +196,7 @@ def _detail(db: Session, course: Course) -> CourseDetailAdmin:
         review_counts=ReviewCountsOut(
             **vars(readiness.review_counts(db, course))
         ),
+        development=_development_panel(course),
     )
 
 
@@ -206,7 +251,12 @@ def update_course(
     course_code: str, payload: CourseUpdate, db: Session = Depends(get_db)
 ):
     course = _get_course_or_404(db, course_code)
-    course = courses.update_course(db, course, payload.title, payload.description)
+    try:
+        course = courses.update_course(
+            db, course, payload.title, payload.description
+        )
+    except CourseRuleViolation as violation:
+        return _violation_response(violation)
     return _detail(db, course)
 
 
@@ -296,6 +346,96 @@ def update_version(
         course = courses.update_version(
             db, course, package_id, payload.new_package_id
         )
+    except CourseRuleViolation as violation:
+        return _violation_response(violation)
+    return _detail(db, course)
+
+
+@router.put(
+    "/{course_code}/developer",
+    response_model=CourseDetailAdmin,
+    responses={422: {"model": ValidationErrors}},
+)
+def set_developer(
+    course_code: str, payload: DeveloperRequest, db: Session = Depends(get_db)
+):
+    course = _get_course_or_404(db, course_code)
+    try:
+        course = development.set_developer(
+            db, course, payload.sme_id, payload.used_technology
+        )
+    except CourseRuleViolation as violation:
+        return _violation_response(violation)
+    return _detail(db, course)
+
+
+@router.post(
+    "/{course_code}/reviews",
+    response_model=CourseDetailAdmin,
+    status_code=201,
+    responses={422: {"model": ValidationErrors}},
+)
+def record_review(
+    course_code: str, payload: ReviewCreate, db: Session = Depends(get_db)
+):
+    course = _get_course_or_404(db, course_code)
+    try:
+        development.record_review(
+            db,
+            course,
+            payload.reviewer_id,
+            payload.reviewed_at,
+            payload.decision,
+            payload.notes,
+            payload.impractical_basis,
+        )
+    except CourseRuleViolation as violation:
+        return _violation_response(violation)
+    return _detail(db, course)
+
+
+@router.get("/{course_code}/reviews", response_model=list[CourseReviewOut])
+def list_reviews(course_code: str, db: Session = Depends(get_db)):
+    course = _get_course_or_404(db, course_code)
+    current = development.current_review(course)
+    return [
+        _review_out(course, review, current)
+        for review in development.sorted_reviews(course)
+    ]
+
+
+@router.put("/{course_code}/review-cycle", response_model=CourseDetailAdmin)
+def set_review_cycle(
+    course_code: str, payload: ReviewCycleRequest, db: Session = Depends(get_db)
+):
+    course = _get_course_or_404(db, course_code)
+    course = development.set_review_cycle(db, course, payload.review_cycle)
+    return _detail(db, course)
+
+
+@router.post(
+    "/{course_code}/publish",
+    response_model=CourseDetailAdmin,
+    responses={422: {"model": ValidationErrors}},
+)
+def publish_course(course_code: str, db: Session = Depends(get_db)):
+    course = _get_course_or_404(db, course_code)
+    try:
+        course = courses.publish(db, course)
+    except CourseRuleViolation as violation:
+        return _violation_response(violation)
+    return _detail(db, course)
+
+
+@router.post(
+    "/{course_code}/unpublish",
+    response_model=CourseDetailAdmin,
+    responses={422: {"model": ValidationErrors}},
+)
+def unpublish_course(course_code: str, db: Session = Depends(get_db)):
+    course = _get_course_or_404(db, course_code)
+    try:
+        course = courses.unpublish(db, course)
     except CourseRuleViolation as violation:
         return _violation_response(violation)
     return _detail(db, course)

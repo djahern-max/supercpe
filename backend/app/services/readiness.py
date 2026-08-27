@@ -1,18 +1,26 @@
 """Readiness checklist: what stands between a course and publishing.
 
-`check` only reports — with one exception: `assessment.start` refuses to
-open an attempt while any block finding exists, because an assessment that
-does not satisfy 6.01.2 is not a qualified assessment. Feature 008 turns
-block findings into a publish refusal. 006 contributed the credit and
-5.01.2.1 review-question findings; 007 the 6.01.2 assessment findings.
+`check` only reports — with two exceptions: `courses.publish` refuses while
+any block finding exists (the 008 publish gate), and `assessment.start`
+refuses while any block finding outside PUBLISH_ONLY_CODES exists, because
+an assessment that does not satisfy 6.01.2 is not a qualified assessment.
+006 contributed the credit and 5.01.2.1 review-question findings; 007 the
+6.01.2 assessment findings; 008 the development-and-review findings.
 """
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.constants.assessment import OBJECTIVE_COVERAGE_PCT
+from app.constants.participation import (
+    CPA_PARTICIPATION_FIELDS,
+    CPA_QUALIFYING_CREDENTIALS,
+    TAX_PARTICIPATION_FIELDS,
+    TAX_QUALIFYING_CREDENTIALS,
+)
 from app.constants.question_minimums import (
     COUNTING_MIN_CHOICES,
     MIN_CHOICES_ASSESSMENT,
@@ -22,7 +30,21 @@ from app.constants.question_minimums import (
 from app.models.course import Course
 from app.services import courses as courses_service
 from app.services import credit
+from app.services import development
 from app.services import questions as questions_service
+
+# The 008 findings gate publish, not the assessment: an admin previews a
+# draft course's assessment before a developer or review is recorded, and
+# none of these make the assessment less qualified under 6.01.2.
+PUBLISH_ONLY_CODES = frozenset(
+    {
+        "developer_missing",
+        "review_missing",
+        "reviewer_is_developer",
+        "cpa_participation",
+        "description_missing",
+    }
+)
 
 
 @dataclass
@@ -136,6 +158,7 @@ def check(db: Session, course: Course) -> list[Finding]:
         )
 
     findings += _assessment_findings(db, course, fresh_credit, review_questions)
+    findings += _development_findings(course)
 
     return findings
 
@@ -250,5 +273,143 @@ def _assessment_findings(
                     ),
                 )
             )
+
+    return findings
+
+
+def _qualifies(sme, credentials: frozenset) -> bool:
+    return (
+        sme is not None
+        and sme.credential_type in credentials
+        and sme.license_status == "active"
+    )
+
+
+def _development_findings(course: Course) -> list[Finding]:
+    """The 4.01/4.01.1/4.02 findings plus the 8.01 description check. All
+    block except review_due: block findings arise only from content and
+    review facts, so an overdue course can still be unpublished and
+    republished after a fresh review, which is the fix."""
+    findings: list[Finding] = []
+
+    if course.developer_id is None:
+        findings.append(
+            Finding(
+                code="developer_missing",
+                level="block",
+                message=(
+                    "The course names no developer; 4.01.1 requires "
+                    "development by a subject matter expert."
+                ),
+            )
+        )
+
+    current = development.current_review(course)
+    if current is None:
+        latest_approved = next(
+            (
+                r
+                for r in development.sorted_reviews(course)
+                if r.decision == "approved"
+            ),
+            None,
+        )
+        if latest_approved is None:
+            message = (
+                "No approved review is recorded; 4.02 requires review by a "
+                "content reviewer other than the developer before first "
+                "presentation."
+            )
+        else:
+            message = (
+                "The content changed at "
+                f"{course.content_updated_at.isoformat()}, after the last "
+                "approved review, which reviewed the content as of "
+                f"{latest_approved.content_updated_at_reviewed.isoformat()}; "
+                "4.02 requires review again after each significant revision."
+            )
+        findings.append(
+            Finding(code="review_missing", level="block", message=message)
+        )
+    elif (
+        course.developer_id is not None
+        and current.reviewer_id == course.developer_id
+    ):
+        findings.append(
+            Finding(
+                code="reviewer_is_developer",
+                level="block",
+                message=(
+                    f"The current review's reviewer, {current.reviewer.name}, "
+                    "is also the course developer; 4.02 requires content "
+                    "reviewers other than those who developed the program."
+                ),
+            )
+        )
+
+    participants = [course.developer, current.reviewer if current else None]
+    if course.field_of_study in CPA_PARTICIPATION_FIELDS and not any(
+        _qualifies(p, CPA_QUALIFYING_CREDENTIALS) for p in participants
+    ):
+        findings.append(
+            Finding(
+                code="cpa_participation",
+                level="block",
+                message=(
+                    f"field_of_study is {course.field_of_study} and neither "
+                    "the developer nor the reviewer is a CPA with an active "
+                    "license; 4.02 requires the participation of at least "
+                    "one licensed CPA in every accounting or auditing "
+                    "program."
+                ),
+            )
+        )
+    if course.field_of_study in TAX_PARTICIPATION_FIELDS and not any(
+        _qualifies(p, TAX_QUALIFYING_CREDENTIALS) for p in participants
+    ):
+        findings.append(
+            Finding(
+                code="cpa_participation",
+                level="block",
+                message=(
+                    f"field_of_study is {course.field_of_study} and neither "
+                    "the developer nor the reviewer is a CPA, tax attorney, "
+                    "or enrolled agent with an active license; 4.02 requires "
+                    "the participation of at least one in every taxes "
+                    "program."
+                ),
+            )
+        )
+
+    if not course.description.strip():
+        findings.append(
+            Finding(
+                code="description_missing",
+                level="block",
+                message=(
+                    "The course description is blank; it is the 8.01 course "
+                    "announcement a participant reads before enrolling."
+                ),
+            )
+        )
+
+    due = development.review_due_at(course)
+    if due is not None and due < date.today():
+        findings.append(
+            Finding(
+                code="review_due",
+                level="warn",
+                message=(
+                    f"The current review of {current.reviewed_at.isoformat()} "
+                    f"came due {due.isoformat()} on the {course.review_cycle} "
+                    "cycle; 4.01 requires review at least "
+                    + (
+                        "once a year."
+                        if course.review_cycle == "annual"
+                        else "every two years."
+                    )
+                ),
+            )
+        )
 
     return findings

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,6 +26,55 @@ class MoveRequest(BaseModel):
 
 class UpdateVersionRequest(BaseModel):
     new_package_id: int
+
+
+class DeveloperRequest(BaseModel):
+    sme_id: int
+    used_technology: bool
+
+
+class ReviewCreate(BaseModel):
+    reviewer_id: int
+    reviewed_at: date
+    decision: Literal["approved", "changes_requested"]
+    notes: str = ""
+    impractical_basis: str | None = None
+
+
+class ReviewCycleRequest(BaseModel):
+    review_cycle: Literal["annual", "biennial"]
+
+
+class CourseReviewOut(BaseModel):
+    id: int
+    reviewer_id: int
+    reviewer_name: str
+    reviewer_credentials: str
+    reviewed_at: date
+    content_updated_at_reviewed: datetime
+    decision: str
+    notes: str
+    impractical_basis: str | None
+    recorded_by: str
+    created_at: datetime
+    # Derived against the course's content_updated_at, never stored.
+    is_current: bool
+    is_superseded: bool
+
+
+class CourseDevelopmentAdmin(BaseModel):
+    """The 4.01/4.01.1/4.02 facts as the admin course page shows them."""
+
+    developer_id: int | None
+    developer_name: str | None
+    developer_credentials: str | None
+    developer_used_technology: bool
+    review_cycle: str
+    published_at: datetime | None
+    unpublished_at: datetime | None
+    review_due_at: date | None
+    last_documented_date: date | None
+    reviews: list[CourseReviewOut]
 
 
 class LessonObjective(BaseModel):
@@ -167,6 +216,7 @@ class CourseDetailAdmin(BaseModel):
     questions: list[QuestionGroup]
     readiness: list[ReadinessFinding]
     review_counts: ReviewCountsOut
+    development: CourseDevelopmentAdmin
 
 
 class PublicLesson(BaseModel):
@@ -180,6 +230,14 @@ class PublicObjectiveGroup(BaseModel):
     lesson_id: str
     position: int
     objectives: list[LessonObjective]
+
+
+class PublicPerson(BaseModel):
+    """A developer or reviewer as disclosed publicly: name and credentials
+    only, never a license number (those stay in 9.02.2(4) records)."""
+
+    name: str
+    credentials: str
 
 
 class CoursePublicSummary(BaseModel):
@@ -199,6 +257,12 @@ class CoursePublicSummary(BaseModel):
     # awardable; a participant is never shown a stale number or "0.0".
     recommended_credit: str | None
     credit_basis: str | None
+    # 4.01/4.01.1/4.02 provenance, and the 4.01 "most recent publication,
+    # revision, or review date" disclosure.
+    developed_by: PublicPerson | None
+    reviewed_by: PublicPerson | None
+    last_reviewed: date | None
+    last_documented_date: date | None
 
 
 class CoursePublicDetail(CoursePublicSummary):

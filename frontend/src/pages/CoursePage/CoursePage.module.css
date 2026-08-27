@@ -95,3 +95,11 @@
   font-size: 0.8125rem;
   color: var(--color-text-muted);
 }
+
+.provenance {
+  margin: var(--space-md) 0 0;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}

@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -68,6 +69,30 @@ class Course(Base):
     credit_computed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 4.01.1: the subject matter expert of record who developed the course.
+    developer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subject_matter_experts.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    # 4.01.1: "If technology is used in the development of the program, the
+    # content developer is responsible for reviewing the content for
+    # accuracy." superCPE content is drafted with a language model in
+    # video-tool, so the default reflects how it is made; the developer of
+    # record is the human who directed and checked that draft.
+    developer_used_technology: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    # 4.01: annual for subjects that change frequently, biennial otherwise.
+    # The admin's judgment; the due date is derived, never stored.
+    review_cycle: Mapped[str] = mapped_column(
+        String, nullable=False, default="biennial", server_default="biennial"
+    )
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    unpublished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -83,10 +108,21 @@ class Course(Base):
         cascade="all, delete-orphan",
         order_by="CourseLesson.position",
     )
+    developer = relationship("SubjectMatterExpert")
+    reviews = relationship(
+        "CourseReview",
+        back_populates="course",
+        cascade="all, delete-orphan",
+        order_by="CourseReview.created_at",
+    )
 
     __table_args__ = (
         CheckConstraint(
             "status IN ('draft', 'published')", name="ck_courses_status"
+        ),
+        CheckConstraint(
+            "review_cycle IN ('annual', 'biennial')",
+            name="ck_courses_review_cycle",
         ),
     )
 

@@ -10,6 +10,20 @@ function formatDuration(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatDate(isoDate) {
+  return new Date(`${isoDate}T00:00:00`).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function personLine(person) {
+  return person.credentials
+    ? `${person.name}, ${person.credentials}`
+    : person.name;
+}
+
 // The 8.01 disclosure page: every fact a potential participant needs to
 // assess the course, laid out in reading order. The fields are the page.
 function CoursePage() {
@@ -118,6 +132,20 @@ function CoursePage() {
           </li>
         ))}
       </ol>
+
+      {(course.developed_by || course.reviewed_by) && (
+        <p className={styles.provenance}>
+          {course.developed_by &&
+            `Developed by ${personLine(course.developed_by)}. `}
+          {course.reviewed_by &&
+            `Reviewed by ${personLine(course.reviewed_by)}` +
+              (course.last_reviewed
+                ? ` on ${formatDate(course.last_reviewed)}.`
+                : ".")}
+          {course.last_documented_date &&
+            ` Last documented ${formatDate(course.last_documented_date)}.`}
+        </p>
+      )}
     </main>
   );
 }

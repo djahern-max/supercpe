@@ -7,6 +7,7 @@ import AdminCourseDetail from "./pages/AdminCourseDetail/AdminCourseDetail.jsx";
 import AdminCoursePreview from "./pages/AdminCoursePreview/AdminCoursePreview.jsx";
 import AdminCourses from "./pages/AdminCourses/AdminCourses.jsx";
 import AdminPackages from "./pages/AdminPackages/AdminPackages.jsx";
+import AdminSmes from "./pages/AdminSmes/AdminSmes.jsx";
 import AdminSponsor from "./pages/AdminSponsor/AdminSponsor.jsx";
 import Catalog from "./pages/Catalog/Catalog.jsx";
 import CoursePage from "./pages/CoursePage/CoursePage.jsx";
@@ -73,6 +74,7 @@ function App() {
         element={<AdminCoursePreview />}
       />
       <Route path="/admin/packages" element={<AdminPackages />} />
+      <Route path="/admin/smes" element={<AdminSmes />} />
       <Route path="/admin/sponsor" element={<AdminSponsor />} />
       <Route path="*" element={<NotFound />} />
     </Routes>

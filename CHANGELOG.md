@@ -579,3 +579,108 @@ Shipped: 2026-08-27
 - The retake policy is not yet disclosed on the course page (011).
 - Nano learning's 100 percent rule and adaptive learning's path minimum
   are out of scope with their delivery methods.
+
+## 008 — Development and review chain, and the publish gate
+Shipped: 2026-08-27
+
+**What changed**
+- `subject_matter_experts`: a person qualified on a date — name, free-text
+  credentials, a typed `credential_type` (cpa / tax_attorney /
+  enrolled_agent / other), license jurisdiction/number/status, all recorded
+  as stated and never verified. Deliberately no FK to any accounts table.
+  Deletion is refused (DB RESTRICT plus a service check naming the
+  courses) while the SME is a developer of record or a named reviewer,
+  because 9.02.2(4) retains those names with the record. Admin CRUD at
+  `/api/v1/admin/smes` and a new `/admin/smes` page.
+- On `courses`: `developer_id`, `developer_used_technology` (default true —
+  the 4.01.1 fact about how superCPE content is made), `review_cycle`
+  (annual/biennial, CHECK added by hand), `published_at`, `unpublished_at`.
+- `course_reviews`: reviewer, review date, decision (approved /
+  changes_requested), notes, 4.02.1's `impractical_basis`, `recorded_by`,
+  and `content_updated_at_reviewed` — the course's content timestamp at
+  recording, so the review is of *that* content. Immutable: no update or
+  delete path exists; corrections are new reviews.
+- Derived, never stored (`app/services/development.py`): `current_review`
+  (latest approved review whose snapshot is >= the course's
+  `content_updated_at`), `review_due_at` (reviewed_at + 365/730 days from
+  `app/constants/review_cycle.py`), `last_documented_date` (greater of
+  `published_at` and the latest review date — the 4.01 disclosure).
+- Readiness gained `developer_missing`, `review_missing` (message says
+  whether none exists or the content changed since, with both timestamps),
+  `reviewer_is_developer`, `cpa_participation` (fields and qualifying
+  credentials in `app/constants/participation.py`; either developer or
+  reviewer satisfies it, license must be active), `description_missing`
+  (all block), and `review_due` (warn).
+- The publish gate: `POST …/publish` runs the checklist and refuses with
+  every block finding at once as a 422 `{"errors": [...]}`; on success sets
+  status published and `published_at`. `POST …/unpublish` sets draft and
+  `unpublished_at`. Neither touches content, so the review stays current
+  across the round trip.
+- Immutability: every course mutation that calls `touch` (title and
+  description edits, attach, detach, move, update-version) refuses on a
+  published course, naming 4.02 and saying to unpublish first. Setting the
+  developer, the cycle, or recording a review is not a content change and
+  stays allowed on a published course; a new review advances the
+  disclosure date without unpublishing (tested).
+- Public payload gains `developed_by` and `reviewed_by` (name and
+  credentials only — license numbers proven absent by test),
+  `last_reviewed`, `last_documented_date`; the course page shows a
+  provenance line after the lessons. Admin course page gained a
+  Development & Review card (developer select with the 4.01.1 sentence,
+  cycle, review history with current/superseded standing, a record-review
+  form with the impractical basis collapsed under a link, and the
+  Publish/Unpublish button with the readiness state beside it); content
+  controls disable with an immutability note while published.
+- Tests: 12 new in `test_development.py`, including the full
+  publish → refuse-edit → unpublish → edit → stale-refusal → re-review →
+  republish loop. 115 total. Verified end to end against ASC842-PCX, which
+  is now published with provenance.
+
+**Standards touched**
+- 4.01 — cycle stored, due date and last-documented date derived and
+  disclosed; overdue is a warning, enforcement is reporting only
+- 4.01.1 — developer of record with the technology flag; gates publish
+- 4.02 — distinct reviewer, CPA/EA participation by field, review before
+  publish and after revision enforced by immutability plus the
+  stale-review block
+- 4.02.1 — impractical basis documented as a field, reported, never a
+  bypass
+- 9.02.2(4) — names, credentials, and license details retained;
+  undeletable while referenced
+- COMPLIANCE.md gained rows for all five.
+
+**Decisions**
+- SMEs are not accounts: a person who was qualified on a date outlives any
+  login 009 may add, so there is no FK between the two, ever.
+- Published courses are immutable; the only path to changed content is
+  unpublish → edit → re-review → republish, which is exactly 4.02's
+  review-after-revision rule expressed as state.
+- "Significant revision" is read as any content change: every `touch`
+  supersedes the current review, because the software cannot judge
+  significance.
+- The reviewer must differ from the developer (4.02 is explicit); recording
+  such a review is allowed, publishing with it is not.
+- Sponsor `missing_fields` does not gate publish — publish makes a course
+  visible; the registry status gates certificates (010).
+- The 008 findings live in `readiness.PUBLISH_ONLY_CODES` and do not block
+  `assessment.start`: a draft course's assessment preview is well-formed
+  under 6.01.2 before any developer or review exists. The pre-008
+  "no findings" assertion in `test_readiness.py` now filters these codes.
+- The governmental Accounting/Auditing fields count as accounting and
+  auditing for 4.02 participation; the paragraph speaks of the subject,
+  not the NASBA catalog line.
+- `recorded_by` is the literal "admin": a shared token is the only admin
+  identity that exists today.
+
+**Known gaps**
+- License and credential claims are recorded as stated, never verified
+  against a state board (said in the UI).
+- Overdue reviews are reported (warn finding; 011 reports), not enforced,
+  and nothing reminds anyone.
+- No reviewer login; reviews are entered by the admin on the reviewer's
+  behalf until 009 decides otherwise.
+- The international-taxes CPA-equivalence allowance of 4.02 is not
+  modeled.
+- Deleting a draft course cascades its reviews away; retention of reviews
+  on delivered courses is protected only by delete being draft-only (010
+  revisits deletion).

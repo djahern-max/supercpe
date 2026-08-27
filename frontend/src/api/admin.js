@@ -169,3 +169,68 @@ export function updateLessonVersion(code, packageId, newPackageId, token) {
     }
   );
 }
+
+export function listSmes(token) {
+  return request("/api/v1/admin/smes", { headers: authHeaders(token) });
+}
+
+export function createSme(body, token) {
+  return request("/api/v1/admin/smes", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: authHeaders(token),
+  });
+}
+
+export function updateSme(id, body, token) {
+  return request(`/api/v1/admin/smes/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    headers: authHeaders(token),
+  });
+}
+
+export function deleteSme(id, token) {
+  return request(`/api/v1/admin/smes/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
+export function setCourseDeveloper(code, smeId, usedTechnology, token) {
+  return request(`/api/v1/admin/courses/${code}/developer`, {
+    method: "PUT",
+    body: JSON.stringify({ sme_id: smeId, used_technology: usedTechnology }),
+    headers: authHeaders(token),
+  });
+}
+
+export function recordCourseReview(code, body, token) {
+  return request(`/api/v1/admin/courses/${code}/reviews`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: authHeaders(token),
+  });
+}
+
+export function setCourseReviewCycle(code, reviewCycle, token) {
+  return request(`/api/v1/admin/courses/${code}/review-cycle`, {
+    method: "PUT",
+    body: JSON.stringify({ review_cycle: reviewCycle }),
+    headers: authHeaders(token),
+  });
+}
+
+export function publishCourse(code, token) {
+  return request(`/api/v1/admin/courses/${code}/publish`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+export function unpublishCourse(code, token) {
+  return request(`/api/v1/admin/courses/${code}/unpublish`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
