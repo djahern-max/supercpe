@@ -99,3 +99,8 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   touching them.
 - When attach refuses a taken manifest position, the error could suggest the
   lowest free position instead of making the admin work it out.
+- `update_version` on a course's only lesson compares the new package's
+  derived fields against values that came from the lesson being replaced, so
+  a re-export that rewords prerequisites can only be swapped in by
+  detach-then-attach; the agreement check could exclude the lesson being
+  updated.

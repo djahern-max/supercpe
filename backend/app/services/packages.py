@@ -26,6 +26,7 @@ from app.constants.knowledge_levels import (
 from app.models.course import CourseLesson
 from app.models.lesson_package import LessonPackage
 from app.services import ffprobe
+from app.services import questions as questions_service
 from app.services.courses import CourseRuleViolation
 from app.storage import Storage
 
@@ -59,6 +60,7 @@ VIDEO_FIELDS = {
     "tts_provider": str,
     "tts_voice_id": str,
     "tts_model": str,
+    "blocks": list,
 }
 AUTHOR_FIELDS = {
     "name": str,
@@ -254,6 +256,16 @@ def validate(zip_path: Path) -> ValidatedPackage | list[str]:
                 f"manifest.video.narration_blocks: must be at least 1, "
                 f"got {video['narration_blocks']}"
             )
+        # Rule 18: measured block timings, so review questions can be placed
+        # throughout the program at measured points (5.01.2.1). One entry per
+        # narrated block, in playback order, ids matching transcript.md's
+        # `## <block id>` headings, contiguous, ending at duration_seconds
+        # within 1 second. "Values come from measured audio" is an attestation
+        # carried by duration_source (rule 4); what is checkable here is the
+        # structure. The first entry's start being the title sheet's duration
+        # is video-tool's obligation and is not checkable from the package.
+        if isinstance(video.get("blocks"), list):
+            _validate_blocks(video, transcript, errors)
 
     # Rule 6: content hash over transcript + questions + video bytes, in order.
     computed_hash = compute_content_hash(
@@ -365,6 +377,81 @@ def validate(zip_path: Path) -> ValidatedPackage | list[str]:
     )
 
 
+def _is_seconds(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _validate_blocks(video: dict, transcript: str, errors: list[str]) -> None:
+    blocks = video["blocks"]
+    headings = [
+        line[3:].strip()
+        for line in transcript.split("\n")
+        if line.startswith("## ")
+    ]
+    if len(blocks) != len(headings):
+        errors.append(
+            f"manifest.video.blocks: {len(blocks)} entries but transcript.md "
+            f"has {len(headings)} block headings; one entry per narrated block"
+        )
+    narration_blocks = video.get("narration_blocks")
+    if _has_type(narration_blocks, int) and len(blocks) != narration_blocks:
+        errors.append(
+            f"manifest.video.blocks: {len(blocks)} entries does not equal "
+            f"narration_blocks ({narration_blocks})"
+        )
+    prev_end = None
+    for i, entry in enumerate(blocks):
+        label = f"manifest.video.blocks[{i}]"
+        if not isinstance(entry, dict):
+            errors.append(
+                f"{label}: expected an object with id, start_seconds, end_seconds"
+            )
+            prev_end = None
+            continue
+        block_id = entry.get("id")
+        if not isinstance(block_id, str) or not block_id.strip():
+            errors.append(f"{label}.id: must be a non-blank string")
+        elif len(blocks) == len(headings) and block_id != headings[i]:
+            errors.append(
+                f'{label}.id: "{block_id}" does not match transcript.md heading '
+                f'"{headings[i]}" — entries are in playback order'
+            )
+        start = entry.get("start_seconds")
+        end = entry.get("end_seconds")
+        if not _is_seconds(start):
+            errors.append(
+                f"{label}.start_seconds: expected a number, got {type(start).__name__}"
+            )
+        if not _is_seconds(end):
+            errors.append(
+                f"{label}.end_seconds: expected a number, got {type(end).__name__}"
+            )
+        if not _is_seconds(start) or not _is_seconds(end):
+            prev_end = None
+            continue
+        if start < 0:
+            errors.append(f"{label}.start_seconds: must be >= 0, got {start}")
+        if end <= start:
+            errors.append(
+                f"{label}: end_seconds ({end}) must be greater than "
+                f"start_seconds ({start})"
+            )
+        if prev_end is not None and start != prev_end:
+            errors.append(
+                f"{label}.start_seconds: {start} does not equal the previous "
+                f"entry's end_seconds ({prev_end}); blocks are contiguous"
+            )
+        prev_end = end
+    if prev_end is not None and _has_type(video.get("duration_seconds"), int):
+        drift = abs(Decimal(video["duration_seconds"]) - Decimal(str(prev_end)))
+        if drift > DURATION_TOLERANCE_SECONDS:
+            errors.append(
+                f"manifest.video.blocks: last end_seconds ({prev_end}) is "
+                f"{drift:.2f}s from duration_seconds "
+                f"({video['duration_seconds']}); they must agree within 1 second"
+            )
+
+
 QUESTION_FIELDS = {
     "id": str,
     "kind": str,
@@ -383,9 +470,10 @@ def _validate_questions(
     if not questions:
         errors.append("questions: must not be empty")
     seen_ids: set[str] = set()
-    narration_blocks = (
-        video.get("narration_blocks") if isinstance(video, dict) else None
-    )
+    # Rule 15's placement bound: after_block indexes into video.blocks
+    # (video-tool 03), so the bound is the list's length.
+    blocks = video.get("blocks") if isinstance(video, dict) else None
+    block_count = len(blocks) if isinstance(blocks, list) else None
     for i, q in enumerate(questions):
         qid = q.get("id") if isinstance(q, dict) else None
         label = f"questions[{qid}]" if isinstance(qid, str) and qid.strip() else f"questions[{i}]"
@@ -424,12 +512,10 @@ def _validate_questions(
                 errors.append(
                     f"{label}.after_block: review questions require an integer after_block"
                 )
-            elif _has_type(narration_blocks, int) and not (
-                1 <= after_block <= narration_blocks
-            ):
+            elif block_count is not None and not (1 <= after_block <= block_count):
                 errors.append(
                     f"{label}.after_block: {after_block} is outside "
-                    f"[1, {narration_blocks}] (narration_blocks)"
+                    f"[1, {block_count}] (video.blocks)"
                 )
         else:
             if len(q["choices"]) < ASSESSMENT_MIN_CHOICES:
@@ -503,6 +589,9 @@ def ingest(
     try:
         db.add(package)
         db.flush()
+        # Same transaction as the package row: a package never exists
+        # without its normalized question rows.
+        questions_service.normalize(db, package)
         with open(validated.video_path, "rb") as fileobj:
             storage.put(video_key, fileobj)
         db.commit()

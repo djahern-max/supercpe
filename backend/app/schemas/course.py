@@ -92,6 +92,47 @@ class CourseCreditAdmin(BaseModel):
     as_text: str | None
 
 
+class ReadinessFinding(BaseModel):
+    code: str
+    level: Literal["block", "warn"]
+    message: str
+
+
+class ReviewCountsOut(BaseModel):
+    """5.01.2.1 count vs requirement, shown even when satisfied. `required`
+    is null while the credit is stale."""
+
+    counting: int
+    required: int | None
+
+
+class AdminQuestion(BaseModel):
+    """A question as the admin question view lists it. Deliberately carries
+    no choice texts and no answer key; the stored `correct` never reaches a
+    payload outside grading responses."""
+
+    question_key: str
+    kind: str
+    after_block: int | None
+    position: int
+    stem: str
+    choice_count: int
+    # False for review questions with only two choices, which exist but do
+    # not count toward the 5.01.2.1 minimum (and for assessment questions,
+    # which never count toward it).
+    counts_toward_minimum: bool
+
+
+class QuestionGroup(BaseModel):
+    """One lesson's questions, review and assessment listed separately."""
+
+    lesson_id: str
+    package_id: int
+    position: int
+    review: list[AdminQuestion]
+    assessment: list[AdminQuestion]
+
+
 class CourseSummaryAdmin(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -123,6 +164,9 @@ class CourseDetailAdmin(BaseModel):
     lessons: list[CourseLessonItem]
     objectives: list[ObjectiveGroup]
     credit: CourseCreditAdmin
+    questions: list[QuestionGroup]
+    readiness: list[ReadinessFinding]
+    review_counts: ReviewCountsOut
 
 
 class PublicLesson(BaseModel):

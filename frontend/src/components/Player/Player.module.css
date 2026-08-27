@@ -1,0 +1,220 @@
+/* The video is the page: one column at a comfortable reading width,
+   nothing competing with it. */
+.player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-width: 48rem;
+  margin: 0 auto;
+  outline: none;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.stage {
+  position: relative;
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+/* The question appears in place, over the video area at the same width —
+   not a modal, not a sidebar. */
+.questionPanel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+}
+
+/* Stem, choices, and feedback scroll; the actions row below never leaves
+   the panel. */
+.panelScroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-md) var(--space-sm);
+  overflow-y: auto;
+}
+
+.panelActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.stem {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.choice {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.9375rem;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.choice:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.choice:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.choice:disabled {
+  cursor: default;
+}
+
+.choiceSelected {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.choiceCorrect {
+  border-color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.choiceIncorrect {
+  border-color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+.submit {
+  align-self: flex-start;
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* A colleague's quiet check-in: no confetti, no score. */
+.verdict {
+  margin: 0;
+  font-weight: 600;
+}
+
+.feedbackText {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.rewatch {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-accent);
+  font-size: 0.9375rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.gradeError {
+  margin: 0;
+  color: var(--color-error);
+}
+
+/* Slim, with a visible tick at each review point so the participant knows
+   a question is coming. */
+.progress {
+  position: relative;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+  cursor: pointer;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+}
+
+.tick {
+  position: absolute;
+  top: -3px;
+  width: 4px;
+  height: 12px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--color-warning);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.control {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.control:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.control:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}

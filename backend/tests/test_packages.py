@@ -59,7 +59,9 @@ def test_duration_mismatch_shows_both_numbers(client, admin_headers, tmp_path):
     )
     response = upload(client, zip_path, admin_headers)
     assert response.status_code == 422
-    [error] = [e for e in response.json()["errors"] if "duration_seconds" in e]
+    # Rule 18 also flags the blocks now ending far from the declared
+    # duration; this test is about the ffprobe comparison.
+    [error] = [e for e in response.json()["errors"] if "ffprobe" in e]
     assert "4" in error
     assert "2." in error  # ffprobe's measured reading of the 2-second fixture
 
@@ -108,7 +110,12 @@ def test_changed_transcript_creates_version_two(client, admin_headers, tmp_path)
     assert first.status_code == 201
 
     changed = build_package(
-        tmp_path, transcript="# Block 1\n\nRevised narration of record.\n"
+        tmp_path,
+        transcript=(
+            "## block-01\n\nRevised narration of record.\n\n"
+            "## block-02\n\nSecond block.\n\n"
+            "## block-03\n\nThird block.\n"
+        ),
     )
     second = upload(client, changed, admin_headers)
     assert second.status_code == 201

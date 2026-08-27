@@ -96,6 +96,23 @@ export function recomputeCredit(code, token) {
   });
 }
 
+export function getPlayLesson(code, packageId, token) {
+  return request(`/api/v1/courses/${code}/lessons/${packageId}/play`, {
+    headers: authHeaders(token),
+  });
+}
+
+export function gradeReview(code, packageId, questionKey, choiceKey, token) {
+  return request(
+    `/api/v1/courses/${code}/lessons/${packageId}/review/${questionKey}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ choice_key: choiceKey }),
+      headers: authHeaders(token),
+    }
+  );
+}
+
 export function updateLessonVersion(code, packageId, newPackageId, token) {
   return request(
     `/api/v1/admin/courses/${code}/lessons/${packageId}/update-version`,

@@ -21,16 +21,18 @@ DEFAULT_COURSE_CODE = "ASC606-CON"
 # need a manifest missing a required field.
 OMIT = object()
 
-DEFAULT_TRANSCRIPT = """# Block 1
+# Block headings use the `## <block id>` form video-tool 03 writes; rule 18
+# matches manifest.video.blocks ids against them.
+DEFAULT_TRANSCRIPT = """## block-01
 
 Percentage of completion is no longer a method under ASC 606.
 
-# Block 2
+## block-02
 
 Progress is measured with input or output measures toward satisfying a
 performance obligation.
 
-# Block 3
+## block-03
 
 The measure chosen must faithfully depict the transfer of control.
 """
@@ -52,6 +54,13 @@ def default_manifest() -> dict:
             "tts_provider": "elevenlabs",
             "tts_voice_id": "HKFOb9iktHA85uKXydRT",
             "tts_model": "eleven_multilingual_v2",
+            # Contiguous, ids matching the transcript headings, last end
+            # within 1 second of duration_seconds (rule 18).
+            "blocks": [
+                {"id": "block-01", "start_seconds": 0.0, "end_seconds": 0.6},
+                {"id": "block-02", "start_seconds": 0.6, "end_seconds": 1.3},
+                {"id": "block-03", "start_seconds": 1.3, "end_seconds": 2.0},
+            ],
         },
         "learning_objectives": [
             {

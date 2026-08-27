@@ -4,7 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import admin_courses, admin_packages, admin_sponsor, courses, health, sponsor
+from app.routers import (
+    admin_courses,
+    admin_packages,
+    admin_sponsor,
+    courses,
+    health,
+    media,
+    player,
+    sponsor,
+)
 from app.services.ffprobe import ensure_ffprobe_available
 
 
@@ -30,4 +39,6 @@ app.include_router(admin_courses.router, prefix="/api/v1")
 app.include_router(admin_packages.router, prefix="/api/v1")
 app.include_router(admin_sponsor.router, prefix="/api/v1")
 app.include_router(courses.router, prefix="/api/v1")
+app.include_router(media.router, prefix="/api/v1")
+app.include_router(player.router, prefix="/api/v1")
 app.include_router(sponsor.router, prefix="/api/v1")

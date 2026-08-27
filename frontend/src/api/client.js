@@ -1,5 +1,12 @@
 const baseUrl = import.meta.env.VITE_API_URL;
 
+// The play payload's video_url is relative when LocalStorage serves the
+// video through the backend's /media/ route, and absolute once Spaces
+// hands out presigned URLs (012).
+export function resolveMediaUrl(url) {
+  return url.startsWith("http") ? url : `${baseUrl}${url}`;
+}
+
 export class ApiError extends Error {
   constructor(status, data) {
     super(`API error ${status}`);

@@ -30,7 +30,11 @@ def ingest(client, headers, tmp_path, **manifest_overrides):
     marker = manifest_overrides.get("lesson_id", "default")
     version_marker = manifest_overrides.pop("_transcript_marker", "")
     questions = manifest_overrides.pop("_questions", None)
-    transcript = f"# Block 1\n\nNarration for {marker} {version_marker}.\n"
+    transcript = (
+        f"## block-01\n\nNarration for {marker} {version_marker}.\n\n"
+        "## block-02\n\nSecond block.\n\n"
+        "## block-03\n\nThird block.\n"
+    )
     zip_path = build_package(
         tmp_path,
         manifest_overrides=manifest_overrides,

@@ -378,3 +378,108 @@ Shipped: 2026-08-27
   bundle is feature 011.
 - Publish (008) will call `is_stale` and refuse; this feature only exposes
   it.
+
+## 006 — Questions, and the player with review questions inside it
+Shipped: 2026-08-27
+
+**What changed**
+- Contract sync: `docs/course-package.md` copied from video-tool 03 so the
+  two are byte-identical again; it now carries `manifest.video.blocks`
+  (measured start/end seconds per narrated block). Enforced as rule 18 in
+  `backend/app/services/packages.py` — one entry per block, ids matching the
+  transcript's `## <block id>` headings, contiguous, last end within 1 s of
+  `duration_seconds` — and rule 15's `after_block` bound is now
+  `[1, len(blocks)]`, replacing the old `narration_blocks` bound. `blocks`
+  is a required video field; stored packages without it predate the rule and
+  are fixtures.
+- `questions` and `choices` tables (migration `cf396feae240`), normalized
+  from each package's questions.json per package version: question_key,
+  kind (CHECK review/assessment), after_block (CHECK: set iff review),
+  position, stem, feedback, objective_keys; choices with exactly one
+  `is_correct` per question (enforced by the normalizer and by test).
+  `packages.ingest` writes the rows in the same transaction as the package
+  row; the migration backfills existing packages (chosen over a script so
+  every environment backfills on upgrade). A course's review questions are
+  those of its attached packages' current versions.
+- `app/constants/question_minimums.py`: `REVIEW_PER_CREDIT`, the 5.01.2.1
+  chart, `COUNTING_MIN_CHOICES` (two-choice questions do not count), and
+  `required_review_questions` — the above-one-credit decomposition
+  (`whole × 3 + chart[remainder]`) is documented in its docstring as an
+  interpretation. Room left for 007's assessment constants.
+- `app/services/readiness.py`: `check(db, course)` reports findings —
+  `credit_missing` (block), `review_minimum` (block, both numbers and the
+  credit), `review_placement` (warn: lessons with no review question),
+  `review_two_choice` (warn) — plus `review_counts` so the count vs
+  requirement shows even when satisfied. Nothing here refuses anything;
+  008 turns block findings into a publish refusal.
+- Player endpoints behind the admin token (010 moves them behind
+  enrollment): `GET /api/v1/courses/{code}/lessons/{package_id}/play`
+  (video URL, blocks, review questions with stems and choices — no answer
+  key, no feedback) and stateless server-side grading at
+  `POST …/review/{question_key}` returning verdict, feedback, and the
+  correct choice key (5.01.2.2). `Storage` gained `url(key)`;
+  `LocalStorage` serves through the new unauthenticated `/api/v1/media/`
+  route (the local stand-in for a presigned Spaces URL — a video element
+  cannot send the token header), honoring Range requests.
+- `src/components/Player/`: one column, video at reading width, slim
+  progress bar with a visible tick at each review point, custom minimal
+  controls (play/pause, time, mute) on a native `<video>`. At a review
+  point the video pauses and the question appears in place over the video
+  area: stem, tappable choice rows, Submit; then the verdict ("Correct" /
+  "Not quite"), the feedback, Continue, and on a wrong answer a "Re-watch
+  this section" link that seeks to the block's start and resumes. Answering
+  is required to continue; any answer continues. Forward seeks past the
+  furthest point watched are undone once the seek settles; seeking back and
+  re-answering is free. Space toggles play, arrows seek within the watched
+  range, choices are focusable, Enter submits. No confetti, no score.
+- `/admin/courses/:code/preview` (and `…/preview/:packageId`) lists the
+  course's lessons and mounts the player under a "Preview — nothing is
+  recorded." banner. `/admin/courses/:code` gained a Readiness card (count
+  vs required line, findings as plain block/warn lines) and a Questions
+  section (per lesson: review questions with after_block and a
+  does-not-count badge on two-choice ones; assessment questions listed
+  separately, read-only for 007).
+- Tests: 32 new across `test_questions.py` (normalization counts,
+  per-version questions, blocks rules, the minimums chart),
+  `test_readiness.py`, and `test_player.py` (grading both verdicts, and
+  walks of the play and admin payloads asserting the answer key is absent
+  — plus the same check against the real preview's network responses in a
+  scripted browser). 84 total.
+
+**Standards touched**
+- 5.01.2 — the first participant engagement surface: review questions
+  asked inside the video, not on a quiz page after it
+- 5.01.2.1 — placement at measured block ends ("throughout the program");
+  the chart and per-credit minimums as constants; two-choice exclusion; no
+  passing rate anywhere
+- 5.01.2.2 — verdict and feedback on every answer, server-graded
+- 6.01.2 — read, not implemented: its sub-ii feedback rules are why
+  nothing here (grading, feedback flow) may be reused for the assessment
+- COMPLIANCE.md gained rows for 5.01.2, 5.01.2.1, and 5.01.2.2.
+
+**Decisions**
+- Questions belong to a package version, not a course: a version-2 ingest
+  writes its own rows and version 1's remain, so a certificate snapshot
+  (010) can always point at exactly what was asked.
+- In-video placement via `after_block` against measured `video.blocks` is
+  how "throughout the program in sufficient intervals" is satisfied;
+  the placement warning stays simple (a lesson with zero review questions).
+- Forward-seek prevention is a sponsor design choice, not a Standards
+  requirement (5.01.2.1 sets no such rule), and is enforced only in the
+  player.
+- No player library: native `<video>` with custom minimal controls; the
+  in-flight-seek clamp lives on `seeked` because re-targeting a seek from
+  the `seeking` event can wedge the media element.
+- The `/media/` route is unauthenticated by design, mirroring the presigned
+  URLs that replace it in 012; video URLs are only handed out by the
+  token-gated play endpoint.
+
+**Known gaps**
+- Nothing is persisted: review answers and watch progress are lost on
+  reload; 010 keys them to the enrollment.
+- The qualified assessment is not built; its questions are stored and
+  listed read-only, and 007 owns everything else about them.
+- "Other content reinforcement tools" (simulations, exercises) are not
+  modeled; only multiple-choice review questions satisfy the 5.01.2.1
+  floor.
+- The readiness checklist only reports; the publish refusal is 008.

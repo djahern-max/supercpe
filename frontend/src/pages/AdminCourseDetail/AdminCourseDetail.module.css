@@ -202,6 +202,78 @@
   border: 1px solid var(--color-error);
 }
 
+.previewLink {
+  margin-left: var(--space-sm);
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.findingBlock {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+.findingWarn {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+}
+
+.questionGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.questionGroup + .questionGroup {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.questionLesson {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.questionKind {
+  margin: var(--space-xs) 0 0;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.questionLine {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.questionMeta {
+  display: inline-block;
+  margin-right: var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.twoChoiceBadge {
+  margin-left: var(--space-sm);
+  padding: 0.1rem var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+  font-size: 0.75rem;
+}
+
 .errorList {
   margin: 0;
   padding-left: 1.25rem;

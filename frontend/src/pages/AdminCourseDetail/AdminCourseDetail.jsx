@@ -187,6 +187,12 @@ function AdminCourseDetail() {
       <p className={styles.breadcrumb}>
         <Link to="/admin/courses">Courses</Link> / {course.course_code}
         <span className={styles.status}>{course.status}</span>
+        <Link
+          className={styles.previewLink}
+          to={`/admin/courses/${code}/preview`}
+        >
+          Preview
+        </Link>
       </p>
 
       <section className={styles.card}>
@@ -438,6 +444,79 @@ function AdminCourseDetail() {
             </tbody>
           </table>
         )}
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Readiness</h2>
+        <p className={styles.muted}>
+          {course.review_counts.counting} counting review question
+          {course.review_counts.counting === 1 ? "" : "s"}
+          {course.review_counts.required !== null
+            ? `; ${course.review_counts.required} required for ${course.credit.award} CPE credit (5.01.2.1)`
+            : "; the required count needs a fresh credit measurement"}
+          . Two-choice questions do not count.
+        </p>
+        {course.readiness.length === 0 && (
+          <p className={styles.muted}>No findings.</p>
+        )}
+        {course.readiness.map((finding) => (
+          <p
+            key={finding.code}
+            className={
+              finding.level === "block"
+                ? styles.findingBlock
+                : styles.findingWarn
+            }
+          >
+            {finding.level === "block" ? "Blocks publish: " : "Warning: "}
+            {finding.message}
+          </p>
+        ))}
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Questions</h2>
+        {course.questions.length === 0 && (
+          <p className={styles.muted}>No lessons attached yet.</p>
+        )}
+        {course.questions.map((group) => (
+          <div key={group.package_id} className={styles.questionGroup}>
+            <h3 className={styles.questionLesson}>
+              {group.position}. {group.lesson_id}
+            </h3>
+            <h4 className={styles.questionKind}>Review</h4>
+            {group.review.length === 0 && (
+              <p className={styles.muted}>No review questions.</p>
+            )}
+            {group.review.map((question) => (
+              <p key={question.question_key} className={styles.questionLine}>
+                <span className={styles.questionMeta}>
+                  {question.question_key} · after block {question.after_block}
+                </span>
+                {question.stem}
+                {!question.counts_toward_minimum && (
+                  <span className={styles.twoChoiceBadge}>
+                    two choices — does not count
+                  </span>
+                )}
+              </p>
+            ))}
+            <h4 className={styles.questionKind}>
+              Assessment (built by feature 007)
+            </h4>
+            {group.assessment.length === 0 && (
+              <p className={styles.muted}>No assessment questions.</p>
+            )}
+            {group.assessment.map((question) => (
+              <p key={question.question_key} className={styles.questionLine}>
+                <span className={styles.questionMeta}>
+                  {question.question_key}
+                </span>
+                {question.stem}
+              </p>
+            ))}
+          </div>
+        ))}
       </section>
 
       <section className={styles.card}>

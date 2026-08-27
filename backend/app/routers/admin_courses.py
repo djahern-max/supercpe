@@ -8,6 +8,7 @@ from app.db import get_db
 from app.models.course import Course
 from app.models.lesson_package import LessonPackage
 from app.schemas.course import (
+    AdminQuestion,
     AttachRequest,
     CourseCreate,
     CourseCreditAdmin,
@@ -18,10 +19,14 @@ from app.schemas.course import (
     CreditLessonRowOut,
     MoveRequest,
     ObjectiveGroup,
+    QuestionGroup,
+    ReadinessFinding,
+    ReviewCountsOut,
     UpdateVersionRequest,
 )
 from app.schemas.package import ValidationErrors
-from app.services import courses, credit
+from app.services import courses, credit, readiness
+from app.services import questions as questions_service
 from app.services.courses import CourseRuleViolation
 
 router = APIRouter(prefix="/admin/courses", dependencies=[Depends(require_admin)])
@@ -88,6 +93,38 @@ def _credit_panel(course: Course) -> CourseCreditAdmin:
     )
 
 
+def _admin_question(question) -> AdminQuestion:
+    return AdminQuestion(
+        question_key=question.question_key,
+        kind=question.kind,
+        after_block=question.after_block,
+        position=question.position,
+        stem=question.stem,
+        choice_count=len(question.choices),
+        counts_toward_minimum=questions_service.counts_toward_minimum(question),
+    )
+
+
+def _question_groups(db: Session, course: Course) -> list[QuestionGroup]:
+    groups = []
+    for lesson in sorted(course.lessons, key=lambda cl: cl.position):
+        questions = questions_service.for_package(db, lesson.package_id)
+        groups.append(
+            QuestionGroup(
+                lesson_id=lesson.package.lesson_id,
+                package_id=lesson.package_id,
+                position=lesson.position,
+                review=[
+                    _admin_question(q) for q in questions if q.kind == "review"
+                ],
+                assessment=[
+                    _admin_question(q) for q in questions if q.kind == "assessment"
+                ],
+            )
+        )
+    return groups
+
+
 def _detail(db: Session, course: Course) -> CourseDetailAdmin:
     return CourseDetailAdmin(
         id=course.id,
@@ -107,6 +144,14 @@ def _detail(db: Session, course: Course) -> CourseDetailAdmin:
             ObjectiveGroup(**group) for group in courses.course_objectives(course)
         ],
         credit=_credit_panel(course),
+        questions=_question_groups(db, course),
+        readiness=[
+            ReadinessFinding(**vars(finding))
+            for finding in readiness.check(db, course)
+        ],
+        review_counts=ReviewCountsOut(
+            **vars(readiness.review_counts(db, course))
+        ),
     )
 
 

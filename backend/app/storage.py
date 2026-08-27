@@ -14,6 +14,8 @@ class Storage(Protocol):
 
     def delete(self, key: str) -> None: ...
 
+    def url(self, key: str) -> str: ...
+
 
 class LocalStorage:
     def __init__(self, root: str | Path):
@@ -39,6 +41,13 @@ class LocalStorage:
 
     def delete(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
+
+    def url(self, key: str) -> str:
+        """A URL the player's <video> element can fetch. The Spaces
+        implementation (012) returns a presigned URL; locally the media
+        route plays that part. Relative, so the frontend prefixes its API
+        base URL."""
+        return f"/api/v1/media/{key}"
 
 
 def get_storage() -> Storage:

@@ -32,7 +32,11 @@ is the credit-bearing unit (a lesson on its own may be below the 0.2 minimum).
     "narration_blocks": 7,
     "tts_provider": "elevenlabs",
     "tts_voice_id": "HKFOb9iktHA85uKXydRT",
-    "tts_model": "eleven_multilingual_v2"
+    "tts_model": "eleven_multilingual_v2",
+    "blocks": [
+      { "id": "block-01", "start_seconds": 8.000, "end_seconds": 65.120 },
+      { "id": "block-02", "start_seconds": 65.120, "end_seconds": 121.960 }
+    ]
   },
 
   "learning_objectives": [
@@ -70,6 +74,15 @@ is the credit-bearing unit (a lesson on its own may be below the 0.2 minimum).
   was measured from the rendered narration.
 - `duration_seconds` must match the uploaded mp4 within 1 second, checked with
   ffprobe on the server. A mismatch is rejected, not warned.
+- `video.blocks` records where each narrated block starts and ends in the
+  video, in seconds: one entry per narrated block, in playback order, ids
+  matching the `## <block id>` headings in `transcript.md`.
+- `start_seconds` of the first entry is the title sheet's duration; each
+  subsequent `start_seconds` equals the previous `end_seconds`; the last
+  `end_seconds` equals `duration_seconds` within 1 second.
+- Values come from measured audio; a package whose `duration_source` is
+  measured must not carry estimated block timings.
+- `questions.json` `after_block` refers to the 1-based index into this list.
 - `content_hash` is the lowercase hex sha256 digest of the concatenation of the
   raw bytes of `transcript.md`, then `questions.json`, then `video.mp4`, in
   exactly that order. It is recomputed on ingest and must match. A re-upload

@@ -58,6 +58,12 @@ class LessonPackage(Base):
     def manifest_position(self) -> int | None:
         return self.manifest.get("position")
 
+    # Packages ingested before the video.blocks contract rule (video-tool 03)
+    # have none; they are fixtures and None is the honest answer.
+    @property
+    def blocks(self) -> list | None:
+        return self.manifest.get("video", {}).get("blocks")
+
     __table_args__ = (
         UniqueConstraint("lesson_id", "version", name="uq_lesson_packages_lesson_id_version"),
         # 7.02.7: the column can never hold anything but a measured duration,
