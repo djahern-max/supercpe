@@ -169,6 +169,21 @@
   line-height: 1.5;
 }
 
+.deleteButton {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.deleteButton:hover {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
 .linkButton {
   border: none;
   background: none;

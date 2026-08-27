@@ -1,0 +1,225 @@
+.page {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.heading {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.breadcrumb {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.breadcrumb a {
+  color: var(--color-accent);
+}
+
+.status {
+  margin-left: var(--space-sm);
+  padding: 0.1rem var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.label {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.input {
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+}
+
+.textarea {
+  composes: input;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.button {
+  align-self: flex-start;
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-sm) var(--space-md);
+  margin: 0;
+}
+
+.fact dt {
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.fact dd {
+  margin: 0.125rem 0 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.table th {
+  text-align: left;
+  padding: var(--space-sm);
+  border-bottom: 2px solid var(--color-border);
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.table td {
+  padding: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-xs);
+  justify-content: flex-end;
+}
+
+.smallButton {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.smallButton:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.smallButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.smallButtonDanger {
+  composes: smallButton;
+}
+
+.smallButtonDanger:hover:not(:disabled) {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.creditAward {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.creditUnit {
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.staleLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+}
+
+.calculation {
+  margin: 0;
+  padding: var(--space-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.errorPanel {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+.errorList {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.dangerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.dangerButton {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-error);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}

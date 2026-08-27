@@ -188,3 +188,193 @@ Shipped: 2026-08-27
   responses only. Every later feature that renders sponsor facts (course
   pages, certificates, the audit bundle) must read `may_claim_registry`
   before printing the words "National Registry" or a sponsor ID.
+
+## 004 — Courses assembled from lesson packages
+Shipped: 2026-08-27
+
+**What changed**
+- Contract edit in `docs/course-package.md`: `course_code` (groups lessons
+  into a course) and `position` (the lesson's order within it, a positive
+  integer) are now required manifest fields. Still `package_version: 1`.
+  current-feature.md said the one pre-existing package was `HAZWASTE-01`; it
+  was actually `ASC606-CON-01` v1 (the 002 fixture). Either way it predated
+  the rule, carried no `course_code`, was refused on attach for exactly that
+  reason, and was deleted during acceptance.
+- Ingest rule: a manifest without `course_code` or `position` is refused;
+  `position` must be >= 1. The values live in the stored manifest, exposed as
+  model properties, not as new `lesson_packages` columns.
+- `courses` and `course_lessons` tables (migration `d014c39c688d`). CHECKs:
+  `status IN ('draft', 'published')`, `position >= 1`; unique on
+  `(course_id, position)` and `(course_id, package_id)`; FK cascade from
+  course to its lessons, FK restrict from lessons to packages.
+- `app/services/courses.py`: create/update/delete course, attach (checks in
+  order: not already attached anywhere, no other version of the same
+  `lesson_id`, agreement on the four derived fields or first lesson sets
+  them, manifest `course_code` equals the course's, manifest position free),
+  detach (clears derived fields when the last lesson goes), move up/down
+  with a two-pass renumber that parks positions above the occupied range and
+  then assigns a dense 1..n, update-version (same lesson, strictly newer,
+  same derived fields), `course_objectives` (grouped by lesson in position
+  order, keyed for 006 by `(package_id, objective_id)`), and `touch` — the
+  single choke point that bumps `content_updated_at` on every mutation a
+  participant could observe. Violations raise `CourseRuleViolation`,
+  translated to the same 422 `{"errors": [...]}` shape as 002 and 003.
+- `app/services/packages.py`: `delete_package` (refused while attached,
+  removes the storage object; `Storage` protocol gained `delete`) and
+  `list_packages` now annotates each package with `attached_to`.
+- Routes: admin CRUD under `/api/v1/admin/courses` plus attach, detach,
+  move, update-version, and `DELETE /api/v1/admin/packages/{id}`. Public
+  `GET /api/v1/courses` and `GET /api/v1/courses/{course_code}` serve
+  published courses only with the full 8.01 disclosure payload — so they
+  correctly serve nothing until 008 publishes something.
+- Frontend: `/admin/courses` (list, create form), `/admin/courses/:code`
+  (inline title/description edit, read-only derived facts with a note that
+  they come from the lessons, lesson table with move/detach/"Update to vN",
+  attach panel filtered to unattached packages whose `course_code` matches,
+  per-line 422 errors), `/admin/packages` gained an "Attached to" column and
+  a confirm-guarded delete on unattached rows, and the first
+  participant-facing surfaces: `/courses` (catalog; the empty state is a
+  plain sentence) and `/courses/:code` (single-column disclosure page in
+  reading order: title, description, objectives by lesson, level,
+  prerequisites, advance preparation, field of study, lessons with
+  durations).
+- Tests: 12 in `tests/test_courses.py` covering the acceptance list; the
+  package factory gained `course_code`/`position` defaults and an `OMIT`
+  sentinel for removing manifest keys. 41 tests total.
+
+**Standards touched**
+- 3.01 — course objectives are derived from the lesson packages and shown
+  grouped per lesson, in the admin and in the public payload
+- 3.01.1, 3.02.1 — level, prerequisites, and advance preparation are
+  course-level facts enforced to agree across every attached lesson; the
+  admin cannot type values that contradict the content
+- 7.01.1 — deliberately not implemented: a course requires a single field of
+  study *because* 004 chose refusal over the paragraph's multi-field credit
+  allocation; recorded as a Gap
+- 8.01, 8.01.1, 8.01.2 — the public course payload and page carry the
+  disclosure elements this phase can know (objectives, description, level,
+  prerequisites, advance preparation, field of study, lessons with
+  durations); credit arrives with 005, policies with 011
+- COMPLIANCE.md gained rows for 3.01, 3.02.1 (course-level), 7.01.1, 8.01/
+  8.01.1, and 8.01.2, and the two 002 rows' gaps now point at the publish
+  gate instead of "no surface exists".
+
+**Decisions**
+- Course facts are derived from packages, not typed: the admin types only
+  `title` and `description`; everything else is copied from the packages and
+  disagreement is refused with a message naming the field and both values.
+  This is the deliberate departure from abacadaba, which validated typed
+  values instead of eliminating them.
+- One field of study per course. Attaching a lesson from another field is
+  refused rather than allocating credit per 7.01.1's second paragraph.
+- `touch(course)` in the service is the only writer of
+  `content_updated_at`; every later staleness computation (credit, review)
+  reads that single column.
+- `course_code` and `position` stay in the stored manifest (exposed as model
+  properties) rather than becoming `lesson_packages` columns, since the
+  pre-rule package legitimately has neither and the manifest is already
+  stored verbatim.
+- Reorder renumbers positions densely (1..n), so a sparse manifest position
+  (say 5 of 3) survives attach but not the first reorder.
+- Detaching the last lesson clears the four derived fields back to null;
+  an empty course claims nothing about content it no longer has.
+
+**Known gaps**
+- No publish: `status` only ever holds `'draft'` through the app; the
+  public routes were exercised by flipping the row in psql and flipping it
+  back. 008 owns the real gate.
+- No multi-field allocation (7.01.1); refusal is the whole implementation.
+- Objectives are not editable in superCPE, only in the package via
+  video-tool re-export.
+- The public payload has no recommended CPE credit (005), no type of formal
+  learning program, and no registration/refund/complaint policies (011).
+- Deleting a package removes the storage object but leaves its empty
+  `packages/<lesson_id>/v<N>/` directory behind.
+
+## 005 — Credit measurement
+Shipped: 2026-08-27
+
+**What changed**
+- `courses` gained the eight credit columns (`credit_award` numeric(4,1),
+  `credit_raw_minutes` numeric(8,2), the three input totals,
+  `credit_breakdown` JSONB, `credit_formula_version`,
+  `credit_computed_at`), migration `df4aae4f2bba`. Staleness is derived
+  (`credit_computed_at` vs `content_updated_at`, formula version vs the
+  constant), never stored.
+- `app/constants/credit.py`: every number NASBA chose (50, 180, 1.85, 0.2,
+  the formula version, the 8.01 basis string).
+- `app/services/credit.py`: `compute` runs the 7.02.6 word count formula
+  over the attached packages — per lesson, `av_is_additional_learning`
+  selects the measured duration or the manifest word count (7.02.7), and
+  every stored question of both kinds counts; `round_down` floors to
+  one-fifth and returns 0.0 below the minimum awardable; `store` writes the
+  result without touching `content_updated_at`; `is_stale`/`stale_reason`
+  derive freshness; `from_stored` + `as_text` rebuild the written-out
+  calculation from the stored columns alone (the 9.02.2(2)(ii) record).
+- Every `courses` service mutation that goes through `touch` (create,
+  update, attach, detach, move, update-version) ends in `store`, plus an
+  explicit `POST /admin/courses/{code}/credit/recompute` for the stale
+  cases mutations cannot reach.
+- Admin: `/admin/courses/:code` gained a Credit panel between the derived
+  facts and the lesson table (award large, the three terms, sum, ÷ 50, raw,
+  rounded, per-lesson rows, a "Show calculation" toggle over `as_text`, an
+  amber stale line with Recompute); `/admin/courses` gained a credit column
+  with a stale marker.
+- Public: `GET /courses` and `GET /courses/{code}` gained
+  `recommended_credit` and `credit_basis`, null while stale or below the
+  minimum awardable; the `/courses/:code` page shows the credit with the
+  basis beneath it and omits the row entirely when null.
+- Tests: 11 in `tests/test_credit.py`, `Decimal` assertions throughout,
+  with the abacadaba golden case (486 s all-video, 8 questions → raw
+  0.458, award 0.4). 52 tests total.
+
+**Standards touched**
+- 7.01 — awards floor to one-fifth increments uniformly, never up, with a
+  minimum awardable of 0.2
+- 7.02 — method 2 chosen; method 1 deliberately absent (Gap)
+- 7.02.5 — only the manifest's `word_count` enters the word term; the
+  transcript is never counted and questions are counted separately (Gap:
+  the number is trusted from video-tool)
+- 7.02.6 — the formula, computed at course level from stored inputs, with
+  review and assessment questions both counted
+- 7.02.7 — per-lesson branch between measured A/V duration and word count;
+  the all-video form falls out as a zero word term
+- 8.01 — the recommended credit and its basis are now in the public
+  disclosure payload
+- 9.02.2(2)(ii) — the per-lesson breakdown and the written-out calculation
+  are stored and reproducible from the columns alone; export arrives in 011
+- COMPLIANCE.md gained rows for 7.01, 7.02, 7.02.5, 7.02.6, 7.02.7, and
+  9.02.2(2)(ii), and the 8.01 row now records the credit disclosure. The
+  7.01.1 row's Gap is unchanged.
+
+**Decisions**
+- One-fifth rounding uniformly: it is the finest increment 7.01 permits for
+  self study and never overstates under any coarser board policy; the
+  per-jurisdiction increment policy is roadmap 019 (comment at
+  `round_down`).
+- Auto-recompute at the end of every mutation that goes through `touch`, so
+  an admin never sees a stale credit on a course they just edited;
+  staleness exists for formula-version changes and defense in depth, not as
+  a normal state. `store` never calls `touch`: computing credit is not a
+  content change.
+- The per-lesson breakdown is stored (JSONB) rather than recomputed for the
+  record, so the 9.02.2(2)(ii) documentation stands even after lessons
+  change or detach; `as_text` renders from it alone.
+- Formula terms are truncated at two decimal places of a minute
+  (ROUND_DOWN), so the retained record re-adds exactly as written and a
+  term can only ever understate, never push a credit over a rounding
+  boundary.
+- The public payload serves null — and the page omits the row — when the
+  credit is stale *or* the award is below the minimum awardable: a
+  participant is never shown a stale number or "0.0".
+
+**Known gaps**
+- Method 1 (7.02.1–7.02.4) is absent by design; superCPE does not pilot
+  test.
+- `word_count` and `av_is_additional_learning` are trusted from the
+  video-tool manifest; superCPE cannot verify either against the content.
+- No per-jurisdiction rounding policy (roadmap 019).
+- The 9.02.2(2)(ii) record is stored but not yet exportable; the audit
+  bundle is feature 011.
+- Publish (008) will call `is_stale` and refuse; this feature only exposes
+  it.

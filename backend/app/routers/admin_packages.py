@@ -15,6 +15,7 @@ from app.schemas.package import (
     ValidationErrors,
 )
 from app.services import packages
+from app.services.courses import CourseRuleViolation
 from app.storage import Storage, get_storage
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -72,3 +73,21 @@ def get_transcript(package_id: int, db: Session = Depends(get_db)):
     if package is None:
         raise HTTPException(status_code=404, detail="Package not found")
     return PlainTextResponse(package.transcript, media_type="text/markdown")
+
+
+@router.delete(
+    "/packages/{package_id}",
+    status_code=204,
+    responses={422: {"model": ValidationErrors}},
+)
+def delete_package(
+    package_id: int,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+):
+    try:
+        deleted = packages.delete_package(db, storage, package_id)
+    except CourseRuleViolation as violation:
+        return JSONResponse(status_code=422, content={"errors": violation.errors})
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Package not found")

@@ -1,0 +1,164 @@
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class CourseCreate(BaseModel):
+    course_code: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    description: str = ""
+
+
+class CourseUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1)
+    description: str | None = None
+
+
+class AttachRequest(BaseModel):
+    package_id: int
+    position: int | None = None
+
+
+class MoveRequest(BaseModel):
+    direction: Literal["up", "down"]
+
+
+class UpdateVersionRequest(BaseModel):
+    new_package_id: int
+
+
+class LessonObjective(BaseModel):
+    id: str
+    text: str
+
+
+class ObjectiveGroup(BaseModel):
+    lesson_id: str
+    package_id: int
+    position: int
+    objectives: list[LessonObjective]
+
+
+class CourseLessonItem(BaseModel):
+    package_id: int
+    lesson_id: str
+    version: int
+    position: int
+    title: str
+    duration_seconds: int
+    # Set when a newer ingested version of this lesson exists, so the admin
+    # can offer "update to vN".
+    newer_package_id: int | None = None
+    newer_version: int | None = None
+
+
+class CreditLessonRowOut(BaseModel):
+    """One line of the stored 9.02.2(2)(ii) breakdown."""
+
+    lesson_id: str
+    package_id: int
+    version: int
+    position: int
+    title: str
+    duration_seconds: int
+    av_is_additional_learning: bool
+    av_seconds_counted: int
+    word_count: int
+    words_counted: int
+    review_questions: int
+    assessment_questions: int
+
+
+class CourseCreditAdmin(BaseModel):
+    """The stored credit measurement, term by term. Decimal values are
+    serialized as strings ("0.4") so no consumer ever re-parses them as
+    floats. All measurement fields are null until the first compute."""
+
+    is_stale: bool
+    stale_reason: str | None
+    computed_at: datetime | None
+    formula_version: str | None
+    award: str | None
+    raw_minutes: str | None
+    raw_credit: str | None
+    word_count: int | None
+    av_seconds: int | None
+    question_count: int | None
+    word_minutes: str | None
+    av_minutes: str | None
+    question_minutes: str | None
+    rows: list[CreditLessonRowOut]
+    as_text: str | None
+
+
+class CourseSummaryAdmin(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    course_code: str
+    title: str
+    status: str
+    lesson_count: int
+    content_updated_at: datetime
+    credit_award: str | None
+    credit_is_stale: bool
+
+
+class CourseDetailAdmin(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    course_code: str
+    title: str
+    description: str
+    field_of_study: str | None
+    knowledge_level: str | None
+    prerequisites: str | None
+    advance_preparation: str | None
+    status: str
+    content_updated_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    lessons: list[CourseLessonItem]
+    objectives: list[ObjectiveGroup]
+    credit: CourseCreditAdmin
+
+
+class PublicLesson(BaseModel):
+    lesson_id: str
+    position: int
+    title: str
+    duration_seconds: int
+
+
+class PublicObjectiveGroup(BaseModel):
+    lesson_id: str
+    position: int
+    objectives: list[LessonObjective]
+
+
+class CoursePublicSummary(BaseModel):
+    """8.01 disclosure facts for the catalog list."""
+
+    course_code: str
+    title: str
+    description: str
+    field_of_study: str | None
+    knowledge_level: str | None
+    prerequisites: str | None
+    advance_preparation: str | None
+    lesson_count: int
+    total_duration_seconds: int
+    # 8.01 item 3: the recommended CPE credit, with the basis it rests on.
+    # Both are null while the stored credit is stale or below the minimum
+    # awardable; a participant is never shown a stale number or "0.0".
+    recommended_credit: str | None
+    credit_basis: str | None
+
+
+class CoursePublicDetail(CoursePublicSummary):
+    """The full 8.01 disclosure payload for a published course page."""
+
+    objectives: list[PublicObjectiveGroup]
+    lessons: list[PublicLesson]

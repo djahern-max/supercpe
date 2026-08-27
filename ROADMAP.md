@@ -93,3 +93,9 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   (7.02.5).
 - The 4.01 "most recent revision or review date" shown on the course page,
   fed by 008's sign-off date.
+- The admin token form is now duplicated in four places (AdminPackages,
+  AdminSponsor inline; the shared `admin/TokenForm.jsx` used by the two
+  course pages); fold the older two onto the shared component when next
+  touching them.
+- When attach refuses a taken manifest position, the error could suggest the
+  lowest free position instead of making the admin work it out.

@@ -12,6 +12,8 @@ class Storage(Protocol):
 
     def exists(self, key: str) -> bool: ...
 
+    def delete(self, key: str) -> None: ...
+
 
 class LocalStorage:
     def __init__(self, root: str | Path):
@@ -34,6 +36,9 @@ class LocalStorage:
 
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
+
+    def delete(self, key: str) -> None:
+        self._path(key).unlink(missing_ok=True)
 
 
 def get_storage() -> Storage:

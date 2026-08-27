@@ -11,6 +11,8 @@
   --color-success-bg: #e6f4ea;
   --color-error: #a8322b;
   --color-error-bg: #faeae9;
+  --color-warning: #8a6116;
+  --color-warning-bg: #fdf4dc;
 
   /* Spacing */
   --space-xs: 0.25rem;

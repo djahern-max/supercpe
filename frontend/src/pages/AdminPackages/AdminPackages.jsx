@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
 import {
+  deletePackage,
   getPackage,
   getTranscript,
   listPackages,
@@ -187,6 +188,30 @@ function AdminPackages() {
     );
   }
 
+  const handleDelete = async (pkg) => {
+    if (
+      !window.confirm(
+        `Delete package ${pkg.lesson_id} v${pkg.version}? This removes the stored video too.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await deletePackage(pkg.id, token);
+      if (pkg.id === selectedId) setSelectedId(null);
+      setResult(null);
+      refresh();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422 && err.data?.errors) {
+        setResult({ kind: "errors", errors: err.data.errors });
+      } else if (err instanceof ApiError && err.status === 401) {
+        handleAuthFailure();
+      } else {
+        setResult({ kind: "failure", message: "Delete failed. Try again." });
+      }
+    }
+  };
+
   const handleUpload = async () => {
     if (!file) return;
     setUploading(true);
@@ -252,7 +277,9 @@ function AdminPackages() {
               <th>Duration</th>
               <th>Field of study</th>
               <th>Level</th>
+              <th>Attached to</th>
               <th>Ingested</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -270,7 +297,22 @@ function AdminPackages() {
                 <td>{formatDuration(pkg.duration_seconds)}</td>
                 <td>{pkg.field_of_study}</td>
                 <td>{pkg.knowledge_level}</td>
+                <td>{pkg.attached_to ?? "—"}</td>
                 <td>{new Date(pkg.ingested_at).toLocaleString()}</td>
+                <td>
+                  {!pkg.attached_to && (
+                    <button
+                      className={styles.deleteButton}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDelete(pkg);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

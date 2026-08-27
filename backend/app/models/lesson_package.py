@@ -48,6 +48,16 @@ class LessonPackage(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+    # Both live in the manifest, not columns: packages ingested before the
+    # course_code contract rule have neither, and None is the honest answer.
+    @property
+    def course_code(self) -> str | None:
+        return self.manifest.get("course_code")
+
+    @property
+    def manifest_position(self) -> int | None:
+        return self.manifest.get("position")
+
     __table_args__ = (
         UniqueConstraint("lesson_id", "version", name="uq_lesson_packages_lesson_id_version"),
         # 7.02.7: the column can never hold anything but a measured duration,

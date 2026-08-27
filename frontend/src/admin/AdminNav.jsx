@@ -5,6 +5,12 @@ function AdminNav() {
   return (
     <nav className={styles.nav}>
       <NavLink
+        to="/admin/courses"
+        className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
+      >
+        Courses
+      </NavLink>
+      <NavLink
         to="/admin/packages"
         className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
       >

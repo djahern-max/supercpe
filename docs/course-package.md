@@ -20,6 +20,8 @@ is the credit-bearing unit (a lesson on its own may be below the 0.2 minimum).
 {
   "package_version": 1,
   "lesson_id": "ASC606-CON-01",
+  "course_code": "ASC842-PCX",
+  "position": 1,
   "title": "Why Percentage of Completion Is No Longer a Method",
   "content_hash": "sha256, see definition below",
 
@@ -57,6 +59,10 @@ is the credit-bearing unit (a lesson on its own may be below the 0.2 minimum).
 
 - `package_version` must be 1. Anything else is rejected with a message naming
   the version, not silently coerced.
+- `course_code` and `position` are required. `course_code` names the course the
+  lesson was exported for; superCPE refuses to attach a lesson to a course with
+  a different code. `position` is the lesson's order within that course, a
+  positive integer, unique within the course. video-tool writes both.
 - `video.duration_source` must be `"measured"`. video-tool must refuse to export
   while its `usingEstimates` flag is true. superCPE rejects any other value.
   This is how 7.02.7's "actual audio/video duration time" is guaranteed: the

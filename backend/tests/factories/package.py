@@ -15,6 +15,11 @@ from pathlib import Path
 from app.services.packages import compute_content_hash
 
 DEFAULT_LESSON_ID = "ASC606-CON-01"
+DEFAULT_COURSE_CODE = "ASC606-CON"
+
+# Passing OMIT as a manifest override value deletes the key, for tests that
+# need a manifest missing a required field.
+OMIT = object()
 
 DEFAULT_TRANSCRIPT = """# Block 1
 
@@ -35,6 +40,8 @@ def default_manifest() -> dict:
     return {
         "package_version": 1,
         "lesson_id": DEFAULT_LESSON_ID,
+        "course_code": DEFAULT_COURSE_CODE,
+        "position": 1,
         "title": "Why Percentage of Completion Is No Longer a Method",
         "content_hash": "",  # filled in by build_package
         "video": {
@@ -132,7 +139,9 @@ def _video_bytes() -> bytes:
 def _deep_merge(base: dict, overrides: dict) -> dict:
     merged = copy.deepcopy(base)
     for key, value in overrides.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+        if value is OMIT:
+            merged.pop(key, None)
+        elif isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = _deep_merge(merged[key], value)
         else:
             merged[key] = value

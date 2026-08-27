@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { getHealth } from "./api/health";
+import AdminCourseDetail from "./pages/AdminCourseDetail/AdminCourseDetail.jsx";
+import AdminCourses from "./pages/AdminCourses/AdminCourses.jsx";
 import AdminPackages from "./pages/AdminPackages/AdminPackages.jsx";
 import AdminSponsor from "./pages/AdminSponsor/AdminSponsor.jsx";
+import Catalog from "./pages/Catalog/Catalog.jsx";
+import CoursePage from "./pages/CoursePage/CoursePage.jsx";
 import styles from "./App.module.css";
 
 function Home() {
@@ -51,6 +55,10 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
+      <Route path="/courses" element={<Catalog />} />
+      <Route path="/courses/:code" element={<CoursePage />} />
+      <Route path="/admin/courses" element={<AdminCourses />} />
+      <Route path="/admin/courses/:code" element={<AdminCourseDetail />} />
       <Route path="/admin/packages" element={<AdminPackages />} />
       <Route path="/admin/sponsor" element={<AdminSponsor />} />
       <Route path="*" element={<NotFound />} />

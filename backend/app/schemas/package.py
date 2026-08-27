@@ -14,6 +14,11 @@ class PackageSummary(BaseModel):
     field_of_study: str
     knowledge_level: str
     ingested_at: datetime
+    # From the manifest; None on packages ingested before the contract
+    # required a course_code.
+    course_code: str | None = None
+    # Course code of the attaching course; set by list_packages only.
+    attached_to: str | None = None
 
 
 class PackageDetail(PackageSummary):

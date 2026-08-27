@@ -23,8 +23,10 @@ from app.constants.knowledge_levels import (
     LEVELS_REQUIRING_PREREQUISITES,
     PREREQUISITES_NONE,
 )
+from app.models.course import CourseLesson
 from app.models.lesson_package import LessonPackage
 from app.services import ffprobe
+from app.services.courses import CourseRuleViolation
 from app.storage import Storage
 
 PACKAGE_FILES = ("manifest.json", "video.mp4", "transcript.md", "questions.json")
@@ -34,6 +36,8 @@ PACKAGE_FILES = ("manifest.json", "video.mp4", "transcript.md", "questions.json"
 MANIFEST_FIELDS = {
     "package_version": int,
     "lesson_id": str,
+    "course_code": str,
+    "position": int,
     "title": str,
     "content_hash": str,
     "video": dict,
@@ -204,6 +208,13 @@ def validate(zip_path: Path) -> ValidatedPackage | list[str]:
     version = manifest.get("package_version")
     if _has_type(version, int) and version != 1:
         errors.append(f"manifest.package_version: expected 1, received {version}")
+
+    if _has_type(manifest.get("course_code"), str) and not manifest["course_code"].strip():
+        errors.append("manifest.course_code: must be a non-blank string")
+    if _has_type(manifest.get("position"), int) and manifest["position"] < 1:
+        errors.append(
+            f"manifest.position: must be a positive integer, got {manifest['position']}"
+        )
 
     measured_at = None
     if video_ok:
@@ -503,14 +514,45 @@ def ingest(
 
 
 def list_packages(db: Session) -> list[LessonPackage]:
-    return list(
+    packages = list(
         db.scalars(
             select(LessonPackage).order_by(
                 LessonPackage.ingested_at.desc(), LessonPackage.id.desc()
             )
         )
     )
+    attachments = {
+        lesson.package_id: lesson.course.course_code
+        for lesson in db.scalars(select(CourseLesson))
+    }
+    for package in packages:
+        package.attached_to = attachments.get(package.id)
+    return packages
 
 
 def get_package(db: Session, package_id: int) -> LessonPackage | None:
     return db.get(LessonPackage, package_id)
+
+
+def delete_package(db: Session, storage: Storage, package_id: int) -> bool:
+    """Deletes an unattached package and its storage object. Returns False
+    if the package does not exist; refuses if it is attached to a course."""
+    package = db.get(LessonPackage, package_id)
+    if package is None:
+        return False
+    attachment = db.scalar(
+        select(CourseLesson).where(CourseLesson.package_id == package_id)
+    )
+    if attachment is not None:
+        raise CourseRuleViolation(
+            [
+                f"package {package.lesson_id} v{package.version} is attached "
+                f"to course {attachment.course.course_code}; detach it before "
+                "deleting"
+            ]
+        )
+    video_key = package.video_key
+    db.delete(package)
+    db.commit()
+    storage.delete(video_key)
+    return True
