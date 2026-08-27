@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import admin_packages, health
+from app.routers import admin_packages, admin_sponsor, health, sponsor
 from app.services.ffprobe import ensure_ffprobe_available
 
 
@@ -27,3 +27,5 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(admin_packages.router, prefix="/api/v1")
+app.include_router(admin_sponsor.router, prefix="/api/v1")
+app.include_router(sponsor.router, prefix="/api/v1")

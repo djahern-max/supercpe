@@ -6,6 +6,7 @@ import {
   listPackages,
   uploadPackage,
 } from "../../api/admin";
+import AdminNav from "../../admin/AdminNav.jsx";
 import { clearToken, getToken, setToken } from "../../admin/token";
 import styles from "./AdminPackages.module.css";
 
@@ -172,6 +173,7 @@ function AdminPackages() {
   if (!token) {
     return (
       <main className={styles.page}>
+        <AdminNav />
         <h1 className={styles.heading}>Lesson packages</h1>
         <UploadResult result={result} />
         <TokenForm
@@ -210,6 +212,7 @@ function AdminPackages() {
 
   return (
     <main className={styles.page}>
+      <AdminNav />
       <h1 className={styles.heading}>Lesson packages</h1>
 
       <section className={styles.uploadRow}>

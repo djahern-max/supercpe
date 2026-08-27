@@ -31,6 +31,7 @@ requirement here, not an inheritance.
     current-feature.md  the ONE feature being built right now
     CHANGELOG.md        completed features, append only, newest at the bottom
     COMPLIANCE.md       Standards locator -> feature -> code -> known gap
+    ROADMAP.md  phases and the feature sequence; read before building
 
 ## Workflow, read this first
 1. `current-feature.md` is the single source of truth. Build exactly what it

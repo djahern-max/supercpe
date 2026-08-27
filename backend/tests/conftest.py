@@ -42,7 +42,12 @@ def db_session(test_engine):
     session.rollback()
     session.close()
     with test_engine.begin() as conn:
-        conn.execute(text("TRUNCATE lesson_packages RESTART IDENTITY"))
+        conn.execute(
+            text(
+                "TRUNCATE lesson_packages, sponsor_profile, "
+                "sponsor_state_registrations RESTART IDENTITY"
+            )
+        )
 
 
 @pytest.fixture

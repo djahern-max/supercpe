@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { getHealth } from "./api/health";
 import AdminPackages from "./pages/AdminPackages/AdminPackages.jsx";
+import AdminSponsor from "./pages/AdminSponsor/AdminSponsor.jsx";
 import styles from "./App.module.css";
 
 function Home() {
@@ -51,6 +52,7 @@ function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/admin/packages" element={<AdminPackages />} />
+      <Route path="/admin/sponsor" element={<AdminSponsor />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

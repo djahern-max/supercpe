@@ -114,3 +114,77 @@ Shipped: 2026-08-27
 - The video-tool attestation that narration was rendered from measured audio
   is trusted, not verified; superCPE refuses packages that lack it but cannot
   check it (recorded in COMPLIANCE.md under 7.02.7).
+
+## 003 — Sponsor identity record
+Shipped: 2026-08-27
+
+**What changed**
+- `sponsor_profile` singleton table and `sponsor_state_registrations` table
+  (migration `d287428522f0`); the migration itself inserts the id=1 row with
+  defaults, so the application never starts without a profile.
+- Three CHECK constraints, declared on the model and hand-verified in the
+  migration: `id = 1`, `registry_status IN ('not_registered', 'registered')`,
+  and `registry_status = 'registered' OR national_registry_id = ''`.
+- `app/constants/certificate.py`: `TIME_STATEMENT` (9.01 item 10) and
+  `CERTIFICATE_SPONSOR_FIELDS` (the sponsor facts a certificate cannot be
+  issued without).
+- `missing_fields()` on the model returns the blank certificate-blocking
+  fields plus `registry_status` when not registered; `may_claim_registry` is
+  the single boolean later features read before rendering the words
+  "National Registry" or a sponsor ID.
+- `app/services/sponsor.py`: `get_profile`, `update_profile`,
+  `set_state_registrations` (full-set atomic replace). Contradictory registry
+  states (registered with a blank ID, not_registered with an ID) are refused
+  as 422 `{"errors": [...]}` naming the rule before the CHECK fires.
+- Routes: `GET`/`PUT /api/v1/admin/sponsor` and
+  `PUT /api/v1/admin/sponsor/state-registrations` behind `require_admin`;
+  public `GET /api/v1/sponsor` returning only `name`, `website`, and — only
+  when `may_claim_registry` — `national_registry_id` (the field is absent,
+  not null, otherwise).
+- Frontend: `/admin/sponsor` page with the launch-readiness status panel
+  ("Certificates can be issued" or the missing items in plain language), the
+  profile form, and an editable state-registrations table. Selecting
+  `not_registered` clears and disables the ID field; `registered` enables and
+  requires it. A small `AdminNav` now links the two admin pages.
+- Tests: 12 in `tests/test_sponsor.py` covering the acceptance list; the test
+  truncation now covers the sponsor tables too.
+- `.env.example` now says the token protects sponsor and package admin.
+
+**Standards touched**
+- 9.01 items 1, 8, 9, 10, 11 — the certificate's sponsor facts now have a
+  home: profile fields, state registrations as rows, the fixed time
+  statement, and free-text other statements
+- 9.01.1 — `legal_name` records the entity responsible for awarding the
+  credits
+- 9.02 — five-year retention added to COMPLIANCE.md as a row whose gap is
+  that the period is not yet a constant in code
+- COMPLIANCE.md gained three rows for these locators.
+
+**Decisions**
+- Singleton by CHECK (`id = 1`), not convention: a second sponsor row is a
+  state this application has no meaning for, so the database refuses it
+  rather than code politely avoiding it.
+- State registrations are rows with a unique state code, not a text blob,
+  because certificates will print them and 9.01 item 9 is per-state.
+  superCPE does not encode which states require registration; it stores what
+  the sponsor actually holds.
+- The registry-status rule: NASBA Registry membership is a fact, not a
+  setting. Until superCPE is accepted, `national_registry_id` must be empty
+  (CHECK plus a named 422) and nothing may claim membership; the claim
+  becomes possible only by flipping `registry_status` once it is true.
+- `get_profile` re-creates the row if absent even though the migration seeds
+  it, because test databases are built by `create_all`, which runs no
+  migration inserts.
+- Service rule violations raise `SponsorRuleViolation` and the routers wrap
+  them in the same 422 `{"errors": [...]}` shape as package ingest, so the
+  admin frontend handles both identically.
+
+**Known gaps**
+- superCPE is not on the National Registry; `missing_fields` will include
+  `registry_status` until it is, and no certificate can be issued.
+- The 9.02 five-year retention period is not yet a constant anywhere in
+  code; feature 011 adds it.
+- The "may not claim Registry" rule is enforced on this feature's own
+  responses only. Every later feature that renders sponsor facts (course
+  pages, certificates, the audit bundle) must read `may_claim_registry`
+  before printing the words "National Registry" or a sponsor ID.

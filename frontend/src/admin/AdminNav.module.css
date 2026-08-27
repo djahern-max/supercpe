@@ -1,0 +1,22 @@
+.nav {
+  display: flex;
+  gap: var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-sm);
+}
+
+.link {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.link:hover {
+  color: var(--color-accent);
+}
+
+.linkActive {
+  composes: link;
+  color: var(--color-accent);
+}
