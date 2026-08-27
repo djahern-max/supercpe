@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { getHealth } from "./api/health";
+import AdminAssessmentPreview from "./pages/AdminAssessmentPreview/AdminAssessmentPreview.jsx";
+import AdminCourseAttempts from "./pages/AdminCourseAttempts/AdminCourseAttempts.jsx";
 import AdminCourseDetail from "./pages/AdminCourseDetail/AdminCourseDetail.jsx";
 import AdminCoursePreview from "./pages/AdminCoursePreview/AdminCoursePreview.jsx";
 import AdminCourses from "./pages/AdminCourses/AdminCourses.jsx";
@@ -60,7 +62,12 @@ function App() {
       <Route path="/courses/:code" element={<CoursePage />} />
       <Route path="/admin/courses" element={<AdminCourses />} />
       <Route path="/admin/courses/:code" element={<AdminCourseDetail />} />
+      <Route path="/admin/courses/:code/attempts" element={<AdminCourseAttempts />} />
       <Route path="/admin/courses/:code/preview" element={<AdminCoursePreview />} />
+      <Route
+        path="/admin/courses/:code/preview/assessment"
+        element={<AdminAssessmentPreview />}
+      />
       <Route
         path="/admin/courses/:code/preview/:packageId"
         element={<AdminCoursePreview />}

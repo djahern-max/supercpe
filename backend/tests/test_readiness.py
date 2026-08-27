@@ -98,14 +98,18 @@ def test_lesson_without_review_questions_warns_placement(db_session):
 
 def test_satisfied_course_has_no_review_findings(db_session):
     package = make_package_row(
-        db_session, duration_seconds=486, questions=questions_of(review=3)
+        db_session,
+        duration_seconds=486,
+        questions=questions_of(review=3, assessment=2),
     )
     normalize(db_session, package)
     course = make_course_row(db_session, "GOLD", package)
     credit.store(db_session, course.id)
     db_session.refresh(course)
 
-    # 486 s + 3 x 1.85 -> 13.65 min -> 0.273 -> 0.2 credit -> 0 required.
+    # 486 s + 5 x 1.85 -> 17.35 min -> 0.347 -> 0.2 credit -> 0 review
+    # questions required, 2 assessment questions required (both present,
+    # covering the lone objective).
     findings = readiness.check(db_session, course)
     assert findings == []
     # The comparison is still reported even with nothing to find.

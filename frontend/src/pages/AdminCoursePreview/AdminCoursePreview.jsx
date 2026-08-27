@@ -110,6 +110,15 @@ function AdminCoursePreview() {
                 </Link>
               </li>
             ))}
+            <li>
+              <Link
+                className={styles.lessonLink}
+                to={`/admin/courses/${code}/preview/assessment`}
+              >
+                <span className={styles.lessonPosition}>✓</span>
+                <span>Qualified assessment</span>
+              </Link>
+            </li>
           </ul>
         </section>
       )}

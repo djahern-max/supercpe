@@ -9,6 +9,7 @@ import {
   deleteCourse,
   detachLesson,
   getCourse,
+  listAttempts,
   listPackages,
   moveLesson,
   recomputeCredit,
@@ -49,6 +50,7 @@ function AdminCourseDetail() {
   const [token, setTokenState] = useState(getToken());
   const [course, setCourse] = useState(null);
   const [packages, setPackages] = useState(null);
+  const [attempts, setAttempts] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [notFound, setNotFound] = useState(false);
   const [title, setTitle] = useState("");
@@ -87,6 +89,9 @@ function AdminCourseDetail() {
     listPackages(token)
       .then(setPackages)
       .catch(() => setPackages([]));
+    listAttempts(code, token)
+      .then(setAttempts)
+      .catch(() => setAttempts([]));
   }, [token, code, applyCourse, handleAuthFailure]);
 
   useEffect(() => {
@@ -475,6 +480,34 @@ function AdminCourseDetail() {
       </section>
 
       <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Attempts</h2>
+        {attempts === null && <p className={styles.muted}>Loading attempts…</p>}
+        {attempts !== null && attempts.length === 0 && (
+          <p className={styles.muted}>No assessment attempts yet.</p>
+        )}
+        {attempts !== null && attempts.length > 0 && (
+          <>
+            {(() => {
+              const graded = attempts.filter((a) => a.submitted_at !== null);
+              const passed = graded.filter((a) => a.status === "passed");
+              return (
+                <p className={styles.muted}>
+                  {attempts.length} attempt{attempts.length === 1 ? "" : "s"}
+                  {graded.length > 0 &&
+                    `; ${Math.round((passed.length / graded.length) * 100)}% of ${graded.length} submitted passed`}
+                  . Latest: {new Date(attempts[0].started_at).toLocaleString()}{" "}
+                  ({attempts[0].status}).
+                </p>
+              );
+            })()}
+            <Link className={styles.previewLink} to={`/admin/courses/${code}/attempts`}>
+              View all attempts
+            </Link>
+          </>
+        )}
+      </section>
+
+      <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Questions</h2>
         {course.questions.length === 0 && (
           <p className={styles.muted}>No lessons attached yet.</p>
@@ -501,9 +534,7 @@ function AdminCourseDetail() {
                 )}
               </p>
             ))}
-            <h4 className={styles.questionKind}>
-              Assessment (built by feature 007)
-            </h4>
+            <h4 className={styles.questionKind}>Assessment</h4>
             {group.assessment.length === 0 && (
               <p className={styles.muted}>No assessment questions.</p>
             )}

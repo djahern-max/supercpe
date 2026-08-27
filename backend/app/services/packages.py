@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.constants.fields_of_study import FIELDS_OF_STUDY
+from app.constants.question_minimums import MIN_CHOICES_ASSESSMENT
 from app.constants.knowledge_levels import (
     KNOWLEDGE_LEVELS,
     LEVELS_REQUIRING_PREREQUISITES,
@@ -72,7 +73,9 @@ AUTHOR_FIELDS = {
 DURATION_TOLERANCE_SECONDS = Decimal(1)
 
 REVIEW_MIN_CHOICES = 2
-ASSESSMENT_MIN_CHOICES = 3
+# The 6.01.2 forced-choice floor; aliased so ingest refusals and the
+# readiness finding can never disagree.
+ASSESSMENT_MIN_CHOICES = MIN_CHOICES_ASSESSMENT
 
 
 @dataclass

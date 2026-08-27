@@ -8,6 +8,7 @@ from app.routers import (
     admin_courses,
     admin_packages,
     admin_sponsor,
+    assessment,
     courses,
     health,
     media,
@@ -38,6 +39,8 @@ app.include_router(health.router, prefix="/api/v1")
 app.include_router(admin_courses.router, prefix="/api/v1")
 app.include_router(admin_packages.router, prefix="/api/v1")
 app.include_router(admin_sponsor.router, prefix="/api/v1")
+app.include_router(assessment.router, prefix="/api/v1")
+app.include_router(assessment.admin_router, prefix="/api/v1")
 app.include_router(courses.router, prefix="/api/v1")
 app.include_router(media.router, prefix="/api/v1")
 app.include_router(player.router, prefix="/api/v1")

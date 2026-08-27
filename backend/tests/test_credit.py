@@ -58,6 +58,7 @@ def make_package_row(
     av_is_additional_learning=True,
     word_count=0,
     questions=None,
+    objectives=("lo-1",),
 ):
     package = LessonPackage(
         lesson_id=lesson_id,
@@ -74,7 +75,13 @@ def make_package_row(
         knowledge_level="Basic",
         prerequisites="None",
         advance_preparation="None",
-        manifest={"course_code": "GOLD", "position": 1},
+        manifest={
+            "course_code": "GOLD",
+            "position": 1,
+            "learning_objectives": [
+                {"id": key, "text": f"Objective {key}"} for key in objectives
+            ],
+        },
         questions=questions if questions is not None else [],
         transcript="transcript",
         video_key=f"packages/{lesson_id}/v{version}/video.mp4",

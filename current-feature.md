@@ -1,197 +1,208 @@
 # Current Feature
 
-## Feature 006, Questions, and the player with review questions inside it
+## Feature 007, The qualified assessment
 
 ## Goal
-Questions come out of the stored packages into real tables, superCPE knows
-whether a course has enough of them for its credit, and a participant can
-watch a lesson with review questions that pause the video at measured
-points, answer, get feedback, and continue. This is the first real
-participant experience and the biggest departure from abacadaba: review
-questions live inside the video, not on a quiz page after it.
-
-No accounts exist yet, so the player runs in an admin preview at
-`/admin/courses/:code/preview`. It is built as the participant player,
-behind the token for now; 010 mounts the same component for enrolled
-participants and adds persistence.
+A participant can take the course's qualified assessment, be graded
+server-side against the 70 percent cumulative floor, and get exactly the
+feedback 6.01.2 permits: on a pass, the per-question record; on a fail, the
+score and nothing else. The course knows whether its assessment questions
+are enough, distinct from its review questions, forced-choice-free, and
+covering three quarters of its objectives. Attempts are recorded now, in
+preview form, so 010 can key them to an enrollment without changing the
+engine.
 
 ## In scope
-- Contract enforcement for `video.blocks` (video-tool 03)
-- `questions` and `choices` tables normalized from packages, per version
-- Review-question minimums against the course's credit (5.01.2.1)
-- Server-side grading of review answers with feedback (5.01.2.2)
-- The player component with in-video review pauses
-- Admin question view with a readiness checklist
+- Assessment minimums, objective coverage, duplicate and forced-choice
+  checks as readiness findings
+- `attempts` and `attempt_answers` tables, with a preview flag
+- Start / submit / result endpoints, whole-assessment submission
+- The feedback rule of 6.01.2 sub-ii, no test bank
+- Retakes
+- The assessment UI, and an admin attempts view
 
 ## Out of scope
-- The qualified assessment. Feature 007 builds it and it has different
-  feedback rules; nothing here may be reused for it without reading 6.01.2.
-- Persisting review answers or watch progress. 010, keyed to enrollment.
-- Publish. 008 reads the readiness checklist.
-- Captions or transcript display (roadmap improvement note).
+- A test bank, and therefore the other branch of sub-ii. superCPE serves
+  every assessment question every time.
+- Nano learning's 100 percent rule and adaptive learning's path minimum.
+- Recall-as-learning-strategy exemption from the duplicate rule.
+- Completion, credit award, certificate. 010. This feature produces a
+  passed attempt; it does not decide anything follows from it.
+- Publish. 008 reads the findings.
 
 ## Locators
-Read 5.01, 5.01.2, 5.01.2.1, 5.01.2.2 before writing code, and read 6.01.2
-sub-ii once so you know why the assessment must be built separately. Take
-COMPLIANCE.md's Requirement column from the PDF.
+Read 6.01, 6.01.1, 6.01.2 in full, including sub-i and sub-ii and the
+chart, and 9.02.2(1) for what an attempt record must be able to prove.
+Then read 5.01.2.2 again so the contrast is fresh.
 
-Facts that shape this feature, all from those paragraphs:
-- Review questions must be placed throughout the program at sufficient
-  intervals for the participant to judge what to re-study. `after_block`
-  plus measured block timings is how superCPE satisfies "throughout".
-- Three per credit, with the one-fifth chart below a full credit
-  (0.2→0, 0.4→1, 0.5→2, 0.6→2, 0.8→3, 1.0→3), and the chart again above
-  each whole credit. Transcribe the chart from the PDF into a constant; the
-  above-one-credit decomposition (`whole × 3 + chart[remainder]`) is an
-  interpretation and the constant's docstring must say so.
-- True/false questions do not count toward the minimum. Count a review
-  question only if it has more than two choices.
-- No minimum passing rate on review questions. Nothing here scores anyone.
-- Feedback is mandatory and must at least say correct or incorrect. The
-  package requires non-blank feedback text, so superCPE always has more than
-  the minimum.
-
-## Contract enforcement
-`docs/course-package.md` now carries `video.blocks` (copied from video-tool
-03; verify the two files are identical). Add the rules to
-`packages.py` and the factory, with the rule numbers video-tool used.
-`after_block` must be within `[1, len(blocks)]`, replacing the old
-`narration_blocks` bound. Existing stored packages without `blocks` predate
-the rule and are fixtures; the factory package must gain them.
+The rules, all from 6.01.2:
+- Cumulative minimum passing grade of at least 70 percent before credit.
+- Five questions per credit; below a full credit, the chart
+  (0.2→2, 0.4→3, 0.5→4, 0.6→4, 0.8→5); above, per credit plus the chart
+  for the remainder. The paragraph's own worked examples (5 credits → 25,
+  5½ → 29) must be reproduced by the function.
+- Duplicate review and assessment questions are not allowed.
+- Forced choice (true/false, yes/no) is not permissible; three choices is
+  the floor.
+- The assessment must measure 75 percent or more of the learning objectives.
+- Sub-ii, no test bank: on a failed assessment, the sponsor may not provide
+  feedback; on a passed one, it may. Since a pass or fail is only known
+  after the whole assessment is scored, **no per-question verdict may be
+  shown while an attempt is open, and none may ever be shown for a failed
+  attempt.** The assessment is a form submitted once, not a sequence of
+  graded questions.
 
 ## Data model
-Table `questions`:
-- id, package_id (FK cascade, indexed), question_key (the package's `id`,
-  e.g. "q-01"), kind (CHECK in review/assessment), after_block (int,
-  nullable; not null iff review), position (int, order within package),
-  stem (text), feedback (text), objective_keys (JSONB list of objective ids
-  from the manifest)
-- unique (package_id, question_key)
+Table `attempts`:
+- id, course_id (FK), enrollment_id (nullable FK placeholder — add the
+  column as nullable integer with no FK yet; 010 adds the constraint),
+  is_preview (bool, not null), status (CHECK in open/passed/failed),
+  started_at, submitted_at (nullable), score_pct (numeric(5,2), nullable),
+  passing_pct (numeric(5,2), not null — snapshot of the threshold used),
+  question_count (int, not null), correct_count (int, nullable),
+  package_versions (JSONB: `[{package_id, version}]` at start, so the
+  attempt can prove which questions were asked even after a re-export)
+- Only one open attempt per (course, preview identity) at a time.
 
-Table `choices`:
-- id, question_id (FK cascade), choice_key ("a"), text, is_correct (bool),
-  position
-- unique (question_id, choice_key); exactly one `is_correct` per question,
-  enforced in the normalizer and by a test
+Table `attempt_answers`:
+- id, attempt_id (FK cascade), question_id (FK), choice_id (FK),
+  is_correct (bool, set at grading), answered_at
+- unique (attempt_id, question_id)
 
-Normalize at ingest: `packages.ingest` writes these rows after the package
-row, in the same transaction. Also write a one-time backfill in the
-migration for existing packages, or a script; either is fine, say which.
+`is_correct` is written at submit, never returned to the client for a
+failed attempt. Write the test first.
 
-Questions belong to a package version, not to a course. A course's review
-questions are those of its attached packages' current versions.
+## Constants
+Add to `question_minimums.py`: `ASSESSMENT_PER_CREDIT = 5`, the chart,
+`MIN_CHOICES_ASSESSMENT = 3`, `required_assessment_questions(credit)`.
+New `app/constants/assessment.py`: `PASSING_PCT = Decimal("70")`,
+`OBJECTIVE_COVERAGE_PCT = Decimal("75")`, `RETAKES_ALLOWED = True` with a
+comment that retake policy is a sponsor choice the Standards do not fix,
+that every attempt is retained regardless, and that 011 must disclose the
+policy on the course page.
 
-## Minimums
-`app/constants/question_minimums.py`: `REVIEW_PER_CREDIT`,
-`REVIEW_MINIMUMS` chart, `required_review_questions(credit: Decimal)`. Leave
-room for 007 to add the assessment constants in the same file.
+## Readiness findings (extend `readiness.check`)
+- `assessment_minimum` (block) — counting assessment questions (≥3
+  choices) below the required number; both numbers shown
+- `assessment_forced_choice` (block) — any assessment question with fewer
+  than 3 choices. Ingest already refuses this, so it can only arise from a
+  fixture; keep the finding anyway
+- `assessment_duplicate` (block) — an assessment question whose normalized
+  stem (lowercase, whitespace collapsed, trailing punctuation stripped)
+  equals a review question's stem in the same course. Message names both
+  question keys and lessons
+- `objective_coverage` (block) — the assessment's `objective_keys`, keyed
+  by (package_id, key), cover fewer than 75 percent of the course's
+  objectives (from `course_objectives`). Message shows covered/total and
+  lists uncovered objectives by lesson
 
-`app/services/readiness.py`: `check(db, course) -> list[Finding]` where a
-Finding is `{code, level: "block"|"warn", message}`. This feature adds:
-- `credit_missing` (block) — no fresh credit
-- `review_minimum` (block) — fewer counting review questions than required;
-  message shows both numbers and the credit they derive from
-- `review_placement` (warn) — any lesson with zero review questions, or two
-  consecutive blocks... keep this simple: warn if any lesson has no review
-  question at all, since "throughout" cannot be met by a lesson with none
-- `review_two_choice` (warn) — review questions with exactly two choices,
-  which exist but do not count
+## Engine, `app/services/assessment.py`
+- `start(db, course, identity) -> Attempt`: refuses if course credit is
+  stale or any block finding exists (the assessment is not well-formed
+  yet); records `package_versions`; question order is package position
+  then question position; choice order as stored. No shuffling in this
+  feature — say why in a comment: auditability of "what was asked" beats
+  the marginal integrity gain, and a shuffle can be added later with the
+  order stored per attempt.
+- `submit(db, attempt, answers: {question_id: choice_id}) -> Attempt`:
+  requires every question answered; grades; sets status by
+  `score_pct >= passing_pct`; writes `attempt_answers.is_correct`.
+- `result(attempt) -> dict`: for **passed**: score, status, and per
+  question the chosen choice, the correct choice, the verdict, and the
+  question's feedback. For **failed**: score, status, question count,
+  correct count, and the retake affordance. Nothing per question. Not the
+  correct count per objective, not which ones were wrong. The Standard
+  says "may not provide feedback" and a count of correct answers is the
+  outer limit of what a score already reveals.
+- `abandon(db, attempt)` for an open attempt the participant walks away
+  from; status becomes failed with `score_pct` null. Retained.
 
-008 turns "block" findings into a publish refusal. Nothing here refuses
-anything; it reports.
+Identity for preview attempts: an opaque `preview_id` the admin frontend
+generates once per session and sends as a header; stored on the attempt in
+place of an enrollment. 010 replaces this with the enrollment id and the
+preview path stays for admins.
 
-## Grading
-`POST /api/v1/courses/{code}/lessons/{package_id}/review/{question_key}`
-with `{choice_key}` → `{correct: bool, feedback: str, correct_choice_key}`.
-Grade on the server. **The question payload served to the player never
-contains `is_correct`**; write a test that walks the whole public and
-preview payload and asserts the field is absent. abacadaba shipped the
-answer key to the browser once and had to build a replay test to prove it
-was gone; do not make that mistake here.
+## Endpoints (admin token now; 010 re-gates)
+- `GET /api/v1/courses/{code}/assessment` — questions and choices, no
+  answers, no feedback; plus `question_count`, `passing_pct`, and whether
+  an open attempt exists
+- `POST /api/v1/courses/{code}/assessment/attempts` — start
+- `PUT /api/v1/courses/{code}/assessment/attempts/{id}/answers` — save
+  partial answers (so a refresh does not lose work); no grading
+- `POST /api/v1/courses/{code}/assessment/attempts/{id}/submit` — grade,
+  return `result`
+- `GET /api/v1/courses/{code}/assessment/attempts/{id}` — `result`, or the
+  saved answers if still open
+- Admin: `GET /api/v1/admin/courses/{code}/attempts` — every attempt with
+  status, score, timestamps, preview flag, and per-answer detail (the admin
+  may see everything; the participant may not)
 
-The endpoint is stateless in this feature. Re-answering is allowed. Behind
-the admin token for now; 010 moves it behind enrollment.
+## UI
+`src/components/Assessment/`, mounted at
+`/admin/courses/:code/preview/assessment` and later by 010.
 
-`GET /api/v1/courses/{code}/lessons/{package_id}/play` → everything the
-player needs for one lesson: a presigned or local video URL from `Storage`
-(add `url(key)` to the protocol; `LocalStorage` serves through a small
-`/media/` route), the `blocks` list, and the review questions with their
-`after_block`, stems, and choices (no answers).
+- Opens with a plain statement: number of questions, the 70 percent
+  requirement, that results come after all questions are submitted, and
+  that retakes are allowed. One "Begin" button.
+- All questions on one scrolling page, numbered, each with its choices as
+  tappable rows. No verdicts, no colors, no hints of correctness anywhere
+  while open. A sticky footer shows "N of M answered" and Submit, disabled
+  until all are answered. Answers save on change.
+- Submit asks once ("Submit all M answers?") and grades.
+- Passed: score large, then each question with the chosen answer, the
+  correct one marked, and the feedback text. A note that the course's
+  completion is recorded (010 will make that true; for now the preview
+  banner covers it).
+- Failed: score large, "70 percent is required," correct count out of
+  total, a "Try again" button, and a line suggesting re-watching the
+  lessons. Nothing else. Resist adding anything here; the Standard is
+  restrictive on purpose.
+- Keyboard-navigable throughout.
 
-## The player
-`src/components/Player/` — one component, mounted by the preview page now
-and by 010 later. Design brief, since this is the surface a participant
-will spend most of their time on:
-
-- The video is the page. One column, video at a comfortable reading width
-  (not full-bleed), lesson title above, nothing else competing.
-- A slim progress bar under the video with a tick at each review point.
-  Ticks are visible before they are reached so the participant knows a
-  question is coming.
-- At a review point the video pauses and the question appears *in place*,
-  as a panel over the video area with the same width, not a modal and not a
-  sidebar. Stem, choices as large tappable rows, a Submit button. After
-  submit: the verdict ("Correct" / "Not quite"), the feedback text, and a
-  "Continue" button. If wrong, also a "Re-watch this section" link that
-  seeks to the block's `start_seconds` and resumes.
-- The participant must answer before continuing; any answer is fine (no
-  passing rate). Re-answering by seeking back is allowed.
-- Seeking forward past the furthest point watched is prevented; seeking
-  back is free. This is a sponsor design choice, not a Standards
-  requirement, and the changelog should say so.
-- Keyboard: space toggles play, arrow keys seek within the watched range,
-  choices are focusable, Enter submits.
-- No confetti. No score. The tone is a colleague's quiet check-in, not a
-  game.
-- Native `<video>` with controls hidden and a custom minimal control row
-  (play/pause, time, mute). No player library.
-
-`/admin/courses/:code/preview` lists the course's lessons and opens the
-player for one. A banner says "Preview — nothing is recorded."
-
-## Admin question view
-`/admin/courses/:code` gains a Questions section: per lesson, the review
-questions in order with their `after_block` and a small indicator for
-two-choice ones, and the assessment questions listed separately (read-only,
-007 does the rest). Above it, the readiness checklist from
-`readiness.check`, rendered as plain lines with block/warn styling.
+Admin: `/admin/courses/:code` gains an Attempts card (count, pass rate,
+latest) linking to `/admin/courses/:code/attempts` (table, click for
+detail with every answer).
 
 ## Tests
-- ingest normalizes 5 review + 3 assessment into 8 questions, 32 choices,
-  exactly one correct per question
-- a version-2 ingest creates its own questions; version 1's remain
-- `required_review_questions`: 0.2→0, 0.4→1, 0.5→2, 0.6→2, 0.8→3, 1.0→3,
-  1.2→3, 1.4→4, 2.0→6 (the 5.01.2.1 chart and the above-one-credit rule)
-- readiness: a course whose credit needs 3 and has 2 counting review
-  questions reports `review_minimum` with both numbers; a two-choice review
-  question does not count and produces `review_two_choice`
-- grading: correct and incorrect verdicts, feedback returned both ways
-- the play payload and the admin question payload contain no `is_correct`
-  anywhere (walk the JSON)
-- `blocks` rules: non-contiguous refused, last end far from duration
-  refused, `after_block` beyond the list refused
+- `required_assessment_questions`: the chart, 5.0→25, 5.5→29, 1.2→7
+- duplicate detection: identical stems differing in case and trailing
+  punctuation are duplicates; a stem differing by one word is not
+- objective coverage: 3 of 4 objectives → 75 percent → no finding;
+  2 of 4 → finding listing the two uncovered
+- start refuses on stale credit and on a block finding
+- submit refuses with unanswered questions
+- 70.00 passes, 69.99 fails (construct question counts that produce these)
+- the result payload for a failed attempt contains no `is_correct`, no
+  `correct_choice`, no `feedback`, and no per-question array (walk it)
+- the result payload for a passed attempt contains all of them
+- the open-attempt questions payload contains no answers or feedback
+- a second start while one is open is refused; abandon then start works
+- `package_versions` on an attempt survives a re-ingest of the lesson
+- admin attempts endpoint returns per-answer detail for a failed attempt
+  (the admin sees what the participant may not)
 
 ## COMPLIANCE.md
-Rows for 5.01.2 (review questions and the player as participant
-engagement), 5.01.2.1 (placement via measured blocks; minimums; two-choice
-exclusion; no passing rate), 5.01.2.2 (verdict always, feedback always). The
-5.01.2.1 Gap: "other content reinforcement tools" (simulations, exercises)
-are not modeled; only multiple-choice review questions satisfy the floor.
+Rows for 6.01, 6.01.1, 6.01.2 (one row each for: passing grade; minimums
+and chart; duplicates; forced choice; objective coverage; sub-ii
+feedback), and 9.02.2(1) with the Gap that attempts are not yet tied to a
+participant. The sub-ii row's Where-in-code column should point at
+`result()` and the failed-attempt payload test by name; that test is the
+proof.
 
 ## Acceptance
 - `pytest` passes; migration round-trips
-- Ingest the exported ASC842-PCX-01 zip (with `blocks`); attach it; the
-  Questions section shows 5 review + 3 assessment; readiness shows the
-  review count against the required count for the course's credit
-- Preview: the video plays, pauses at each of the five review points on the
-  right word, the question panel works, wrong answers offer re-watch, and
-  the progress bar shows five ticks
-- The answer key is absent from every network response the preview makes
-  (check the browser's network tab, not just the tests)
+- ASC842-PCX with the real lesson: readiness shows the assessment count vs
+  required, and `objective_coverage` reports honestly (one lesson's 3
+  assessment questions against 4 objectives — if that is under 75 percent,
+  the finding is correct and the fix is in video-tool 04, not here)
+- Preview: take the assessment, answer one wrong of three, submit → 66.67,
+  failed, and the page shows nothing about which one; try again, all
+  correct → passed, with feedback
+- Network tab during a failed attempt: no correctness data anywhere
 
 ## When done
-Append the 006 entry. Decisions: questions per package version; in-video
-placement; forward-seek prevention as a sponsor choice; no player library.
-Known gaps: nothing persisted; assessment not built; other reinforcement
-tools not modeled. Add to ROADMAP improvement notes: captions toggle.
+Append the 007 entry. Decisions: form-not-sequence because of sub-ii; no
+shuffling; retakes allowed as sponsor policy. Known gaps: no test bank
+branch; recall exemption not modeled; attempts not yet tied to
+enrollment; retake policy not yet disclosed on the course page (011).
 Then stop.

@@ -7,6 +7,8 @@ credit or score; they exist so review questions can be counted against
 answer key ever leaving the database.
 """
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -89,11 +91,28 @@ def counts_toward_minimum(question: Question) -> bool:
 def course_review_questions(db: Session, course: Course) -> list[Question]:
     """The course's review questions: those of its attached packages'
     current versions, in lesson order then question order."""
+    return _course_questions(db, course, "review")
+
+
+def course_assessment_questions(db: Session, course: Course) -> list[Question]:
+    """The course's qualified assessment questions, in lesson order then
+    question order — the order the assessment serves them (no test bank,
+    no shuffling: every question, every time)."""
+    return _course_questions(db, course, "assessment")
+
+
+def _course_questions(db: Session, course: Course, kind: str) -> list[Question]:
     rows = []
     for lesson in sorted(course.lessons, key=lambda cl: cl.position):
         rows += [
-            q
-            for q in for_package(db, lesson.package_id)
-            if q.kind == "review"
+            q for q in for_package(db, lesson.package_id) if q.kind == kind
         ]
     return rows
+
+
+def normalized_stem(stem: str) -> str:
+    """The form in which two stems count as duplicates for 6.01.2's "duplicate
+    review and qualified assessment questions are not allowed": lowercase,
+    whitespace collapsed, trailing punctuation stripped."""
+    collapsed = re.sub(r"\s+", " ", stem.strip().lower())
+    return collapsed.rstrip(".?!,;:…").rstrip()

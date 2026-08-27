@@ -1,7 +1,12 @@
+import { getPreviewId } from "../admin/previewId";
 import { request } from "./client";
 
 function authHeaders(token) {
   return { "X-Admin-Token": token };
+}
+
+function previewHeaders(token) {
+  return { "X-Admin-Token": token, "X-Preview-Id": getPreviewId() };
 }
 
 export function uploadPackage(file, token) {
@@ -111,6 +116,47 @@ export function gradeReview(code, packageId, questionKey, choiceKey, token) {
       headers: authHeaders(token),
     }
   );
+}
+
+export function getAssessment(code, token) {
+  return request(`/api/v1/courses/${code}/assessment`, {
+    headers: previewHeaders(token),
+  });
+}
+
+export function startAssessmentAttempt(code, token) {
+  return request(`/api/v1/courses/${code}/assessment/attempts`, {
+    method: "POST",
+    headers: previewHeaders(token),
+  });
+}
+
+export function saveAssessmentAnswers(code, attemptId, answers, token) {
+  return request(`/api/v1/courses/${code}/assessment/attempts/${attemptId}/answers`, {
+    method: "PUT",
+    body: JSON.stringify({ answers }),
+    headers: previewHeaders(token),
+  });
+}
+
+export function submitAssessmentAttempt(code, attemptId, answers, token) {
+  return request(`/api/v1/courses/${code}/assessment/attempts/${attemptId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ answers }),
+    headers: previewHeaders(token),
+  });
+}
+
+export function getAssessmentAttempt(code, attemptId, token) {
+  return request(`/api/v1/courses/${code}/assessment/attempts/${attemptId}`, {
+    headers: previewHeaders(token),
+  });
+}
+
+export function listAttempts(code, token) {
+  return request(`/api/v1/admin/courses/${code}/attempts`, {
+    headers: authHeaders(token),
+  });
 }
 
 export function updateLessonVersion(code, packageId, newPackageId, token) {

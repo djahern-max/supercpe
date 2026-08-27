@@ -12,18 +12,18 @@ from tests.factories.package import OMIT, build_package
 from tests.test_courses import ingest, upload
 
 
-def make_question(i, kind, choices=4, after_block=1):
+def make_question(i, kind, choices=4, after_block=1, objective_ids=("lo-1",), stem=None):
     question = {
         "id": f"q-{kind}-{i}",
         "kind": kind,
-        "stem": f"Stem {kind} {i}?",
+        "stem": stem if stem is not None else f"Stem {kind} {i}?",
         "choices": [
             {"id": key, "text": f"Choice {key}"}
             for key in "abcdef"[:choices]
         ],
         "correct": "a",
         "feedback": f"Feedback for {kind} {i}.",
-        "objective_ids": ["lo-1"],
+        "objective_ids": list(objective_ids),
     }
     if kind == "review":
         question["after_block"] = after_block

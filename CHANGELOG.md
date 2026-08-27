@@ -483,3 +483,99 @@ Shipped: 2026-08-27
   modeled; only multiple-choice review questions satisfy the 5.01.2.1
   floor.
 - The readiness checklist only reports; the publish refusal is 008.
+
+## 007 — The qualified assessment
+Shipped: 2026-08-27
+
+**What changed**
+- 6.01.2 constants: `PASSING_PCT` (70), `OBJECTIVE_COVERAGE_PCT` (75), and
+  `RETAKES_ALLOWED` in `app/constants/assessment.py`;
+  `ASSESSMENT_PER_CREDIT` (5), the one-fifth chart, the forced-choice floor
+  `MIN_CHOICES_ASSESSMENT` (3), and `required_assessment_questions` in
+  `question_minimums.py`, reproducing the paragraph's own worked examples
+  (5 credits → 25, 5½ → 29). Ingest's pre-existing three-choice refusal now
+  aliases the same constant.
+- Four block readiness findings: `assessment_minimum` (count vs required,
+  both numbers shown), `assessment_forced_choice` (defense in depth behind
+  ingest), `assessment_duplicate` (normalized stems — lowercase, collapsed
+  whitespace, trailing punctuation stripped — naming both question keys and
+  lessons), `objective_coverage` (covered/total keyed by (package_id,
+  objective id), uncovered listed by lesson).
+- `attempts` and `attempt_answers` tables with migration: preview flag,
+  status CHECK (open/passed/failed), snapshot of the passing threshold,
+  `package_versions` recorded at start so the attempt proves what was
+  asked after any re-export, a partial unique index allowing one open
+  attempt per (course, preview identity), and `answer.question_id` with no
+  ON DELETE so an asked package version cannot be deleted from under the
+  record. `enrollment_id` is a bare nullable column until 010 adds the FK.
+- The engine (`app/services/assessment.py`): `start` refuses on stale
+  credit or any block finding; `submit` grades the whole form at once,
+  requiring every question answered, comparing the exact ratio (correct ×
+  100 ≥ 70 × total) so display rounding can never lift a score over the
+  floor; `abandon` retains a walked-away attempt as failed with no score;
+  `result` is the single source of everything a participant may see.
+- Endpoints under the admin token (010 re-gates): GET the assessment
+  (questions and choices, never answers or feedback), start, save partial
+  answers (refresh-safe), submit, get result — plus
+  `GET /api/v1/admin/courses/{code}/attempts` with per-answer detail, since
+  the admin may see what the participant may not. Preview identity is an
+  opaque per-session `X-Preview-Id` header. Result payloads are plain
+  dicts, deliberately un-modeled: a failed attempt's payload simply has no
+  per-question keys at all.
+- UI: `src/components/Assessment/` — plain intro (count, the 70 percent
+  requirement, results-after-submission, retakes), all questions on one
+  scrolling page as radio-group rows with no verdicts or colors anywhere
+  while open, answers saved on change, a sticky "N of M answered" footer,
+  one confirm on submit. Passed: score, then each question with the chosen
+  answer, the correct one marked, and the feedback. Failed: score, "70
+  percent is required," correct count, Try again — nothing else. Mounted
+  at `/admin/courses/:code/preview/assessment`; the course page gained an
+  Attempts card (count, pass rate, latest) linking to
+  `/admin/courses/:code/attempts` (table, click for every answer).
+- Tests: 19 new in `test_assessment.py`. The load-bearing ones walk the
+  payloads: a failed attempt's result (and its GET) contains no
+  `is_correct`, no correct choice, no feedback, and no per-question array;
+  a passed one contains all of them; the open-attempt questions payload
+  contains no answers or feedback. Verified end-to-end against ASC842-PCX:
+  one wrong of three → 66.67, failed, payload clean; retake all correct →
+  passed with feedback. 103 total.
+
+**Standards touched**
+- 6.01 — completion verification exists: server-graded, stored attempts;
+  nothing self-certified
+- 6.01.2 — the 70 percent floor, the per-credit minimums and chart with
+  the paragraph's worked examples as tests, the duplicate rule, the
+  forced-choice prohibition, 75 percent objective coverage, and sub-ii's
+  no-feedback-on-failure rule enforced in `result()`
+- 9.02.2(1) — attempts retained in full with the package-version snapshot;
+  not yet tied to a participant
+- COMPLIANCE.md gained rows for 6.01, 6.01.1 (deliberate n/a), six aspects
+  of 6.01.2, and 9.02.2(1).
+
+**Decisions**
+- Form-not-sequence because of sub-ii: pass or fail is only known after
+  the whole assessment is scored, so no per-question verdict may exist
+  while an attempt is open, and none may ever exist for a failed one. The
+  failed result stops at score and correct count — the outer limit of what
+  a score already reveals.
+- No shuffling: question order is package position then question position,
+  choices as stored. Auditability of "what was asked" beats the marginal
+  integrity gain; a shuffle can be added later with the order stored per
+  attempt.
+- Retakes allowed as sponsor policy (6.01.2 leaves it to the sponsor's
+  discretion); every attempt is retained regardless.
+- The passing threshold is snapshotted per attempt, and pass/fail compares
+  the exact ratio, never the two-decimal display score.
+- Result payloads bypass response models on purpose: an optional-field
+  schema could serialize forbidden key names into a failed payload.
+
+**Known gaps**
+- No test bank, and therefore sub-ii-a (the other feedback branch) is
+  deliberately unimplemented: every question is served every time.
+- The recall-as-learning-strategy exemption from the duplicate rule is not
+  modeled.
+- Attempts are not yet tied to an enrollment; the preview identity is a
+  per-session opaque header until 010.
+- The retake policy is not yet disclosed on the course page (011).
+- Nano learning's 100 percent rule and adaptive learning's path minimum
+  are out of scope with their delivery methods.
