@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { Route, Routes } from "react-router-dom";
 import { getHealth } from "./api/health";
+import AdminPackages from "./pages/AdminPackages/AdminPackages.jsx";
 import styles from "./App.module.css";
 
-function App() {
+function Home() {
   const [connected, setConnected] = useState(null);
 
   useEffect(() => {
@@ -32,6 +34,25 @@ function App() {
         </span>
       )}
     </main>
+  );
+}
+
+function NotFound() {
+  return (
+    <main className={styles.page}>
+      <h1 className={styles.wordmark}>404</h1>
+      <p>There is nothing at this address.</p>
+    </main>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/admin/packages" element={<AdminPackages />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
   );
 }
 

@@ -6,6 +6,8 @@ class Settings(BaseSettings):
 
     database_url: str
     cors_origins: str = "http://localhost:5173"
+    admin_token: str
+    storage_root: str = "uploads"
 
     @property
     def cors_origins_list(self) -> list[str]:

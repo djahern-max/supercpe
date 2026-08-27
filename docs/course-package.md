@@ -21,7 +21,7 @@ is the credit-bearing unit (a lesson on its own may be below the 0.2 minimum).
   "package_version": 1,
   "lesson_id": "ASC606-CON-01",
   "title": "Why Percentage of Completion Is No Longer a Method",
-  "content_hash": "sha256 of transcript.md + questions.json + video.mp4",
+  "content_hash": "sha256, see definition below",
 
   "video": {
     "duration_seconds": 486,
@@ -33,7 +33,9 @@ is the credit-bearing unit (a lesson on its own may be below the 0.2 minimum).
     "tts_model": "eleven_multilingual_v2"
   },
 
-  "learning_objectives": ["..."],
+  "learning_objectives": [
+    { "id": "lo-1", "text": "Distinguish a method from an output measure under ASC 606" }
+  ],
   "field_of_study": "Accounting",
   "knowledge_level": "Intermediate",
   "prerequisites": "Basic familiarity with ASC 606",
@@ -62,15 +64,20 @@ is the credit-bearing unit (a lesson on its own may be below the 0.2 minimum).
   was measured from the rendered narration.
 - `duration_seconds` must match the uploaded mp4 within 1 second, checked with
   ffprobe on the server. A mismatch is rejected, not warned.
-- `content_hash` is recomputed on ingest and must match. A re-upload with the
-  same hash is a no-op; a different hash creates a new lesson version and marks
-  the course's credit and review as stale.
+- `content_hash` is the lowercase hex sha256 digest of the concatenation of the
+  raw bytes of `transcript.md`, then `questions.json`, then `video.mp4`, in
+  exactly that order. It is recomputed on ingest and must match. A re-upload
+  with the same hash is a no-op; a different hash creates a new lesson version
+  and marks the course's credit and review as stale.
 - `word_count` is the count of text learning material a participant must
   *read* (7.02.5). For an all-video lesson it is 0 and stays 0. The transcript
   is not reading material and is never counted; it is the transcript of record.
 - `field_of_study` must be a value from `docs/2024-Fields-of-Study.pdf`.
 - `knowledge_level` must be one of the Standards' defined levels (Basic,
   Intermediate, Advanced, Overview, Update).
+- `learning_objectives` is a non-empty array of `{ "id", "text" }` objects.
+  Ids must be unique within the manifest; `questions.json` references them
+  through `objective_ids`.
 
 ## transcript.md
 

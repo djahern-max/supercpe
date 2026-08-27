@@ -1,10 +1,21 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import health
+from app.routers import admin_packages, health
+from app.services.ffprobe import ensure_ffprobe_available
 
-app = FastAPI(title="superCPE API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Fail at boot, not at first upload, if ffprobe is missing.
+    ensure_ffprobe_available()
+    yield
+
+
+app = FastAPI(title="superCPE API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,3 +26,4 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(admin_packages.router, prefix="/api/v1")
