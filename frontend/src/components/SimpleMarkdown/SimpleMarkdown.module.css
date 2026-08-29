@@ -1,0 +1,26 @@
+.markdown h1 {
+  margin: 0 0 var(--space-md);
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.markdown h2 {
+  margin: var(--space-xl) 0 var(--space-sm);
+  font-size: 1.25rem;
+}
+
+.markdown h3 {
+  margin: var(--space-lg) 0 var(--space-xs);
+  font-size: 1.0625rem;
+}
+
+.markdown p {
+  margin: var(--space-sm) 0;
+  line-height: 1.7;
+}
+
+.markdown ul {
+  margin: var(--space-sm) 0;
+  padding-left: 1.25rem;
+  line-height: 1.7;
+}

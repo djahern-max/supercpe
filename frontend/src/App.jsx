@@ -16,11 +16,13 @@ import AdminSponsor from "./pages/AdminSponsor/AdminSponsor.jsx";
 import Catalog from "./pages/Catalog/Catalog.jsx";
 import ChangePassword from "./pages/ChangePassword/ChangePassword.jsx";
 import CoursePage from "./pages/CoursePage/CoursePage.jsx";
+import HowItWorks from "./pages/HowItWorks/HowItWorks.jsx";
 import Login from "./pages/Login/Login.jsx";
 import MyAssessment from "./pages/MyAssessment/MyAssessment.jsx";
 import MyCourse from "./pages/MyCourse/MyCourse.jsx";
 import MyCourses from "./pages/MyCourses/MyCourses.jsx";
 import MyLesson from "./pages/MyLesson/MyLesson.jsx";
+import Policies from "./pages/Policies/Policies.jsx";
 import ReviewCourse from "./pages/ReviewCourse/ReviewCourse.jsx";
 import ReviewHome from "./pages/ReviewHome/ReviewHome.jsx";
 import styles from "./App.module.css";
@@ -84,6 +86,11 @@ function App() {
         <Route
           path="/courses/:code"
           element={<SiteGate><CoursePage /></SiteGate>}
+        />
+        <Route path="/policies" element={<SiteGate><Policies /></SiteGate>} />
+        <Route
+          path="/how-it-works"
+          element={<SiteGate><HowItWorks /></SiteGate>}
         />
         {/* Reachable but unlinked; staff and testers know the address. */}
         <Route path="/login" element={<Login />} />

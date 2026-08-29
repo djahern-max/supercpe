@@ -68,3 +68,14 @@ export function getMyAttempt(enrollmentId, attemptId) {
 export function myCertificateUrl(completionId) {
   return `${baseUrl}/api/v1/my/completions/${completionId}/certificate.pdf`;
 }
+
+export function getMyEvaluation(completionId) {
+  return request(`/api/v1/my/completions/${completionId}/evaluation`);
+}
+
+export function submitMyEvaluation(completionId, ratings, comments) {
+  return request(`/api/v1/my/completions/${completionId}/evaluation`, {
+    method: "POST",
+    body: JSON.stringify({ ratings, comments }),
+  });
+}

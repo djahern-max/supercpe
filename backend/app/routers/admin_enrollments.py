@@ -17,7 +17,7 @@ from app.schemas.enrollment import (
     EnrollRequest,
 )
 from app.schemas.package import ValidationErrors
-from app.services import completions, enrollments
+from app.services import completions, enrollments, retention
 from app.services import auth as auth_service
 from app.services import courses
 from app.services.completions import IssuanceBlocked
@@ -73,6 +73,7 @@ def _completion_out(db: Session, completion: Completion) -> AdminCompletionOut:
         certificate_rendered_at=completion.certificate_rendered_at,
         certificate_ready=completions.certificate_ready(db, completion),
         overdue=completion in completions.overdue(db),
+        retain_until=retention.retain_until(completion.completed_at),
     )
 
 

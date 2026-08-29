@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import AdminNav from "../../admin/AdminNav.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
+import { getAdminPolicies, publishPolicy } from "../../api/admin";
 import {
   getSponsor,
   setStateRegistrations,
@@ -68,6 +69,163 @@ function StatusPanel({ missingFields, missingForIssuance }) {
         </div>
       )}
     </>
+  );
+}
+
+function LaunchPanel({ findings }) {
+  // 011: the launch findings. Block findings are exactly what refuses the
+  // open flip (site_open_blockers); warn findings sit beside them.
+  if (!findings || findings.length === 0) {
+    return (
+      <div className={styles.successPanel}>
+        Launch checks pass: the site can open.
+      </div>
+    );
+  }
+  const blocks = findings.filter((finding) => finding.level === "block");
+  const warns = findings.filter((finding) => finding.level === "warn");
+  return (
+    <>
+      {blocks.length > 0 && (
+        <div className={styles.warnPanel}>
+          <p className={styles.panelTitle}>
+            The site cannot open until these are resolved:
+          </p>
+          <ul className={styles.panelList}>
+            {blocks.map((finding) => (
+              <li key={finding.code + finding.message}>{finding.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {warns.length > 0 && (
+        <div className={styles.warnPanel}>
+          <p className={styles.panelTitle}>Attention needed:</p>
+          <ul className={styles.panelList}>
+            {warns.map((finding) => (
+              <li key={finding.code + finding.message}>{finding.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+}
+
+const POLICY_KINDS = [
+  { kind: "registration", label: "Registration and attendance" },
+  { kind: "refund", label: "Refund and cancellation" },
+  { kind: "complaint", label: "Complaint resolution" },
+];
+
+/**
+ * The 8.01.1 policies: append-only versions, published from here. The
+ * current version of a kind is derived server-side; corrections are new
+ * versions, never edits.
+ */
+function PoliciesCard({ onAuthFailure, onPublished }) {
+  const [data, setData] = useState(null);
+  const [kind, setKind] = useState("registration");
+  const [body, setBody] = useState("");
+  const [errors, setErrors] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getAdminPolicies()
+      .then(setData)
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) onAuthFailure();
+        else setErrors(["Could not load the policies."]);
+      });
+  }, [onAuthFailure]);
+
+  const handlePublish = async () => {
+    setSaving(true);
+    setErrors(null);
+    try {
+      const next = await publishPolicy(kind, body);
+      setData(next);
+      setBody("");
+      if (onPublished) onPublished();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) onAuthFailure();
+      else if (err instanceof ApiError && err.status === 422 && err.data?.errors)
+        setErrors(err.data.errors);
+      else setErrors(["Publishing failed. Try again."]);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const current = (data?.history ?? []).filter((v) => v.is_current);
+
+  return (
+    <section className={styles.registrations}>
+      <h2 className={styles.subheading}>Policies</h2>
+      <p className={styles.muted}>
+        Published in advance of participation (8.01.1). A new version takes
+        effect immediately; every version is kept. The re-take policy and
+        the sponsor statement are rendered from code and cannot be edited
+        here.
+      </p>
+
+      {POLICY_KINDS.map(({ kind: k, label }) => {
+        const version = current.find((v) => v.kind === k);
+        return (
+          <div key={k} className={styles.policyRow}>
+            <p className={styles.panelTitle}>
+              {label}
+              {version ? (
+                <span className={styles.mutedInline}>
+                  {" "}
+                  — effective{" "}
+                  {new Date(version.effective_at).toLocaleDateString()}
+                </span>
+              ) : (
+                <span className={styles.missingInline}> — not published</span>
+              )}
+            </p>
+            {version && <p className={styles.policyBody}>{version.body}</p>}
+          </div>
+        );
+      })}
+
+      <div className={styles.field}>
+        <label className={styles.label} htmlFor="policy-kind">
+          Publish a new version
+        </label>
+        <select
+          id="policy-kind"
+          className={styles.input}
+          value={kind}
+          onChange={(event) => setKind(event.target.value)}
+        >
+          {POLICY_KINDS.map(({ kind: k, label }) => (
+            <option key={k} value={k}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <textarea
+        className={styles.textarea}
+        rows={6}
+        placeholder="The policy text (Markdown)."
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <ErrorPanel errors={errors} />
+      <div className={styles.registrationActions}>
+        <button
+          className={styles.button}
+          type="button"
+          disabled={saving || !body.trim()}
+          onClick={handlePublish}
+        >
+          {saving ? "Publishing…" : "Publish version"}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -267,6 +425,14 @@ function AdminSponsor() {
     refreshSession();
   }, [refreshSession]);
 
+  // Refreshes the launch findings after a policy publish, without
+  // touching a form the admin may be mid-edit on.
+  const reloadProfile = useCallback(() => {
+    getSponsor()
+      .then((data) => setProfile(data))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     getSponsor()
@@ -369,6 +535,7 @@ function AdminSponsor() {
             missingFields={profile.missing_fields}
             missingForIssuance={profile.missing_for_issuance}
           />
+          <LaunchPanel findings={profile.launch_findings} />
           <FindingsPanel findings={profile.findings} />
 
           <form className={styles.form} onSubmit={handleSaveProfile}>
@@ -442,6 +609,11 @@ function AdminSponsor() {
               {saving ? "Saving…" : "Save profile"}
             </button>
           </form>
+
+          <PoliciesCard
+            onAuthFailure={handleAuthFailure}
+            onPublished={reloadProfile}
+          />
 
           <SiteModeCard onAuthFailure={handleAuthFailure} />
 

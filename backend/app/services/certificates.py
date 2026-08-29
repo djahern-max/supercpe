@@ -6,10 +6,14 @@ true when the credit was earned. Re-rendering the same snapshot produces
 the same text content (asserted by test); byte identity is not required
 (the PDF carries a creation timestamp in its metadata).
 
-fpdf2 is pure Python with no system dependencies. Its built-in Helvetica
-covers Latin-1 only, so text is sanitized with replacement characters
-rather than crashing on an exotic character in a name or title.
+fpdf2 is pure Python with no system dependencies. Its built-in fonts
+cover Latin-1 only, so the vendored DejaVu Sans faces (Unicode, license
+alongside them in app/assets/fonts/) are embedded instead: a participant
+named "Nguyễn" or "Michałowski" gets their own name on their certificate
+(010 shipped with a sanitize-to-Latin-1 gap; 011 closes it).
 """
+
+from pathlib import Path
 
 from fpdf import FPDF
 
@@ -17,21 +21,22 @@ _PAGE_WIDTH = 216  # letter, mm
 _MARGIN = 20
 _BODY_WIDTH = _PAGE_WIDTH - 2 * _MARGIN
 
-
-def _latin1(text: str) -> str:
-    return text.encode("latin-1", "replace").decode("latin-1")
+_FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 
 
 class _Certificate(FPDF):
     def __init__(self):
         super().__init__(format="letter")
+        self.add_font("DejaVu", "", _FONTS_DIR / "DejaVuSans.ttf")
+        self.add_font("DejaVu", "B", _FONTS_DIR / "DejaVuSans-Bold.ttf")
+        self.add_font("DejaVu", "I", _FONTS_DIR / "DejaVuSans-Oblique.ttf")
         self.set_auto_page_break(auto=False)
         self.set_margins(_MARGIN, _MARGIN)
         self.add_page()
 
     def line_out(self, text: str, size: int = 11, style: str = "", gap: int = 6):
-        self.set_font("helvetica", style, size)
-        self.multi_cell(_BODY_WIDTH, gap, _latin1(text), align="C")
+        self.set_font("DejaVu", style, size)
+        self.multi_cell(_BODY_WIDTH, gap, text, align="C")
 
     def spacer(self, height: int = 4):
         self.ln(height)

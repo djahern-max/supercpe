@@ -15,6 +15,7 @@ from app.schemas.course import (
     CoursePublicSummary,
     PublicLesson,
     PublicObjectiveGroup,
+    PublicOutlineLesson,
     PublicPerson,
 )
 from app.services import courses, credit, development
@@ -66,12 +67,12 @@ def list_courses(db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/{course_code}", response_model=CoursePublicDetail)
-def get_course(course_code: str, db: Session = Depends(get_db)):
-    course = courses.get_published(db, course_code)
-    if course is None:
-        raise HTTPException(status_code=404, detail="Course not found")
+def public_detail(course) -> CoursePublicDetail:
+    """The full 8.01 payload for one course — also what the audit bundle
+    stores as 6-descriptive/course.json, so the bundle and the page can
+    never disagree."""
     ordered = sorted(course.lessons, key=lambda cl: cl.position)
+    title_of = {cl.package.lesson_id: cl.package.title for cl in ordered}
     return CoursePublicDetail(
         **_summary_fields(course),
         objectives=[
@@ -91,4 +92,22 @@ def get_course(course_code: str, db: Session = Depends(get_db)):
             )
             for cl in ordered
         ],
+        outline=[
+            PublicOutlineLesson(
+                lesson_id=group["lesson_id"],
+                position=group["position"],
+                title=title_of[group["lesson_id"]],
+                objectives=group["objectives"],
+            )
+            for group in courses.course_objectives(course)
+        ],
+        policies_url="/policies",
     )
+
+
+@router.get("/{course_code}", response_model=CoursePublicDetail)
+def get_course(course_code: str, db: Session = Depends(get_db)):
+    course = courses.get_published(db, course_code)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return public_detail(course)

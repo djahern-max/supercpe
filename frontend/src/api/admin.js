@@ -220,3 +220,49 @@ export function publishCourse(code) {
 export function unpublishCourse(code) {
   return request(`/api/v1/admin/courses/${code}/unpublish`, { method: "POST" });
 }
+
+export function getCourseEvaluations(code) {
+  return request(`/api/v1/admin/courses/${code}/evaluations`);
+}
+
+export function listEvaluationReviews(code) {
+  return request(`/api/v1/admin/courses/${code}/evaluation-reviews`);
+}
+
+export function recordEvaluationReview(code, note, informedDeveloper) {
+  return request(`/api/v1/admin/courses/${code}/evaluation-reviews`, {
+    method: "POST",
+    body: JSON.stringify({ note, informed_developer: informedDeveloper }),
+  });
+}
+
+export function getAdminPolicies() {
+  return request("/api/v1/admin/policies");
+}
+
+export function publishPolicy(kind, body, effectiveAt) {
+  return request("/api/v1/admin/policies", {
+    method: "POST",
+    body: JSON.stringify({
+      kind,
+      body,
+      ...(effectiveAt ? { effective_at: effectiveAt } : {}),
+    }),
+  });
+}
+
+export function listAuditBundles(code) {
+  return request(`/api/v1/admin/courses/${code}/audit-bundle`);
+}
+
+export function generateAuditBundle(code, includeVideo) {
+  return request(`/api/v1/admin/courses/${code}/audit-bundle`, {
+    method: "POST",
+    body: JSON.stringify({ include_video: includeVideo }),
+  });
+}
+
+export function auditBundleUrl(code, exportId) {
+  const baseUrl = import.meta.env.VITE_API_URL;
+  return `${baseUrl}/api/v1/admin/courses/${code}/audit-bundle/${exportId}.zip`;
+}

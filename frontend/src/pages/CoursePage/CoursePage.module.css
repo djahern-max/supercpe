@@ -103,3 +103,37 @@
   font-size: 0.875rem;
   color: var(--color-text-muted);
 }
+
+.outlineList {
+  margin: 0;
+  padding-left: 1.25rem;
+  line-height: 1.7;
+}
+
+.outlineItem {
+  margin-bottom: var(--space-sm);
+}
+
+.outlineTitle {
+  font-weight: 600;
+}
+
+.outlineObjectives {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--color-text-muted);
+}
+
+.policyLinks {
+  margin: var(--space-lg) 0 0;
+  font-size: 0.9375rem;
+}
+
+.policyLinks a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.policyLinks a:hover {
+  text-decoration: underline;
+}

@@ -6,19 +6,25 @@ import { ApiError } from "../../api/client";
 import {
   adminCertificateUrl,
   attachLesson,
+  auditBundleUrl,
   deleteCourse,
   detachLesson,
   enrollParticipant,
+  generateAuditBundle,
   getCourse,
+  getCourseEvaluations,
   listAttempts,
+  listAuditBundles,
   listCompletions,
   listEnrollments,
+  listEvaluationReviews,
   listPackages,
   listSmes,
   moveLesson,
   publishCourse,
   recomputeCredit,
   recordCourseReview,
+  recordEvaluationReview,
   renderCertificate,
   setCourseDeveloper,
   setCourseReviewCycle,
@@ -53,6 +59,21 @@ function formatDuration(totalSeconds) {
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
+
+function formatBytes(bytes) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+// Column labels for the four rated 4.04.1 elements; the full prompts are
+// in the summary payload.
+const EVALUATION_ELEMENTS = [
+  { key: "objectives_met", label: "Objectives" },
+  { key: "prerequisites_appropriate", label: "Prerequisites" },
+  { key: "materials_relevant", label: "Materials" },
+  { key: "time_appropriate", label: "Time" },
+];
 
 function ErrorPanel({ errors }) {
   if (!errors || errors.length === 0) return null;
@@ -96,6 +117,15 @@ function AdminCourseDetail() {
   const [enrollEmail, setEnrollEmail] = useState("");
   const [enrollErrors, setEnrollErrors] = useState(null);
   const [certificateErrors, setCertificateErrors] = useState(null);
+  const [evaluations, setEvaluations] = useState(null);
+  const [evaluationReviews, setEvaluationReviews] = useState(null);
+  const [evaluationReviewNote, setEvaluationReviewNote] = useState("");
+  const [informedDeveloper, setInformedDeveloper] = useState(false);
+  const [evaluationErrors, setEvaluationErrors] = useState(null);
+  const [auditExports, setAuditExports] = useState(null);
+  const [includeVideo, setIncludeVideo] = useState(false);
+  const [auditErrors, setAuditErrors] = useState(null);
+  const [generatingBundle, setGeneratingBundle] = useState(false);
 
   const handleAuthFailure = useCallback(() => {
     refreshSession();
@@ -139,6 +169,15 @@ function AdminCourseDetail() {
     listCompletions(code)
       .then(setCompletions)
       .catch(() => setCompletions([]));
+    getCourseEvaluations(code)
+      .then(setEvaluations)
+      .catch(() => setEvaluations(null));
+    listEvaluationReviews(code)
+      .then(setEvaluationReviews)
+      .catch(() => setEvaluationReviews([]));
+    listAuditBundles(code)
+      .then(setAuditExports)
+      .catch(() => setAuditExports([]));
   }, [code, applyCourse, handleAuthFailure]);
 
   useEffect(() => {
@@ -268,6 +307,39 @@ function AdminCourseDetail() {
       } else {
         setCertificateErrors(["The render failed. Try again."]);
       }
+    }
+  };
+
+  const handleRecordEvaluationReview = async () => {
+    setEvaluationErrors(null);
+    try {
+      await recordEvaluationReview(
+        code,
+        evaluationReviewNote.trim(),
+        informedDeveloper
+      );
+      setEvaluationReviewNote("");
+      setInformedDeveloper(false);
+      listEvaluationReviews(code).then(setEvaluationReviews).catch(() => {});
+      // The readiness panel may carry evaluation_review_due; refresh it.
+      getCourse(code).then(applyCourse).catch(() => {});
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) handleAuthFailure();
+      else setEvaluationErrors(["Recording the review failed. Try again."]);
+    }
+  };
+
+  const handleGenerateBundle = async () => {
+    setAuditErrors(null);
+    setGeneratingBundle(true);
+    try {
+      await generateAuditBundle(code, includeVideo);
+      listAuditBundles(code).then(setAuditExports).catch(() => {});
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) handleAuthFailure();
+      else setAuditErrors(["Generating the bundle failed. Try again."]);
+    } finally {
+      setGeneratingBundle(false);
     }
   };
 
@@ -988,6 +1060,182 @@ function AdminCourseDetail() {
               ))}
             </tbody>
           </table>
+        )}
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Evaluations</h2>
+        <ErrorPanel errors={evaluationErrors} />
+        {evaluations === null && (
+          <p className={styles.muted}>Loading evaluations…</p>
+        )}
+        {evaluations !== null && (
+          <>
+            <p className={styles.muted}>
+              {evaluations.summary.n === 0
+                ? "No evaluations submitted yet."
+                : `${evaluations.summary.n} evaluation(s). ` +
+                  EVALUATION_ELEMENTS.map(
+                    ({ key, label }) =>
+                      `${label}: ${evaluations.summary.elements[key].mean}`
+                  ).join(" · ")}
+              {" "}Instructor evaluation is not applicable (self study).
+            </p>
+            {evaluations.developer_name && (
+              <p className={styles.muted}>
+                4.04.2: inform the developer of record,{" "}
+                <strong>{evaluations.developer_name}</strong>, of these
+                results (email delivery is a later feature).
+              </p>
+            )}
+            {evaluations.rows.length > 0 && (
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Submitted</th>
+                    {EVALUATION_ELEMENTS.map(({ key, label }) => (
+                      <th key={key}>{label}</th>
+                    ))}
+                    <th>Comments</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {evaluations.rows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{new Date(row.submitted_at).toLocaleDateString()}</td>
+                      {EVALUATION_ELEMENTS.map(({ key }) => (
+                        <td key={key}>{row[key]}</td>
+                      ))}
+                      <td>{row.comments || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <h3 className={styles.subsectionTitle}>
+              Reviews of results (4.04.2)
+            </h3>
+            {evaluationReviews !== null && evaluationReviews.length > 0 && (
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Reviewed</th>
+                    <th>By</th>
+                    <th>Developer informed</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {evaluationReviews.map((review) => (
+                    <tr key={review.id}>
+                      <td>
+                        {new Date(review.reviewed_at).toLocaleDateString()}
+                      </td>
+                      <td>{review.reviewed_by_email}</td>
+                      <td>{review.informed_developer ? "yes" : "no"}</td>
+                      <td>{review.note || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {evaluationReviews !== null && evaluationReviews.length === 0 && (
+              <p className={styles.muted}>No review recorded yet.</p>
+            )}
+            <div className={styles.formRow}>
+              <input
+                className={styles.input}
+                placeholder="Note (optional)"
+                value={evaluationReviewNote}
+                onChange={(event) =>
+                  setEvaluationReviewNote(event.target.value)
+                }
+              />
+              <label className={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={informedDeveloper}
+                  onChange={(event) =>
+                    setInformedDeveloper(event.target.checked)
+                  }
+                />
+                Developer informed
+              </label>
+              <button
+                className={styles.smallButton}
+                type="button"
+                onClick={handleRecordEvaluationReview}
+              >
+                Record review of results
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Audit bundle</h2>
+        <p className={styles.muted}>
+          The 9.02.2 documentation set for this course as one zip. Every
+          generation is kept and logged.
+        </p>
+        <ErrorPanel errors={auditErrors} />
+        <div className={styles.formRow}>
+          <label className={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={includeVideo}
+              onChange={(event) => setIncludeVideo(event.target.checked)}
+            />
+            Include videos (large — the zip carries every pinned mp4)
+          </label>
+          <button
+            className={styles.smallButton}
+            type="button"
+            disabled={generatingBundle}
+            onClick={handleGenerateBundle}
+          >
+            {generatingBundle ? "Generating…" : "Generate"}
+          </button>
+        </div>
+        {auditExports !== null && auditExports.length > 0 && (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Generated</th>
+                <th>By</th>
+                <th>Size</th>
+                <th>sha256</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditExports.map((exportRow) => (
+                <tr key={exportRow.id}>
+                  <td>{new Date(exportRow.generated_at).toLocaleString()}</td>
+                  <td>{exportRow.generated_by_email}</td>
+                  <td>{formatBytes(exportRow.size_bytes)}</td>
+                  <td>
+                    <code title={exportRow.sha256}>
+                      {exportRow.sha256.slice(0, 12)}…
+                    </code>
+                  </td>
+                  <td>
+                    <a
+                      className={styles.previewLink}
+                      href={auditBundleUrl(code, exportRow.id)}
+                    >
+                      Download
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {auditExports !== null && auditExports.length === 0 && (
+          <p className={styles.muted}>No bundle generated yet.</p>
         )}
       </section>
 

@@ -13,6 +13,12 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_role
 from app.constants.assessment import PASSING_PCT, RETAKES_ALLOWED
+from app.constants.evaluation import (
+    PROMPTS,
+    RATED_ELEMENTS,
+    SCALE_MAX,
+    SCALE_MIN,
+)
 from app.db import get_db
 from app.models.account import Account
 from app.models.attempt import Attempt
@@ -34,6 +40,11 @@ from app.schemas.enrollment import (
     ProgressOut,
     ProgressUpdate,
 )
+from app.schemas.evaluation import (
+    EvaluationPrompt,
+    EvaluationSubmit,
+    MyEvaluationInfo,
+)
 from app.schemas.package import ValidationErrors
 from app.schemas.player import (
     PlayBlock,
@@ -42,10 +53,11 @@ from app.schemas.player import (
     ReviewAnswer,
     ReviewResult,
 )
-from app.services import assessment, completions, enrollments
+from app.services import assessment, completions, enrollments, evaluations
 from app.services import questions as questions_service
 from app.services.assessment import AssessmentRuleViolation
 from app.services.completions import CreditStale, IssuanceBlocked
+from app.services.evaluations import EvaluationRuleViolation
 from app.storage import Storage, get_storage
 
 router = APIRouter(prefix="/my")
@@ -90,6 +102,7 @@ def _completion_out(db: Session, enrollment: Enrollment) -> MyCompletionOut | No
         field_of_study=completion.field_of_study,
         certificate_number=completion.certificate_number,
         certificate_ready=completions.certificate_ready(db, completion),
+        evaluation_requested=evaluations.solicit(db, completion),
     )
 
 
@@ -427,6 +440,68 @@ def get_attempt(
     enrollment = _get_enrollment_or_404(db, account, enrollment_id)
     attempt = _get_attempt_or_404(db, enrollment, attempt_id)
     return assessment.result(attempt)
+
+
+def _get_completion_or_404(db: Session, account: Account, completion_id: int):
+    completion = completions.get(db, completion_id)
+    if completion is None or completion.enrollment.account_id != account.id:
+        raise HTTPException(status_code=404, detail="Completion not found")
+    return completion
+
+
+@router.get(
+    "/completions/{completion_id}/evaluation", response_model=MyEvaluationInfo
+)
+def get_evaluation(
+    completion_id: int,
+    db: Session = Depends(get_db),
+    account: Account = Depends(participant),
+):
+    """Whether the 4.04.1 prompt should appear, and the exact wording to
+    ask with. Only the four applicable elements are served; item 5
+    (instructors) is never asked of a self study participant."""
+    completion = _get_completion_or_404(db, account, completion_id)
+    return MyEvaluationInfo(
+        due=evaluations.solicit(db, completion),
+        submitted=evaluations.get_for_completion(db, completion) is not None,
+        scale_min=SCALE_MIN,
+        scale_max=SCALE_MAX,
+        prompts=[
+            EvaluationPrompt(key=element, text=PROMPTS[element])
+            for element in RATED_ELEMENTS
+        ],
+    )
+
+
+@router.post(
+    "/completions/{completion_id}/evaluation",
+    response_model=MyEvaluationInfo,
+    status_code=201,
+    responses={422: {"model": ValidationErrors}},
+)
+def submit_evaluation(
+    completion_id: int,
+    payload: EvaluationSubmit,
+    db: Session = Depends(get_db),
+    account: Account = Depends(participant),
+):
+    completion = _get_completion_or_404(db, account, completion_id)
+    try:
+        evaluations.submit(db, completion, payload.ratings, payload.comments)
+    except EvaluationRuleViolation as violation:
+        return JSONResponse(
+            status_code=422, content={"errors": violation.errors}
+        )
+    return MyEvaluationInfo(
+        due=False,
+        submitted=True,
+        scale_min=SCALE_MIN,
+        scale_max=SCALE_MAX,
+        prompts=[
+            EvaluationPrompt(key=element, text=PROMPTS[element])
+            for element in RATED_ELEMENTS
+        ],
+    )
 
 
 @router.get("/completions/{completion_id}/certificate.pdf")

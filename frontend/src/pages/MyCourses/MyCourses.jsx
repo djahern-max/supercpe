@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { listMyCourses, myCertificateUrl } from "../../api/my";
+import EvaluationForm from "../../components/EvaluationForm/EvaluationForm.jsx";
 import styles from "./MyCourses.module.css";
 
 function formatDate(iso) {
@@ -142,8 +143,17 @@ function MyCourses() {
             {enrollment.review_total} review questions answered
           </p>
           <PrimaryAction enrollment={enrollment} />
+          {enrollment.completion?.evaluation_requested && (
+            <EvaluationForm
+              completionId={enrollment.completion.completion_id}
+            />
+          )}
         </article>
       ))}
+
+      <p className={styles.footerLink}>
+        <Link to="/how-it-works">How a course works</Link>
+      </p>
     </main>
   );
 }

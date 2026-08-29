@@ -54,6 +54,59 @@ class Finding:
     message: str
 
 
+def launch_findings(db: Session) -> list[Finding]:
+    """What stands between the sponsor and opening the site — distinct
+    from publish findings: a course may publish without these, but the
+    site should not open (8.01.1 requires the policies "formalized,
+    published, and made available" before participants arrive). Block
+    findings here are exactly what `site.site_open_blockers` refuses the
+    open flip with; warn findings are reported beside them."""
+    from app.constants.evaluation import EVALUATION_REVIEW_DAYS
+    from app.services import courses as courses_module
+    from app.services import evaluations as evaluations_service
+    from app.services import policies as policies_service
+
+    findings: list[Finding] = []
+    item_of = {"registration": 8, "refund": 9, "complaint": 10}
+    for kind in policies_service.missing_kinds(db):
+        findings.append(
+            Finding(
+                code="policy_missing",
+                level="block",
+                message=(
+                    f"{policies_service.KIND_LABELS[kind]} policy not "
+                    f"published (8.01 item {item_of[kind]}); 8.01.1 requires "
+                    "policies formalized, published, and made available."
+                ),
+            )
+        )
+    for course in courses_module.list_courses(db):
+        due = evaluations_service.review_due(db, course)
+        if due is not None:
+            findings.append(
+                Finding(
+                    code="evaluation_review_due",
+                    level="warn",
+                    message=_evaluation_review_message(
+                        course.course_code, due, EVALUATION_REVIEW_DAYS
+                    ),
+                )
+            )
+    return findings
+
+
+def _evaluation_review_message(
+    course_code: str, due: dict, review_days: int
+) -> str:
+    return (
+        f"{course_code}: {due['unreviewed']} evaluation(s) unreviewed, the "
+        f"oldest submitted {due['oldest_submitted_at'].date().isoformat()}, "
+        f"more than {review_days} days ago. 4.04.2 requires periodic review "
+        f"of evaluation results ({review_days} days is superCPE's own "
+        "interval)."
+    )
+
+
 def sponsor_findings(db: Session) -> list[Finding]:
     """Sponsor-level findings, not tied to any one course. Today just
     `certificates_overdue`: 9.01 expects the certificate "as soon as
@@ -191,8 +244,32 @@ def check(db: Session, course: Course) -> list[Finding]:
 
     findings += _assessment_findings(db, course, fresh_credit, review_questions)
     findings += _development_findings(course)
+    findings += _evaluation_findings(db, course)
 
     return findings
+
+
+def _evaluation_findings(db: Session, course: Course) -> list[Finding]:
+    """The 4.04.2 warn finding: evaluations have waited longer than
+    EVALUATION_REVIEW_DAYS without a recorded review of results.
+    "Periodically" made concrete and reported, not enforced — never a
+    block, because the fix (record a review) has nothing to do with the
+    course's content."""
+    from app.constants.evaluation import EVALUATION_REVIEW_DAYS
+    from app.services import evaluations as evaluations_service
+
+    due = evaluations_service.review_due(db, course)
+    if due is None:
+        return []
+    return [
+        Finding(
+            code="evaluation_review_due",
+            level="warn",
+            message=_evaluation_review_message(
+                course.course_code, due, EVALUATION_REVIEW_DAYS
+            ),
+        )
+    ]
 
 
 def _assessment_findings(

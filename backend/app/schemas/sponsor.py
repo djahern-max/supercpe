@@ -66,6 +66,10 @@ class SponsorProfileAdmin(BaseModel):
     may_claim_registry: bool
     state_registrations: list[StateRegistration]
     findings: list[SponsorFinding]
+    # 011: what stands between the sponsor and opening the site
+    # (readiness.launch_findings) — missing policies block the flip;
+    # evaluation_review_due warns beside them.
+    launch_findings: list[SponsorFinding]
 
 
 class SponsorProfilePublic(BaseModel):

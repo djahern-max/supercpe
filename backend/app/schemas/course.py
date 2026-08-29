@@ -268,8 +268,24 @@ class CoursePublicSummary(BaseModel):
     last_documented_date: date | None
 
 
+class PublicOutlineLesson(BaseModel):
+    """One entry of the 4.05.3 item 1 overview of topics: the lesson's
+    title with its objectives, in course order. Derived from the packages;
+    no new storage."""
+
+    lesson_id: str
+    position: int
+    title: str
+    objectives: list[LessonObjective]
+
+
 class CoursePublicDetail(CoursePublicSummary):
     """The full 8.01 disclosure payload for a published course page."""
 
     objectives: list[PublicObjectiveGroup]
     lessons: list[PublicLesson]
+    # 4.05.3 item 1: an overview of topics.
+    outline: list[PublicOutlineLesson]
+    # 8.01 items 8-10 live on one published policies page; the course page
+    # links it above the enrollment call to action.
+    policies_url: str

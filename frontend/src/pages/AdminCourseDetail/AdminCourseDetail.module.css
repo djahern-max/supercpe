@@ -361,3 +361,19 @@
 .enrollForm .input {
   max-width: 20rem;
 }
+
+.formRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}

@@ -48,7 +48,8 @@ def db_session(test_engine):
     with test_engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE completions, certificate_sequences, "
+                "TRUNCATE evaluations, evaluation_reviews, audit_exports, "
+                "policy_versions, completions, certificate_sequences, "
                 "review_answers, lesson_progress, attempt_answers, "
                 "attempts, enrollments, choices, questions, "
                 "course_reviews, course_lessons, courses, lesson_packages, "
@@ -89,6 +90,17 @@ def make_account(
         created_by=None,
         must_change_password=must_change_password,
     )
+
+
+def publish_test_policies(db_session, account):
+    """Publish the three 8.01 policies so `set_site_mode(open)` passes the
+    011 launch gate; tests that open the site call this first."""
+    from app.services import policies as policies_service
+
+    for kind in ("registration", "refund", "complaint"):
+        policies_service.publish(
+            db_session, kind, f"Test {kind} policy.", None, account
+        )
 
 
 def login(client, email, password):

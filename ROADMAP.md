@@ -45,6 +45,11 @@ Everything runs on the developer's machine. No public surface.
   database's ASC842-PCX was published on a test review by a fictitious
   reviewer; unpublish, delete the fictitious SME and their review, and
   re-review with the real second CPA before anything ships.
+  **Storage key prefixes in use** (from 011) — the Spaces implementation
+  and its backup policy must cover all three: `packages/` (lesson videos),
+  `certificates/` (rendered PDFs), `audits/` (bundle zips). All three are
+  write-once: nothing in code overwrites or deletes an existing key under
+  any of them.
 
 ## Phase B — Deployed, closed
 superCPE.com is live but the public sees a coming-soon page.
@@ -103,6 +108,19 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   a re-export that rewords prerequisites can only be swapped in by
   detach-then-attach; the agreement check could exclude the lesson being
   updated.
+- 4.05.3 items 2–3: the course package should carry a glossary
+  (`manifest.glossary[]`, term/definition/source) and superCPE should
+  render it with a term search — a contract change coordinated through
+  `docs/course-package.md` and a video-tool feature to author it from the
+  sources folder.
+- The Standards' effective-date paragraph (self study programs first
+  published on or after March 1, 2027 must comply with the 2026 edition;
+  existing programs by November 1, 2028) is deliberately recorded nowhere
+  in code (011's conclusion): superCPE is built to the 2026 Standards
+  uniformly from the start, so the transition dates gate no behavior — a
+  constant would exist only to never be read. If a pre-2026-Standards
+  program ever needed hosting, that would be a new requirement, not a
+  flag flip.
 - Admin extension of an enrollment's expiry: deliberately not built (010).
   9.02.2(3) reads "no longer than one year from the date of purchase or
   enrollment" — a cap anchored to the original enrollment, not a clock that

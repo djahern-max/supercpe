@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
+import EvaluationForm from "../EvaluationForm/EvaluationForm.jsx";
 import styles from "./Assessment.module.css";
 
 /**
@@ -143,6 +144,11 @@ function Assessment({ api, certificateUrl }) {
               </p>
             )}
           </div>
+        )}
+        {completion && completion.evaluation_requested && (
+          // 4.04.1: the result page solicits the evaluation; skippable,
+          // and the certificate above never waits on it.
+          <EvaluationForm completionId={completion.completion_id} />
         )}
         <ol className={styles.reviewList}>
           {result.questions.map((question) => (

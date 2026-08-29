@@ -26,6 +26,7 @@ from app.models.question import Question
 from app.services import completions as completions_service
 from app.services import credit, readiness
 from app.services import enrollments as enrollments_service
+from app.services import evaluations as evaluations_service
 from app.services import questions as questions_service
 
 _PCT_2DP = Decimal("0.01")
@@ -399,6 +400,10 @@ def result(attempt: Attempt) -> dict:
                     "field_of_study": completion.field_of_study,
                     "certificate_number": completion.certificate_number,
                     "certificate_ready": completions_service.certificate_ready(
+                        db, completion
+                    ),
+                    # 4.04.1: the result page solicits the evaluation.
+                    "evaluation_requested": evaluations_service.solicit(
                         db, completion
                     ),
                 }

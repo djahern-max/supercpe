@@ -947,3 +947,125 @@ Shipped: 2026-08-29
   evaluation (4.04) attaches to the completion row that now exists;
   everything else the audit bundle needs (attempts, answers, progress,
   completions, snapshots, the credit record) is already in rows.
+
+## 011 — Program evaluation, policies, retention, and the audit bundle
+Shipped: 2026-08-29
+
+**What changed**
+- `evaluations` (4.04.1): one per completion, the four applicable elements
+  on a 1–5 scale with CHECKs, `instructors_effective` constrained null
+  (self study; the column exists so the record visibly answers item 5 as
+  not applicable), comments, and an `objectives_snapshot` copied from the
+  completion's pinned packages. The exact prompt wording is code-versioned
+  in `app/constants/evaluation.py`. Solicited on the result page and
+  `/my/courses` for `SOLICIT_UNTIL_DAYS` (30) after completion; skippable,
+  refusable once, and the certificate never waits on it.
+- `evaluation_reviews` (4.04.2): dated, by account, with the summary
+  snapshotted as of the review and an `informed_developer` attestation.
+  The `evaluation_review_due` warn finding (in `readiness.check` and the
+  sponsor panel) fires when an evaluation has waited more than
+  `EVALUATION_REVIEW_DAYS` (90) without a review.
+- `policy_versions` (8.01 items 8–10): append-only, effective-dated; the
+  current version of a kind is derived, never marked. Public `/policies`
+  page and payload behind the same gate as the catalog; the course page
+  links it. The re-take policy is rendered from `RETAKES_ALLOWED` and
+  `PASSING_PCT` (010's disclosure debt paid); the item 11 sponsor
+  statement is `NASBA_SPONSOR_STATEMENT`, rendered only under
+  `may_claim_registry`.
+- New site-open refusal: `site_open_blockers()` in `app/services/site.py`;
+  `set_site_mode(open)` now refuses (422) naming each policy kind with no
+  current version. 009 let the flip through unchecked. `/admin/sponsor`
+  gains the launch findings panel and a Policies card.
+- `RETENTION_YEARS = 5` (`app/constants/retention.py`, 9.02 quoted);
+  `retain_until` derived in `app/services/retention.py`, shown on the
+  admin completions table and in every bundle record with a
+  `completed_at`. Nothing deletes at the boundary.
+- 4.05.3 items 1 and 4: the public course payload gains `outline`
+  (lesson titles with their objectives, no new storage), rendered as
+  "What this course covers"; `/how-it-works` serves instructions whose
+  numbers are read from the constants that enforce them, linked from
+  `/my/courses` and the course page.
+- The per-course audit bundle (`app/services/audit_bundle.py`): the seven
+  9.02.2 elements as directories in one zip with a README that quotes and
+  maps each, `bundle.json` listing every file with sha256 and size, CSVs
+  in UTF-8 with ISO 8601 UTC timestamps, and every package version ever
+  attached or pinned under `7-materials/`. Videos by reference unless
+  `include_video`. Exports are stored at `audits/<code>/<timestamp>.zip`
+  and logged append-only in `audit_exports`; the admin course page gains
+  the Audit bundle card (generate, history, download).
+- Certificate font fix: DejaVu Sans (regular, bold, oblique, with its
+  license) vendored under `backend/app/assets/fonts/`; `render` embeds
+  them and no longer sanitizes to Latin-1, so names like "Nguyễn
+  Michałowski" print and extract unchanged. Latin-1 text renders
+  identically.
+- No change to `docs/course-package.md`.
+- Tests: 31 new across `test_evaluations.py`, `test_policies.py`,
+  `test_audit_bundle.py`, and the font test in `test_certificates.py`;
+  199 total (was 168), all passing.
+
+**Standards touched**
+- 4.04, 4.04.1 — evaluations solicited from participants for the overall
+  program, the five elements answered (item 5 as not applicable)
+- 4.04.2 — periodic review of results recorded, snapshotted, and reported
+  when overdue; informing the developer is a named-and-attested step
+- 4.05.3 — items 1 and 4 built; items 2–3 recorded as the ROADMAP
+  improvement note naming both repos
+- 8.01 items 8–11, 8.01.1 — the three policies formalized, published, and
+  made available; the sponsor statement gated on `may_claim_registry`;
+  the site cannot open without them
+- 9.02 — the five-year period is now a named constant with a derived
+  `retain_until`; existing row's gap replaced
+- 9.02.2 (1)–(7) — the full documentation set exportable per course;
+  9.02.2(5) and (6) rows added
+- 9.01 — row appended: the Unicode font
+- COMPLIANCE.md: rows added/amended as above.
+
+**Decisions**
+- 30 days of soliciting and 90 days of "periodically" are superCPE's own
+  numbers, said so in the constants' docstrings and the compliance rows;
+  NASBA fixes neither.
+- Policies are append-only effective-dated versions, not one editable
+  text: a participant who enrolled under an old policy may hold the
+  sponsor to it, so every version stays readable and the current one is
+  derived (`effective_at <= now()`), never marked. The re-take policy and
+  the sponsor statement are deliberately NOT rows — they render from the
+  constants that enforce them, so the published policy can never disagree
+  with the code.
+- The site-open refusal blocks only on missing policies (block-level
+  launch findings). `evaluation_review_due` is a warn beside them: an
+  overdue evaluation review must never be able to keep the site closed,
+  because its fix has nothing to do with participant-facing readiness.
+- Videos are included in the bundle by reference (storage key,
+  content_hash, duration in `video.txt`): the zips stay small enough to
+  generate on request, the keys are write-once so the reference stays
+  good, and `include_video=true` exists for the reviewer who wants the
+  bytes.
+- The bundle's `6-descriptive/course.json` is built by the same
+  `public_detail` function the public route serves, so the two can never
+  disagree.
+- The Standards' effective-date paragraph (March 1, 2027 for new self
+  study programs) is recorded nowhere in code, concluded deliberately:
+  superCPE builds to the 2026 Standards uniformly from day one, so the
+  transition dates gate no behavior. Noted in ROADMAP.
+- Markdown on the policies and instructions pages is rendered by a ~90
+  line `SimpleMarkdown` component (headings, lists, bold, paragraphs, all
+  as text nodes) rather than a Markdown dependency; admin-authored policy
+  text does not justify one.
+
+**Known gaps**
+- Evaluation results reach the developer as an attestation checkbox and a
+  named developer on the admin summary page; actual delivery is email
+  (018).
+- 4.05.3 items 2 (keyword search) and 3 (glossary) are unbuilt content
+  features; the ROADMAP improvement note specifies the course-package
+  contract change (`manifest.glossary[]`) and the video-tool authoring
+  feature they need.
+- An unrendered certificate appears in the bundle as its snapshot JSON
+  only; the PDF joins once rendered ("every rendered certificate").
+- Bundle CSV rows for preview attempts name the participant as
+  "(preview)" — they are retained attempts on the course, and hiding them
+  from the record would be worse than labeling them.
+- The five-year retention date is stated, not enforced, and storage is
+  still local disk; durability is 012 (whose ROADMAP entry now lists all
+  three write-once key prefixes: `packages/`, `certificates/`,
+  `audits/`).

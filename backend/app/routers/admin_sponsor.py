@@ -41,6 +41,10 @@ def _admin_view(db: Session, profile: SponsorProfile) -> SponsorProfileAdmin:
             SponsorFinding(**vars(finding))
             for finding in readiness.sponsor_findings(db)
         ],
+        launch_findings=[
+            SponsorFinding(**vars(finding))
+            for finding in readiness.launch_findings(db)
+        ],
     )
 
 

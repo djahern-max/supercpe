@@ -84,6 +84,22 @@ function CoursePage() {
         <p className={styles.description}>{course.description}</p>
       )}
 
+      <h2 className={styles.sectionTitle}>What this course covers</h2>
+      <ol className={styles.outlineList}>
+        {course.outline.map((lesson) => (
+          <li key={lesson.lesson_id} className={styles.outlineItem}>
+            <span className={styles.outlineTitle}>{lesson.title}</span>
+            <ul className={styles.outlineObjectives}>
+              {lesson.objectives.map((objective) => (
+                <li key={`${lesson.lesson_id}-${objective.id}`}>
+                  {objective.text}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ol>
+
       <h2 className={styles.sectionTitle}>What you will learn</h2>
       {course.objectives.map((group) => (
         <div key={group.lesson_id}>
@@ -120,6 +136,14 @@ function CoursePage() {
         <dt>Field of study</dt>
         <dd>{course.field_of_study}</dd>
       </dl>
+
+      {/* 8.01 items 8-10, linked above where enrollment will live (017). */}
+      <p className={styles.policyLinks}>
+        <Link to={course.policies_url}>
+          Registration, refund, and complaint policies
+        </Link>{" "}
+        · <Link to="/how-it-works">How this course works</Link>
+      </p>
 
       <h2 className={styles.sectionTitle}>Lessons</h2>
       <ol className={styles.lessonList}>

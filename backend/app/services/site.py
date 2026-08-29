@@ -20,6 +20,23 @@ def get_site_mode(db: Session) -> str:
     return get_profile(db).site_mode
 
 
+def site_open_blockers(db: Session) -> list[str]:
+    """What refuses opening the site: the block-level launch findings
+    (today, each 8.01 policy kind with no current version). New in 011 —
+    009 let the flip through unchecked. Warn-level launch findings
+    (evaluation_review_due) are reported on /admin/sponsor but do not
+    block: an overdue evaluation review must never be able to close
+    enrollment forever."""
+    # Deferred import: readiness reaches back into course services.
+    from app.services import readiness
+
+    return [
+        finding.message
+        for finding in readiness.launch_findings(db)
+        if finding.level == "block"
+    ]
+
+
 def set_site_mode(
     db: Session, to_mode: str, account: Account, note: str = ""
 ) -> SiteModeChange:
@@ -32,6 +49,10 @@ def set_site_mode(
         raise AuthRuleViolation(
             [f"The site mode is already {to_mode}; nothing to change."]
         )
+    if to_mode == "open":
+        blockers = site_open_blockers(db)
+        if blockers:
+            raise AuthRuleViolation(blockers)
     change = SiteModeChange(
         from_mode=profile.site_mode,
         to_mode=to_mode,

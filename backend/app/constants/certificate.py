@@ -24,3 +24,19 @@ ISSUANCE_SPONSOR_FIELDS = ["name", "legal_name"]
 # not "QAS Self Study": QAS is a National Registry program designation
 # superCPE may not use until `registry_status` is registered (Phase C).
 PROGRAM_TYPE = "Self study"
+
+# 8.01 item 11: the official NASBA sponsor statement, "if an approved NASBA
+# sponsor". The Registry's standard wording, with the sponsor's name filled
+# in at render time. This text may ONLY be rendered while
+# `SponsorProfile.may_claim_registry` is true — anywhere else it is a false
+# claim of Registry membership; `services.policies.current` is the one
+# place that gates it.
+NASBA_SPONSOR_STATEMENT = (
+    "{sponsor_name} is registered with the National Association of State "
+    "Boards of Accountancy (NASBA) as a sponsor of continuing professional "
+    "education on the National Registry of CPE Sponsors. State boards of "
+    "accountancy have final authority on the acceptance of individual "
+    "courses for CPE credit. Complaints regarding registered sponsors may "
+    "be submitted to the National Registry of CPE Sponsors through its "
+    "website: www.nasbaregistry.org."
+)

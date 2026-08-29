@@ -54,6 +54,26 @@ def test_certificate_text_carries_every_item(db_session):
     assert "Certificate of Completion" in text
 
 
+def test_unicode_names_render_and_extract_unchanged(db_session):
+    """011's font fix: the vendored DejaVu faces render names beyond
+    Latin-1 (010 sanitized them to replacement characters). The two
+    characters the spec names: "ễ" and "ł"."""
+    _, enrollment, _ = make_completed(db_session)
+    snapshot = dict(enrollment.completion.certificate_snapshot)
+    snapshot["participant_name"] = "Nguyễn Michałowski"
+    pdf = certificates.render(snapshot)
+    assert "Nguyễn Michałowski" in pdf_text(pdf)
+
+    # The embedded fonts are the vendored ones, not a core Latin-1 face.
+    reader = PdfReader(BytesIO(pdf))
+    fonts = {
+        str(font.get_object()["/BaseFont"])
+        for page in reader.pages
+        for font in page["/Resources"]["/Font"].values()
+    }
+    assert all("DejaVuSans" in name for name in fonts)
+
+
 def test_rerender_produces_the_same_text(db_session):
     _, enrollment, _ = make_completed(db_session)
     snapshot = enrollment.completion.certificate_snapshot

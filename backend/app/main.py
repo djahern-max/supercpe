@@ -6,8 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import (
     admin_accounts,
+    admin_audit,
     admin_courses,
     admin_enrollments,
+    admin_evaluations,
     admin_packages,
     admin_smes,
     admin_sponsor,
@@ -18,6 +20,7 @@ from app.routers import (
     media,
     my,
     player,
+    policies,
     review,
     site,
     sponsor,
@@ -48,7 +51,9 @@ app.include_router(site.router, prefix="/api/v1")
 app.include_router(site.admin_router, prefix="/api/v1")
 app.include_router(admin_accounts.router, prefix="/api/v1")
 app.include_router(review.router, prefix="/api/v1")
+app.include_router(admin_audit.router, prefix="/api/v1")
 app.include_router(admin_courses.router, prefix="/api/v1")
+app.include_router(admin_evaluations.router, prefix="/api/v1")
 app.include_router(admin_enrollments.router, prefix="/api/v1")
 app.include_router(admin_packages.router, prefix="/api/v1")
 app.include_router(admin_smes.router, prefix="/api/v1")
@@ -59,4 +64,6 @@ app.include_router(courses.router, prefix="/api/v1")
 app.include_router(media.router, prefix="/api/v1")
 app.include_router(my.router, prefix="/api/v1")
 app.include_router(player.router, prefix="/api/v1")
+app.include_router(policies.router, prefix="/api/v1")
+app.include_router(policies.admin_router, prefix="/api/v1")
 app.include_router(sponsor.router, prefix="/api/v1")

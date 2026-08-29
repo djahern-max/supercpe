@@ -1,372 +1,334 @@
-# 010 — Enrollment, completion record, and certificate
+# 011 — Program evaluation, policies, retention, and the audit bundle
 
 ## Goal
 
-Make the enrollment the record everything hangs off (ROADMAP structural
-difference 2), verify completion the way 6.01 requires, and issue a
-certificate whose every fact is snapshotted at the moment of completion
-(structural difference 4). After this feature a participant can be
-enrolled by an admin, watch the course, answer the review questions, take
-the qualified assessment, and hold a certificate that a later edit to the
-course, the sponsor profile, or their own account cannot change.
+Close out the Section 9 documentation set (ROADMAP structural difference
+5): every element 9.02.2 lists for a self study program is now in rows,
+and one admin action exports them for a course as a single zip a NASBA
+reviewer could read cold. Along the way, build the two things that set
+still lacks — participant evaluations (4.04) and the published policies
+(8.01 items 8–11) — and make the five-year retention period a named
+constant instead of a sentence in COMPLIANCE.md.
 
-Payment is not here. 017 will create the enrollment on a successful
-charge; nothing downstream of the enrollment row changes when it does.
+This is the last Phase A feature before deployment. When it ships, the
+NASBA application packet described in ROADMAP Phase B is producible from
+the admin UI.
 
 ## In scope
 
-- `enrollments` with the expiration date set at creation (9.02.2(3)).
-- Participant progress: review-question answers and furthest-watched
-  position per lesson, keyed to the enrollment (replacing 006's "nothing
-  is persisted").
-- Attempts keyed to the enrollment (replacing 007's `X-Preview-Id` for
-  participants; the preview identity survives for admin and reviewer).
-- `completions`: one row per passed enrollment, immutable, carrying the
-  9.01 certificate snapshot and the awarded credit.
-- Certificate rendering (PDF) from the snapshot only; certificate number
-  and verification token; the 60-day issuance clock as an admin finding.
-- Pinning: an enrollment records the package versions it enrolled on and
-  is served those versions until it completes or expires.
-- Admin: enroll a participant, list enrollments and completions per
-  course, render a certificate PDF from its snapshot, see overdue
-  certificates.
-- Participant: `/my/courses`, the player and assessment behind their
-  enrollment, the result page, the certificate download.
-- Course deletion refused while any enrollment exists (008's known gap).
+- `evaluations` (4.04.1's five elements), solicited after every passing
+  assessment, skippable, one per completion.
+- `evaluation_reviews`: a dated record that the sponsor reviewed a
+  course's evaluation results (4.04.2), with the summary as of that date.
+- Policies as append-only versions: registration/attendance, refund and
+  cancellation, complaint resolution, plus the re-take policy derived from
+  `RETAKES_ALLOWED`. Public `/policies` page and payload; the course page
+  links to it; the coming-soon gate applies as it does to the catalog.
+- `RETENTION_YEARS` constant; `retain_until` derived and shown on
+  completions and in the bundle.
+- 4.05.3 items 1 and 4: an overview of topics on the course page and a
+  "How this course works" instructions page.
+- The per-course audit bundle export, logged.
+- Certificate font fix: bundle a Unicode TTF so participant names render
+  correctly (010's Latin-1 gap).
 
 ## Out of scope
 
-- Payment, refunds, pricing (017); self-registration (016).
-- Certificate delivery by email and the public verification page (018) —
-  this feature stores the verification token 018 will look up.
-- Program evaluation (4.04) — 011 attaches it to the completion.
-- The audit bundle (011); this feature makes sure everything it needs is
-  in rows.
-- Per-jurisdiction credit rounding (019); the certificate prints the
-  course's one-fifth-rounded award.
-- Multi-field credit allocation (004 refuses multi-field courses).
+- Emailing evaluation results to developers (4.04.2 "should inform") —
+  no email exists until 018; the admin summary page names the developer.
+- 4.05.3 items 2 and 3 (keyword search, glossary): these are content and
+  need the course-package contract to carry a glossary. Record them as a
+  ROADMAP improvement note naming both repos; do not build them here.
+- Deployment (012). Spaces storage, production config.
+- Evaluation of instructors (4.04.1 item 5): self study has none;
+  recorded as not applicable, never asked.
+- Any change to `docs/course-package.md`.
 
 ## Locators — read these paragraphs before writing code
 
-- **9.02.2(3)** — course documentation must include an expiration date,
-  "the time by which the participant must complete the qualified
-  assessment," no longer than one year from purchase or enrollment.
-- **6.01** — completion verification; "self-certification … alone is not
-  sufficient." 007 built the graded attempt; this feature ties it to a
-  person and an enrollment.
-- **6.01.2** — 70 percent; re-takes "at the sponsor's discretion"; on a
-  failed assessment without a test bank, no feedback. All three are 007
-  behavior this feature must preserve when re-gating behind enrollment.
-- **9.01** — the eleven certificate items and the 60-day delivery
-  expectation. Read the list; the snapshot is the list.
-- **9.01.1** — for self study, acceptable evidence is "a certificate
-  supplied by the CPE program sponsor after satisfactory completion of a
-  qualified assessment." The entity named on the certificate awards the
-  credit (003's `legal_name`).
-- **9.02.2(1)** — completion records "by individual participant, including
-  the number of CPE credits earned … and course completion date."
-- **7.01** — credit on the 50-minute hour; the time statement (item 10) is
-  003's `TIME_STATEMENT`.
+- **4.04, 4.04.1** — an effective means of evaluating quality; evaluations
+  "must be solicited from participants … for the overall program" and
+  determine whether (1) objectives were met, (2) prerequisites were
+  appropriate, (3) materials including the qualified assessment were
+  relevant, (4) time allotted was appropriate, (5) instructors were
+  effective where applicable.
+- **4.04.2** — sponsors "must periodically review evaluation results" and
+  should inform developers.
+- **4.05.3** — the six minimum items of self study instructional
+  materials. Items 5 and 6 are 006/007; items 1 and 4 are here; 2 and 3
+  are the improvement note.
+- **8.01 items 8–11, 8.01.1** — registration and attendance requirements,
+  refund/cancellation policy, complaint resolution policy, and the
+  official NASBA sponsor statement "if an approved NASBA sponsor"; policies
+  must be "formalized, published, and made available."
+- **9.02** — five-year retention.
+- **9.02.2 (1)–(7)** — the seven self study documentation elements. The
+  bundle's README maps each to its files, in this order.
 
 ## Data model
 
 One migration. CHECKs by hand. Nothing here is ever deleted.
 
-**`enrollments`**
-- `id`, `account_id` FK RESTRICT (role must be participant at creation;
-  checked in the service, not the DB), `course_id` FK RESTRICT,
-  `enrolled_at`, `expires_at` (= `enrolled_at` + `ENROLLMENT_DAYS`,
-  computed in the service and stored — it is a fact about the enrollment,
-  not derived state), `source` CHECK IN ('admin', 'purchase') — only
-  `'admin'` is written here, `created_by_account_id` FK RESTRICT nullable,
-  `package_versions` JSONB (`{package_id: version}` at enrollment, the pin).
-- Derived, never stored: `status` — `completed` if a completion row
-  exists, else `expired` if `now() > expires_at`, else `active`. One
-  function in `app/services/enrollments.py`.
-- "One active enrollment per (account, course)" cannot be a partial
-  index because it depends on `now()`; enforce in the service (refuse a
-  second active enrollment, 422 naming the existing one) and add a plain
-  index on `(account_id, course_id)`.
+**`evaluations`**
+- `id`, `completion_id` FK RESTRICT unique, `submitted_at`,
+  `objectives_met`, `prerequisites_appropriate`, `materials_relevant`,
+  `time_appropriate` — each smallint CHECK 1–5 — `instructors_effective`
+  always null with a CHECK that it is null (self study; the column exists
+  so the record visibly answers item 5 as not applicable), `comments`
+  text (may be blank), `objectives_snapshot` JSONB (the objectives the
+  participant was rating, copied from the completion's pinned packages).
+- Constants in `app/constants/evaluation.py`: `SCALE_MIN = 1`,
+  `SCALE_MAX = 5`, the five prompts as text (so the wording that was asked
+  is code-versioned and quoted in the bundle), `SOLICIT_UNTIL_DAYS = 30`
+  (how long after completion the prompt keeps appearing; ours, not
+  NASBA's — say so).
 
-**`lesson_progress`**
-- `enrollment_id` FK RESTRICT, `package_id` FK RESTRICT,
-  `furthest_seconds` (integer), `updated_at`. Unique on
-  `(enrollment_id, package_id)`.
+**`evaluation_reviews`**
+- `id`, `course_id` FK RESTRICT, `reviewed_at`, `reviewed_by_account_id`
+  FK RESTRICT, `summary_snapshot` JSONB (counts and means per element,
+  n, comments excerpt list, as of `reviewed_at`), `note` text,
+  `informed_developer` boolean (the admin's attestation that the
+  developer of record was told; the bundle prints it as stated).
+  Append-only.
 
-**`review_answers`**
-- `enrollment_id`, `question_id` FK RESTRICT (no ON DELETE, like
-  `attempt_answers`), `choice_id`, `is_correct` (snapshot of the verdict),
-  `answered_at`. Unique on `(enrollment_id, question_id)`; a re-answer
-  updates the row and `answered_at`. The 5.01.2 engagement record.
+**`policy_versions`**
+- `id`, `kind` CHECK IN ('registration', 'refund', 'complaint'),
+  `body` text (Markdown), `effective_at`, `created_at`,
+  `created_by_account_id` FK RESTRICT. Append-only; the current version of
+  a kind is the latest `effective_at <= now()`. A kind with no version is
+  a launch-readiness missing item (task 4).
+- The re-take policy is not a version: it is rendered from
+  `RETAKES_ALLOWED` and `PASSING_PCT` so it cannot disagree with the code.
+- The NASBA sponsor statement (item 11) is a constant
+  `NASBA_SPONSOR_STATEMENT` in `app/constants/certificate.py`, rendered
+  only when `may_claim_registry`; the text is the Registry's standard
+  wording and the constant's docstring says it may only appear when true.
 
-**`attempts`** (existing)
-- `enrollment_id` gains its FK RESTRICT. CHECK: exactly one of
-  `enrollment_id` / the 007 preview identity is set. The partial unique
-  index for one open attempt extends to `(enrollment_id)` where status =
-  open.
+**`audit_exports`**
+- `id`, `course_id` FK RESTRICT, `generated_at`,
+  `generated_by_account_id` FK RESTRICT, `sha256`, `size_bytes`,
+  `storage_key`. Append-only; every export is kept (it is itself
+  documentation of what the sponsor could produce on a date).
 
-**`completions`**
-- `id`, `enrollment_id` FK RESTRICT unique, `attempt_id` FK RESTRICT
-  unique, `completed_at` (= the passing attempt's `submitted_at`),
-  `credit_awarded` NUMERIC(4,1), `field_of_study`, `certificate_number`
-  (text, unique; `YYYY-NNNNNN` from a per-year sequence), `verification_token`
-  (32 random bytes hex, unique; 018 uses it), `certificate_snapshot` JSONB,
-  `certificate_key` (storage key of the first rendered PDF, nullable until
-  rendered), `certificate_rendered_at` nullable.
-- No update path except `certificate_key`/`certificate_rendered_at`
-  being set once. No delete path.
-
-**`certificate_snapshot`** — the 9.01 list, item by item, frozen:
-```
-{
-  "sponsor_name": …,            # 1
-  "sponsor_legal_name": …,      # 9.01.1
-  "participant_name": …,        # 2  (account display_name)
-  "participant_email": …,
-  "course_title": …,            # 3
-  "course_code": …,
-  "completed_at": "…",          # 4
-  "location": null,             # 5  self study: not applicable, printed as such
-  "program_type": …,            # 6  PROGRAM_TYPE constant
-  "credit": "0.4",              # 7  as text, one decimal
-  "field_of_study": …,          # 7
-  "national_registry_id": null, # 8  only if may_claim_registry at completion
-  "state_registrations": [{state, number}],   # 9
-  "time_statement": …,          # 10 TIME_STATEMENT
-  "other_statements": …,        # 11
-  "knowledge_level": …, "package_versions": {…}, "passing_pct": 70,
-  "score_pct": …, "recommended_credit_basis": …,
-  "developed_by": …, "reviewed_by": …,   # names and credentials only
-  "snapshot_version": 1
-}
-```
-Every value is copied at completion time from the rows as they stand
-then. Nothing in the snapshot is ever re-read from the live tables.
-
-Constants in `app/constants/enrollment.py`: `ENROLLMENT_DAYS = 365`
-(9.02.2(3), with the paragraph quoted), `CERTIFICATE_DEADLINE_DAYS = 60`
-(9.01). In `app/constants/certificate.py` (003's file): `PROGRAM_TYPE =
-"Self study"` — deliberately not "QAS Self Study", which is a Registry
-program designation superCPE may not use until `registry_status` is
-registered; comment says so and points at Phase C.
+**Constants:** `RETENTION_YEARS = 5` in `app/constants/retention.py`
+with 9.02 quoted; `retain_until(completed_at)` in
+`app/services/retention.py`. Nothing enforces deletion after it — the
+constant exists so the bundle and admin can state the date.
 
 ## Tasks
 
-1. **Models and migration** as above. Backfill: none. The 007 preview
-   attempts stay valid with a null `enrollment_id`.
+1. **Models and migration** as above.
 
-2. **`app/services/enrollments.py`:** `enroll(db, account, course,
-   created_by, source)` — refuses unless the course is published, the
-   account is an active participant, and no active enrollment exists;
-   pins `package_versions` from the course's current lessons; sets
-   `expires_at`. `status(enrollment)`. `list_for_account`,
-   `list_for_course`. `packages_for(enrollment)` — the pinned package
-   rows, which the player and assessment use instead of the course's
-   current lessons. `progress(enrollment)` — per lesson: furthest
-   seconds, review questions answered/total; `assessment_available` is
-   true iff every pinned review question has an answer and status is
-   active.
+2. **Evaluations.** `app/services/evaluations.py`: `solicit(completion)`
+   → whether to show the prompt (no evaluation yet, within
+   `SOLICIT_UNTIL_DAYS`); `submit(completion, ratings, comments)` —
+   refuses a second; `summary(course)` — n, mean and distribution per
+   element, comments in `submitted_at` order; `record_review(course,
+   account, note, informed_developer)` writes the snapshot.
+   Routes: `POST /api/v1/my/completions/{id}/evaluation`,
+   `GET /api/v1/admin/courses/{code}/evaluations` (summary + rows),
+   `POST /api/v1/admin/courses/{code}/evaluation-reviews`,
+   `GET …/evaluation-reviews`. A `evaluation_review_due` warn finding in
+   `readiness.check` when a course has evaluations newer than its latest
+   `evaluation_reviews` row by more than `EVALUATION_REVIEW_DAYS` (90;
+   ours) — "periodically" made concrete and reported, not enforced.
 
-3. **Player re-gating.** The 006 endpoints gain enrollment-scoped
-   variants under `/api/v1/my/enrollments/{id}/lessons/{package_id}/play`
-   and `…/review/{question_key}`, behind `require_role("participant")`
-   and ownership (a foreign enrollment is 404). Play serves the *pinned*
-   package (video URL, blocks, questions). Review grading persists a
-   `review_answers` row and returns exactly what 006 returned. A
-   `PUT …/progress` records `furthest_seconds` (monotonic: never
-   lowered). The admin/reviewer preview endpoints are untouched.
+3. **Policies.** `app/services/policies.py`: `current()` → the three
+   kinds' current bodies plus the derived re-take text and, when
+   `may_claim_registry`, the sponsor statement; `publish(kind, body,
+   effective_at, account)`. Routes: public `GET /api/v1/policies` (behind
+   `require_site_open_or_session` like the catalog), admin
+   `GET/POST /api/v1/admin/policies` (history per kind, new version).
+   The 004 public course payload gains `policies_url`; the course page
+   links "Registration, refund, and complaint policies" above the
+   enrollment call to action.
 
-4. **Assessment re-gating.** `assessment.start` for a participant takes
-   the enrollment: refuses if status is not active (naming expiry or
-   completion), if `assessment_available` is false (naming the unanswered
-   review questions by lesson), or if `RETAKES_ALLOWED` is exhausted
-   (count failed attempts on this enrollment). Questions come from the
-   pinned packages. `submit` past `expires_at` is refused and the open
-   attempt is abandoned as failed (6.01.2: the assessment must be
-   completed by the expiration date). `result` is unchanged in shape —
-   the failed-attempt no-feedback rule from 007 stays exactly as tested.
+4. **Launch readiness.** The `/admin/sponsor` panel gains: each policy
+   kind with no current version as a missing item ("Refund policy not
+   published"), and `evaluation_review_due` per course. These are
+   *launch* findings, not publish findings — a course may publish without
+   them, but the site should not open. Add `site_open_blockers()` in
+   `app/services/site.py` returning them; `set_site_mode(open)` refuses
+   with the list (422). This is new: 009 let the flip through unchecked.
 
-5. **Completion.** In the same transaction as a passing `submit`:
-   `completions.create` — reads the course's `recommended_credit`
-   (refuses the submit with a 409 if the credit is stale; this cannot
-   happen on a published course but the check is defense in depth),
-   builds the snapshot from the live rows, reads `may_claim_registry`
-   *now* and sets item 8 accordingly, assigns the certificate number and
-   token. If the sponsor's issuance fields (see Decisions) are
-   incomplete, the completion is still recorded (the 9.02.2(1) record
-   does not wait on the sponsor's paperwork) and the snapshot is still
-   frozen, but the PDF is not rendered and the participant sees "Your
-   completion is recorded; your certificate will be issued shortly."
-   Render happens later via the admin action in task 7.
+5. **Retention.** Constant and helper; `retain_until` on the admin
+   completions table and every bundle record that has a `completed_at`.
 
-6. **Certificate rendering.** `app/services/certificates.py`:
-   `render(snapshot) -> bytes` — a one-page PDF from the snapshot dict and
-   nothing else (it must not take a db session). Layout: sponsor name
-   and legal name, "Certificate of Completion", participant name, course
-   title and code, completion date, program type, credit with field of
-   study, the time statement verbatim, state registrations, other
-   statements, developed-by / reviewed-by line, certificate number, and
-   the verification token as a short URL placeholder for 018. Item 8
-   prints only when present in the snapshot. Item 5 prints "Not
-   applicable (self study)". Store the first render at
-   `certificates/<certificate_number>.pdf` and set `certificate_key`;
-   `GET /api/v1/my/completions/{id}/certificate.pdf` streams that object.
-   Re-rendering from the snapshot must produce the same text content
-   (assert by extracting text in the test); byte-identity is not required.
+6. **4.05.3 items 1 and 4.**
+   - Overview of topics: the public course payload gains `outline` —
+     lesson titles in order, each with its objectives (already derived
+     by 004's `course_objectives`); the course page renders it as
+     "What this course covers" above the objectives list. No new storage.
+   - Instructions: a static participant page `/how-it-works` (and a
+     `GET /api/v1/how-it-works` returning its Markdown so the bundle can
+     include it) describing navigation, the review questions, the
+     assessment (passing score, re-takes, expiry — all read from
+     constants so it cannot drift), and how the certificate is delivered.
+     Linked from `/my/courses` and the course page.
 
-7. **Admin.** Under `/api/v1/admin`: `POST /courses/{code}/enrollments`
-   (email of an existing participant), `GET /courses/{code}/enrollments`
-   (status, expiry, progress summary), `GET /courses/{code}/completions`,
-   `POST /completions/{id}/render` (renders if the issuance fields allow;
-   422 naming the missing fields otherwise),
-   `GET /completions/{id}/certificate.pdf`. `readiness.check` gains a
-   sponsor-level (not course-level) finding `certificates_overdue` (warn)
-   listing completions older than `CERTIFICATE_DEADLINE_DAYS` with no
-   render — shown on `/admin/sponsor` beside the launch-readiness panel.
+7. **Certificate font.** Vendor `DejaVuSans.ttf` (and Bold) under
+   `backend/app/assets/fonts/` with its license file; `render` registers
+   it with fpdf2 and stops sanitizing. Test: a snapshot with a
+   participant name containing "ễ" and "ł" renders and extracts
+   unchanged. Re-render an existing 010 completion in acceptance to show
+   the text is identical for Latin-1 names.
 
-8. **Deletion and unpublish.** `delete_course` refuses while any
-   enrollment exists (422, naming the count). `unpublish` does not affect
-   in-flight enrollments: they are pinned and continue; it only stops new
-   ones. The admin course page says so: "N participants are enrolled on
-   the current versions and will keep them."
+8. **The audit bundle.** `app/services/audit_bundle.py`:
+   `build(db, course, generated_by) -> (bytes, manifest)`. Layout inside
+   the zip, one top-level directory `<course_code>-audit-<YYYYMMDD>/`:
 
-9. **Frontend.**
-   - `/my/courses` (participant home, the post-login landing for that
-     role): each enrollment as a card — title, status, expires on, lessons
-     watched, review questions answered, and one primary action:
-     Continue / Take the assessment / Retake (N left) / View certificate /
-     Expired.
-   - `/my/courses/:enrollmentId` — the 004 course page facts, then the
-     lesson list with progress, mounting the 006 player per lesson
-     through the enrollment endpoints; the assessment link enabled only
-     when available, with the reason otherwise.
-   - Assessment and result pages reuse 007's components with the
-     enrollment endpoints; a passed result shows the completion date,
-     credit, and the certificate download (or the "will be issued
-     shortly" line).
-   - Admin course page gains an Enrollments card (enroll-by-email form,
-     table) and a Completions card (table with certificate status and
-     Render / Download). `/admin/sponsor` shows overdue certificates.
-   - Nothing participant-facing renders "National Registry" unless the
-     snapshot carries item 8.
+   ```
+   README.md                     what this is; the 9.02.2 map below; who
+                                 generated it and when; retention statement
+   bundle.json                   generated_at, by, course code, every file
+                                 with sha256 and byte size
+   1-completion/
+     completions.csv             per participant: name, email, enrolled_at,
+                                 expires_at, completed_at, credit_awarded,
+                                 certificate_number, retain_until
+     attempts.csv                every attempt on the course: participant,
+                                 started, submitted, status, score, passing_pct,
+                                 package_versions
+     attempt_answers.csv         attempt, question_key, chosen, correct
+     review_answers.csv          enrollment, lesson, question_key, chosen,
+                                 correct, answered_at   (5.01.2 engagement)
+     certificates/<number>.json  every certificate_snapshot
+     certificates/<number>.pdf   every rendered certificate
+   2-credit/
+     calculation.txt             005's as_text
+     credit_breakdown.json       the stored per-lesson inputs
+   3-expiration/
+     enrollments.csv             enrollment, participant, enrolled_at,
+                                 expires_at, status, package_versions
+     policy.txt                  ENROLLMENT_DAYS and the 9.02.2(3) sentence
+   4-people/
+     developer.json              name, credentials, jurisdiction, license
+                                 number, status, developer_used_technology
+     reviewers.json              every reviewer ever named, same fields
+     reviews.csv                 every course_reviews row incl. recorded_by,
+                                 content_updated_at_reviewed, impractical_basis
+     review_cycle.txt            cycle, last review, review_due_at
+   5-evaluations/
+     evaluations.csv             all rows, prompts quoted in the header comment
+     summary.json                current summary
+     evaluation_reviews.csv      the 4.04.2 log
+   6-descriptive/
+     course.json                 the public 8.01 payload as served today
+     course.md                   the same rendered readable
+     policies/<kind>-<n>.md      every policy version with effective_at
+     how-it-works.md
+   7-materials/
+     <lesson_id>/v<n>/manifest.json, questions.json, transcript.md
+                                 for every package version ever attached or
+                                 pinned by an enrollment
+     <lesson_id>/v<n>/video.txt  storage key, content_hash, duration, and
+                                 "video omitted; retrieve by key" — videos
+                                 are not zipped by default
+   ```
+   `include_video=true` on the request zips the mp4s too (large; the UI
+   says so). CSVs are UTF-8 with a header row; timestamps ISO 8601 UTC.
+   Every file is listed in `bundle.json` with its sha256; the zip's own
+   sha256 goes on the `audit_exports` row and the zip is stored at
+   `audits/<course_code>/<generated_at>.zip`.
+   Route: `POST /api/v1/admin/courses/{code}/audit-bundle` (returns the
+   export row), `GET …/audit-bundle/{id}.zip`, `GET …/audit-bundle`
+   (history). Admin course page gains an Audit bundle card: Generate
+   (with the include-video checkbox), and the history with size, sha256,
+   and Download.
 
-10. **Contract.** No change to `docs/course-package.md`. Say so.
+9. **README.md content.** Written by the service from a template: the
+   sponsor name and legal name; "Documentation retained under Section 9
+   of the 2026 Statement on Standards for CPE Programs for self study
+   programs"; the 9.02.2 element → directory map with the element text
+   quoted; a line that videos are retained in object storage under the
+   listed keys; the registry status as of generation stated plainly
+   ("This sponsor is not on the National Registry" when not — the one
+   place that sentence is allowed, because it is the truth stated to an
+   auditor, never a claim); generated by / at; retention statement with
+   `RETENTION_YEARS`.
 
-## Tests (`tests/test_enrollments.py`, `tests/test_completion.py`, `tests/test_certificates.py`)
+## Tests (`tests/test_evaluations.py`, `tests/test_policies.py`, `tests/test_audit_bundle.py`)
 
-- Enroll: `expires_at` is exactly 365 days after `enrolled_at`;
-  `package_versions` pins the current versions; second active enrollment
-  refused; enrolling on a draft course refused; enrolling a reviewer
-  refused.
-- Pinning: after enrollment, `update_version` on the course (unpublish →
-  update → re-review → republish) leaves the enrollment serving the old
-  package; a new enrollment gets the new one.
-- Player: review grading persists the answer; re-answering updates; a
-  participant cannot reach another participant's enrollment (404, not
-  403); progress never decreases.
-- Assessment: start refused with the unanswered review questions named;
-  start refused after expiry; start refused when retakes are exhausted,
-  naming `RETAKES_ALLOWED`; submit after expiry abandons the attempt as
-  failed; a failed result carries no per-question data (re-assert 007's
-  payload walk through the enrollment path).
-- Completion: a passing submit creates exactly one completion in the same
-  transaction; `credit_awarded` equals the course's award as `Decimal`;
-  `completed_at` equals the attempt's `submitted_at`; certificate number
-  is unique and year-prefixed; the snapshot carries all eleven items.
-- Snapshot immutability: after completion, change the course title, the
-  sponsor name, the participant display name, and the state
-  registrations; the snapshot and the re-rendered PDF text are unchanged.
-- Item 8: with `registry_status = not_registered` the snapshot's
-  `national_registry_id` is null and the PDF text lacks "National
-  Registry"; with `registered` and an ID, both are present. Flipping
-  status *after* completion changes neither.
-- Issuance fields: with a blank `legal_name` the completion is recorded,
-  no PDF exists, the participant payload says pending; after filling it,
-  `POST /completions/{id}/render` produces the PDF — and, deliberately,
-  the legal name filled *after* completion is not on it (see Decisions).
-- `certificates_overdue` lists a 61-day-old unrendered completion and not
-  a 59-day-old one.
-- Delete course with enrollments refused; unpublish leaves an active
-  enrollment's status `active` and its player working.
+- Evaluation: prompt shown after completion, hidden after submit or after
+  `SOLICIT_UNTIL_DAYS`; ratings outside 1–5 refused; `instructors_effective`
+  cannot be set; second submission refused; summary means computed with
+  `Decimal`; `evaluation_review_due` fires after `EVALUATION_REVIEW_DAYS`
+  and clears when a review is recorded.
+- Policies: no versions → three launch missing items; publishing a
+  version clears its item; a future `effective_at` is not current until
+  then; history retains every version; public route is gated by site mode
+  exactly as `/courses`; the re-take text contains `RETAKES_ALLOWED` and
+  `PASSING_PCT` as numbers; the sponsor statement is absent while
+  `not_registered` (walk the payload) and present when registered.
+- Site open refusal: `set_site_mode(open)` is 422 naming the missing
+  policies; passes once published.
+- Retention: `retain_until` is exactly `RETENTION_YEARS` after
+  `completed_at`.
+- Font: the two non-Latin-1 names round-trip through render and extract.
+- Bundle: for a course with two enrollments, one completion, one failed
+  attempt, one evaluation, two reviews, and a package updated once
+  (so two versions are pinned somewhere): every file in the layout
+  exists; `bundle.json` lists every file and each sha256 matches;
+  `7-materials` contains both package versions; `completions.csv` has one
+  row with the right credit and certificate number; `people/reviewers.json`
+  carries license numbers (this is the one place they may appear);
+  `README.md` contains "not on the National Registry" while
+  `not_registered` and no other file under 6-descriptive contains
+  "National Registry"; the `audit_exports` row's sha256 equals the
+  sha256 of the returned bytes; a second generation adds a row and does
+  not alter the first's stored zip.
 - All prior tests pass; the count goes up.
 
 ## COMPLIANCE.md rows
 
-Add or append:
+| 4.04, 4.04.1 | evaluations solicited from participants for the overall program, covering the five elements | 011 | `evaluations` with the five columns (item 5 constrained null: self study); prompts in `app/constants/evaluation.py`; solicited on the result page and `/my/courses` for `SOLICIT_UNTIL_DAYS` | Solicited, not required: a participant may decline, and nothing withholds the certificate. Instructor evaluation is not applicable and the record says so. |
+| 4.04.2 | sponsors must periodically review evaluation results and should inform developers | 011 | `evaluation_reviews` (dated, by account, summary snapshot, `informed_developer` attestation); `evaluation_review_due` warn finding after `EVALUATION_REVIEW_DAYS` | "Periodically" is 90 days by our choice; reported, not enforced. Informing the developer is an attestation, not an email (018). |
+| 4.05.3 | minimum contents of self study instructional materials, items 1 and 4 | 011 | `outline` in the public course payload; `/how-it-works` page from constants | Items 2 (search) and 3 (glossary) are not built; ROADMAP improvement note names the contract change. Items 5 and 6 are 006 and 007. |
+| 8.01 items 8–11, 8.01.1 | registration/attendance, refund/cancellation, complaint resolution policies published in advance; sponsor statement if an approved sponsor | 011 | `policy_versions` (append-only, effective-dated); public `/policies`; course page link; `NASBA_SPONSOR_STATEMENT` rendered only under `may_claim_registry`; `site_open_blockers` refuses opening the site without all three | Item 11 cannot be true until registration; the constant exists and is gated. |
+| 9.02 | (existing row; replace the Gap) | 011 | `RETENTION_YEARS` in `app/constants/retention.py`; `retain_until` shown on completions and in every bundle record | Nothing deletes at the boundary; retention is a floor and the system keeps everything. |
+| 9.02.2 (1)–(7) | the seven self study documentation elements | 011 | `app/services/audit_bundle.py`; `audit_exports` log; layout mapped element by element in the bundle's README | Method 1 records (2)(i) are absent by design (005). Videos are included by reference unless requested. |
+| 9.02.2(5) | results of program evaluations | 011 | `5-evaluations/` in the bundle | — |
+| 9.02.2(6) | program descriptive materials | 011 | `6-descriptive/` — the 8.01 payload, every policy version, the instructions page | — |
 
-| 9.02.2(3) | expiration date, no longer than one year from enrollment | 010 | `ENROLLMENT_DAYS` in `app/constants/enrollment.py`; `expires_at` set at `enroll`; `assessment.start`/`submit` refuse past it | One year uniformly; the longer "integrated learning plan" allowance is not modeled. |
-| 6.01 | (append) | 010 | Completion exists only as a row created inside the passing `submit` transaction, keyed to a participant account through the enrollment | — |
-| 6.01.2 (re-takes) | "at the sponsor's discretion" | 010 | `RETAKES_ALLOWED` (007 constant) enforced per enrollment at `assessment.start` | The retake count is a policy; 011's policies page must state it. |
-| 9.01 | (existing row; append) | 010 | `certificate_snapshot` on `completions` freezes items 1–11 at completion; `render` in `app/services/certificates.py` reads the snapshot only; item 8 present only when `may_claim_registry` was true at completion; `PROGRAM_TYPE` is "Self study", never "QAS" | Delivery "as soon as possible … not exceed 60 days" is reported (`certificates_overdue`), not enforced; email delivery is 018. Location (item 5) printed as not applicable. |
-| 9.01.1 | (append) | 010 | `sponsor_legal_name` in the snapshot is the awarding entity printed on the certificate | — |
-| 9.02.2(1) | (existing row; append) | 010 | `completions` (participant via enrollment, `credit_awarded`, `completed_at`), never deleted; `review_answers` and `lesson_progress` retain the engagement record | Export is 011. |
-| 9.02 | (append) | 010 | `enrollments`, `completions`, `review_answers`, `attempts` FK RESTRICT to accounts and packages; course delete refused with enrollments | Period constant still 011. |
+Append to the 9.01 row: the Unicode font.
 
 ## Acceptance
 
-1. Migration runs on the 009 database; 007's preview attempts still list.
-2. As admin: enroll the participant test account on ASC842-PCX (it must
-   be published — see the note at the end); the enrollment shows a
-   one-year expiry and the pinned versions.
-3. As the participant: `/my/courses` shows the course; the player works
-   through every lesson; answers persist across reload; the assessment
-   link is disabled until the last review question is answered, and says
-   which are missing.
-4. Fail the assessment once: the result shows score and retakes left, no
-   per-question detail. Pass it: a completion appears with the credit and
-   date; with the sponsor profile complete, the certificate PDF downloads
-   and contains every 9.01 item except item 8, and the words "National
-   Registry" appear nowhere.
-5. As admin: edit the course title (unpublish first); the participant's
-   certificate is unchanged; a new enrollment sees the new title.
-6. Delete the course: refused, naming the enrollment.
-7. `pytest`: all pass; count exceeds 137.
+1. Migration runs on the 010 database.
+2. As the participant who completed ASC842-PCX in 010: the result page
+   and `/my/courses` show the evaluation prompt; submit it; it does not
+   reappear. `/how-it-works` reads correctly and the numbers match the
+   constants.
+3. As admin: `/admin/sponsor` lists the three missing policies; flipping
+   the site to open is refused naming them; publish all three; the
+   refusal clears; `/policies` renders them with the re-take text; the
+   course page links to it; "National Registry" appears nowhere on it.
+4. Record an evaluation review on the course; the warn finding clears.
+5. Generate the audit bundle without video; open the zip; every
+   directory in the layout is present; `README.md` maps the seven
+   elements and states the sponsor is not on the Registry; the
+   certificate PDF from 010 is in `1-completion/certificates/`;
+   `bundle.json` sha256s verify with `sha256sum`. Generate again with
+   video; the mp4 is present and the history shows two rows.
+6. Re-render the 010 certificate; the text is unchanged and the font is
+   the vendored one (check the PDF's font list).
+7. `pytest`: all pass; count exceeds 168.
 
 ## When done
 
-- Changelog per CLAUDE.md, including the justification for the PDF
-  library chosen (prefer a pure-Python one with no system dependencies;
-  say which and why), the pinning trade-off (a correction re-exported
-  mid-enrollment does not reach in-flight participants), and the
-  `missing_fields` split below restated.
+- Changelog per CLAUDE.md, including: the choice of 90 and 30 days as
+  ours, the decision that policies are versions rather than a single
+  editable text, the decision to include videos by reference, and the
+  new site-open refusal.
 - COMPLIANCE.md rows above.
-- Improvement note for ROADMAP if you see one; specifically whether an
-  admin should be able to *extend* an expiry (the Standard says "no
-  longer than one year from … enrollment", which reads as a cap, not a
-  clock that can be reset — say what you concluded).
-- List out-of-scope hits, especially anything 011's bundle will need that
-  is not yet in a row.
-
-## Decisions to restate in the changelog
-
-- **`missing_fields` split.** 003 made `registry_status` a
-  certificate-blocking missing field. That was right for the claim ("no
-  certificate may say National Registry until it is true") and wrong for
-  issuance: a sponsor that is not on the Registry may still issue a
-  certificate — it simply cannot print item 8 — and Phase B's NASBA
-  application needs a sample certificate before membership exists. So:
-  `missing_fields()` gains a `for_issuance` view that excludes
-  `registry_status`; issuance gates on that view; item 8 gates on
-  `may_claim_registry`, snapshotted at completion. 003's COMPLIANCE row
-  is appended to say so.
-- **Snapshot at completion, not at render.** If the sponsor's legal name
-  is blank when a participant completes, the certificate that eventually
-  prints will be missing it, because the snapshot is the truth and it was
-  taken when the credit was earned. The fix is to keep the profile
-  complete *before* opening the site — which the launch-readiness panel
-  already says — not to let a later edit rewrite what a participant
-  earned. `certificates_overdue` is the safety net.
-- **Pinning.** An enrollment is served the package versions it started
-  on. Published courses are immutable (008), so a version change already
-  implies unpublish → re-review → republish; in-flight participants keep
-  what they enrolled on, and the certificate snapshot records exactly
-  which versions.
-
-## A note for the human before acceptance
-
-Acceptance item 2 needs ASC842-PCX published, and today the only way it
-is published in the dev database is the 008/009 test review by a
-fictitious reviewer. That is fine for local acceptance and must not
-survive to deployment: before 012, unpublish, delete the fictitious SME
-and their review, and re-review with the real second CPA. Put that on the
-012 checklist now so it is not forgotten.
+- ROADMAP improvement note: "4.05.3 items 2–3: the course package should
+  carry a glossary (`manifest.glossary[]`, term/definition/source) and
+  superCPE should render it with a term search — a contract change
+  coordinated through `docs/course-package.md` and a video-tool feature
+  to author it from the sources folder." Also note whether the
+  effective-date paragraph at the end of the Standards (new self study
+  programs first published: March 1, 2027) should be recorded anywhere
+  in code — say what you concluded.
+- For 012: list every storage key prefix now in use (`packages/`,
+  `certificates/`, `audits/`) so the Spaces implementation and its
+  backup policy cover all three, and note which are write-once.
