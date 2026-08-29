@@ -1,17 +1,17 @@
 """The participant player's lesson payload and review-question grading.
 
-Behind the admin token for now: no accounts exist and the player runs in
-the admin preview. Feature 010 moves these routes behind enrollment and
-adds persistence; the endpoints themselves are already the participant
-ones. Grading is stateless (5.01.2.1 sets no passing rate on review
-questions) and re-answering is allowed.
+A preview behind admin and reviewer sessions for now: reviewers must see
+the program they sign off on (4.02). Feature 010 moves these routes behind
+enrollment and adds persistence; the endpoints themselves are already the
+participant ones. Grading is stateless (5.01.2.1 sets no passing rate on
+review questions) and re-answering is allowed.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import require_role
 from app.db import get_db
 from app.models.lesson_package import LessonPackage
 from app.schemas.package import ValidationErrors
@@ -27,7 +27,10 @@ from app.services import courses
 from app.services import questions as questions_service
 from app.storage import Storage, get_storage
 
-router = APIRouter(prefix="/courses", dependencies=[Depends(require_admin)])
+router = APIRouter(
+    prefix="/courses",
+    dependencies=[Depends(require_role("admin", "reviewer"))],
+)
 
 
 def _get_lesson_package(

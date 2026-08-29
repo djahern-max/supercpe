@@ -10,7 +10,11 @@ from sqlalchemy.orm import sessionmaker
 from app.config import settings
 from app.db import Base, get_db
 from app.main import app
+from app.services import auth as auth_service
 from app.storage import LocalStorage, get_storage
+
+ADMIN_EMAIL = "admin@supercpe.test"
+ADMIN_PASSWORD = "correct-horse-battery"
 
 
 @pytest.fixture(scope="session")
@@ -46,8 +50,9 @@ def db_session(test_engine):
             text(
                 "TRUNCATE attempt_answers, attempts, choices, questions, "
                 "course_reviews, course_lessons, courses, lesson_packages, "
-                "sponsor_profile, sponsor_state_registrations, "
-                "subject_matter_experts RESTART IDENTITY"
+                "site_mode_changes, sponsor_profile, "
+                "sponsor_state_registrations, subject_matter_experts, "
+                "sessions, accounts RESTART IDENTITY"
             )
         )
 
@@ -67,6 +72,42 @@ def client(db_session, storage_root):
     app.dependency_overrides.clear()
 
 
+def make_account(
+    db_session,
+    email,
+    password,
+    role,
+    must_change_password=False,
+):
+    return auth_service.create_account(
+        db_session,
+        email,
+        role,
+        password,
+        created_by=None,
+        must_change_password=must_change_password,
+    )
+
+
+def login(client, email, password):
+    response = client.post(
+        "/api/v1/auth/login", json={"email": email, "password": password}
+    )
+    assert response.status_code == 200, response.json()
+    return response
+
+
 @pytest.fixture
-def admin_headers():
-    return {"X-Admin-Token": settings.admin_token}
+def admin_account(db_session):
+    return make_account(db_session, ADMIN_EMAIL, ADMIN_PASSWORD, "admin")
+
+
+@pytest.fixture
+def admin_headers(client, admin_account):
+    """A logged-in admin client. The session cookie lands in the client's
+    cookie jar, so every later request on `client` is the admin — including
+    the public GETs prior tests make with no explicit headers, which now
+    pass the site-mode gate through the session. The returned dict is empty
+    and exists so `headers=admin_headers` call sites keep working."""
+    login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
+    return {}

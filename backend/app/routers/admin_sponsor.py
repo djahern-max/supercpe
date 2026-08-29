@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import require_role
 from app.db import get_db
 from app.models.sponsor import SponsorProfile
 from app.schemas.package import ValidationErrors
@@ -14,7 +14,7 @@ from app.schemas.sponsor import (
 from app.services import sponsor
 from app.services.sponsor import SponsorRuleViolation
 
-router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/admin", dependencies=[Depends(require_role("admin"))])
 
 
 def _admin_view(db: Session, profile: SponsorProfile) -> SponsorProfileAdmin:

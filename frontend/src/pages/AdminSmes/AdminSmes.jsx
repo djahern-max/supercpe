@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import AdminNav from "../../admin/AdminNav.jsx";
-import TokenForm from "../../admin/TokenForm.jsx";
-import { clearToken, getToken, setToken } from "../../admin/token";
+import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
 import { createSme, deleteSme, listSmes, updateSme } from "../../api/admin";
 import styles from "./AdminSmes.module.css";
@@ -48,7 +47,7 @@ function credentialLabel(value) {
 }
 
 function AdminSmes() {
-  const [token, setTokenState] = useState(getToken());
+  const { refresh: refreshSession } = useSession();
   const [smes, setSmes] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -57,24 +56,17 @@ function AdminSmes() {
   const [formErrors, setFormErrors] = useState(null);
   const [listErrors, setListErrors] = useState(null);
 
-  const handleAuthFailure = useCallback(() => {
-    clearToken();
-    setTokenState(null);
-    setSmes(null);
-  }, []);
-
   const refresh = useCallback(() => {
-    if (!token) return;
-    listSmes(token)
+    listSmes()
       .then((data) => {
         setSmes(data);
         setLoadError(null);
       })
       .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) handleAuthFailure();
+        if (err instanceof ApiError && err.status === 401) refreshSession();
         else setLoadError("Could not load the experts. Is the backend running?");
       });
-  }, [token, handleAuthFailure]);
+  }, [refreshSession]);
 
   useEffect(() => {
     refresh();
@@ -84,7 +76,7 @@ function AdminSmes() {
     if (err instanceof ApiError && err.status === 422 && err.data?.errors) {
       setErrors(err.data.errors);
     } else if (err instanceof ApiError && err.status === 401) {
-      handleAuthFailure();
+      refreshSession();
     } else {
       setErrors(["The request failed. Try again."]);
     }
@@ -95,8 +87,8 @@ function AdminSmes() {
     setFormErrors(null);
     const body = { ...form, name: form.name.trim() };
     try {
-      if (editingId === null) await createSme(body, token);
-      else await updateSme(editingId, body, token);
+      if (editingId === null) await createSme(body);
+      else await updateSme(editingId, body);
       setForm(EMPTY_FORM);
       setEditingId(null);
       refresh();
@@ -124,7 +116,7 @@ function AdminSmes() {
     if (!window.confirm(`Delete ${sme.name}?`)) return;
     setListErrors(null);
     try {
-      await deleteSme(sme.id, token);
+      await deleteSme(sme.id);
       if (editingId === sme.id) {
         setEditingId(null);
         setForm(EMPTY_FORM);
@@ -139,21 +131,6 @@ function AdminSmes() {
     value: form[name],
     onChange: (event) => setForm({ ...form, [name]: event.target.value }),
   });
-
-  if (!token) {
-    return (
-      <main className={styles.page}>
-        <AdminNav />
-        <h1 className={styles.heading}>Subject matter experts</h1>
-        <TokenForm
-          onSubmit={(value) => {
-            setToken(value);
-            setTokenState(value);
-          }}
-        />
-      </main>
-    );
-  }
 
   if (loadError) {
     return (

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminNav from "../../admin/AdminNav.jsx";
-import TokenForm from "../../admin/TokenForm.jsx";
-import { clearToken, getToken, setToken } from "../../admin/token";
+import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
 import { createCourse, listCourses } from "../../api/admin";
 import styles from "./AdminCourses.module.css";
@@ -22,7 +21,9 @@ function ErrorPanel({ errors }) {
 
 function AdminCourses() {
   const navigate = useNavigate();
-  const [token, setTokenState] = useState(getToken());
+  // On a 401 the session died server-side; re-checking /me makes
+  // RequireRole redirect to /login.
+  const { refresh: refreshSession } = useSession();
   const [courses, setCourses] = useState(null);
   const [listError, setListError] = useState(null);
   const [code, setCode] = useState("");
@@ -30,59 +31,37 @@ function AdminCourses() {
   const [creating, setCreating] = useState(false);
   const [createErrors, setCreateErrors] = useState(null);
 
-  const handleAuthFailure = useCallback(() => {
-    clearToken();
-    setTokenState(null);
-    setCourses(null);
-  }, []);
-
   const refresh = useCallback(() => {
-    if (!token) return;
-    listCourses(token)
+    listCourses()
       .then((data) => {
         setCourses(data);
         setListError(null);
       })
       .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) handleAuthFailure();
+        if (err instanceof ApiError && err.status === 401) refreshSession();
         else setListError("Could not load courses. Is the backend running?");
       });
-  }, [token, handleAuthFailure]);
+  }, [refreshSession]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
-
-  if (!token) {
-    return (
-      <main className={styles.page}>
-        <AdminNav />
-        <h1 className={styles.heading}>Courses</h1>
-        <TokenForm
-          onSubmit={(value) => {
-            setToken(value);
-            setTokenState(value);
-          }}
-        />
-      </main>
-    );
-  }
 
   const handleCreate = async (event) => {
     event.preventDefault();
     setCreating(true);
     setCreateErrors(null);
     try {
-      const course = await createCourse(
-        { course_code: code.trim(), title: title.trim() },
-        token
-      );
+      const course = await createCourse({
+        course_code: code.trim(),
+        title: title.trim(),
+      });
       navigate(`/admin/courses/${course.course_code}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 422 && err.data?.errors) {
         setCreateErrors(err.data.errors);
       } else if (err instanceof ApiError && err.status === 401) {
-        handleAuthFailure();
+        refreshSession();
       } else {
         setCreateErrors(["Could not create the course. Try again."]);
       }

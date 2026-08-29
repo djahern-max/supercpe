@@ -1,7 +1,16 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+import { useSession } from "../auth/SessionContext.jsx";
 import styles from "./AdminNav.module.css";
 
 function AdminNav() {
+  const navigate = useNavigate();
+  const { account, signOut } = useSession();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/login");
+  };
+
   return (
     <nav className={styles.nav}>
       <NavLink
@@ -28,6 +37,17 @@ function AdminNav() {
       >
         Sponsor
       </NavLink>
+      <NavLink
+        to="/admin/accounts"
+        className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
+      >
+        Accounts
+      </NavLink>
+      <span className={styles.spacer} />
+      {account && <span className={styles.who}>{account.email}</span>}
+      <button className={styles.signOut} type="button" onClick={handleSignOut}>
+        Sign out
+      </button>
     </nav>
   );
 }

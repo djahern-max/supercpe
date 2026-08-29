@@ -1,193 +1,372 @@
-# Current Feature
-
-## Feature 008, Development and review chain, and the publish gate
+# 010 — Enrollment, completion record, and certificate
 
 ## Goal
-Every course names the subject matter expert who developed it and a
-different one who reviewed it, with the review dated against the content it
-reviewed. A course publishes only when the readiness checklist has no block
-findings, a qualifying review exists, and the required licensed CPA took
-part. A published course is immutable; changing it means unpublishing,
-editing, and reviewing again. The most recent review date is disclosed
-where 4.01 requires it.
+
+Make the enrollment the record everything hangs off (ROADMAP structural
+difference 2), verify completion the way 6.01 requires, and issue a
+certificate whose every fact is snapshotted at the moment of completion
+(structural difference 4). After this feature a participant can be
+enrolled by an admin, watch the course, answer the review questions, take
+the qualified assessment, and hold a certificate that a later edit to the
+course, the sponsor profile, or their own account cannot change.
+
+Payment is not here. 017 will create the enrollment on a successful
+charge; nothing downstream of the enrollment row changes when it does.
 
 ## In scope
-- `subject_matter_experts`, deliberately not tied to accounts
-- Developer on the course; dated review records with a decision
-- The licensed-CPA participation rule for Accounting, Auditing, Taxes
-- The publish gate, and publish/unpublish
-- Immutability of published courses
-- Review cycle (annual / biennial) stored; due date derived
-- Public disclosure of developer, reviewer, review date
+
+- `enrollments` with the expiration date set at creation (9.02.2(3)).
+- Participant progress: review-question answers and furthest-watched
+  position per lesson, keyed to the enrollment (replacing 006's "nothing
+  is persisted").
+- Attempts keyed to the enrollment (replacing 007's `X-Preview-Id` for
+  participants; the preview identity survives for admin and reviewer).
+- `completions`: one row per passed enrollment, immutable, carrying the
+  9.01 certificate snapshot and the awarded credit.
+- Certificate rendering (PDF) from the snapshot only; certificate number
+  and verification token; the 60-day issuance clock as an admin finding.
+- Pinning: an enrollment records the package versions it enrolled on and
+  is served those versions until it completes or expires.
+- Admin: enroll a participant, list enrollments and completions per
+  course, render a certificate PDF from its snapshot, see overdue
+  certificates.
+- Participant: `/my/courses`, the player and assessment behind their
+  enrollment, the result page, the certificate download.
+- Course deletion refused while any enrollment exists (008's known gap).
 
 ## Out of scope
-- Overdue-review reporting and reminders (011 reports; nothing reminds).
-- An approval workflow with queues and notifications. A review is a
-  recorded fact, entered by an admin on the reviewer's behalf or by the
-  reviewer if 009 later gives them a login.
-- Instructor rules (4.03). Self study has no instructor.
-- Evaluations (4.04). 011.
-- Verifying a license against a state board. Recorded, not verified; say
-  so in COMPLIANCE.
 
-## Locators
-Read 4.01, 4.01.1, 4.02, 4.02.1, and 9.02.2(4) before writing code, and
-take Requirement text from the PDF. The rules that shape this feature:
+- Payment, refunds, pricing (017); self-registration (016).
+- Certificate delivery by email and the public verification page (018) —
+  this feature stores the verification token 018 will look up.
+- Program evaluation (4.04) — 011 attaches it to the completion.
+- The audit bundle (011); this feature makes sure everything it needs is
+  in rows.
+- Per-jurisdiction credit rounding (019); the certificate prints the
+  course's one-fifth-rounded award.
+- Multi-field credit allocation (004 refuses multi-field courses).
 
-- 4.01: course documentation must contain the most recent publication,
-  revision, or review date. Subjects that change frequently: reviewed at
-  least yearly; others at least every two years.
-- 4.01.1: developed by a subject matter expert; **when technology is used
-  in development, the content developer is responsible for reviewing the
-  content for accuracy.** superCPE's content is drafted with a language
-  model in video-tool from authoritative sources; the developer of record
-  is the human who directed and checked that draft. The SME record must be
-  able to say so.
-- 4.02: reviewed by content reviewers **other than those who developed the
-  program**, before first presentation and after each significant
-  revision. At least one licensed CPA (active, good standing, U.S.
-  jurisdiction) must participate in developing every Accounting or
-  Auditing program; a CPA, tax attorney, or enrolled agent for Taxes.
-  Either role satisfies it.
-- 4.02.1: reviewers qualified in the subject matter. Where advance review
-  was impractical, the basis must be documented — model this as a field,
-  not as a bypass.
-- 9.02.2(4): retain the reviewer's name, credentials, and the review.
+## Locators — read these paragraphs before writing code
+
+- **9.02.2(3)** — course documentation must include an expiration date,
+  "the time by which the participant must complete the qualified
+  assessment," no longer than one year from purchase or enrollment.
+- **6.01** — completion verification; "self-certification … alone is not
+  sufficient." 007 built the graded attempt; this feature ties it to a
+  person and an enrollment.
+- **6.01.2** — 70 percent; re-takes "at the sponsor's discretion"; on a
+  failed assessment without a test bank, no feedback. All three are 007
+  behavior this feature must preserve when re-gating behind enrollment.
+- **9.01** — the eleven certificate items and the 60-day delivery
+  expectation. Read the list; the snapshot is the list.
+- **9.01.1** — for self study, acceptable evidence is "a certificate
+  supplied by the CPE program sponsor after satisfactory completion of a
+  qualified assessment." The entity named on the certificate awards the
+  credit (003's `legal_name`).
+- **9.02.2(1)** — completion records "by individual participant, including
+  the number of CPE credits earned … and course completion date."
+- **7.01** — credit on the 50-minute hour; the time statement (item 10) is
+  003's `TIME_STATEMENT`.
 
 ## Data model
-Table `subject_matter_experts`:
-- id, name, credentials (free text, e.g. "CPA"), credential_type (CHECK in
-  cpa / tax_attorney / enrolled_agent / other), license_jurisdiction,
-  license_number, license_status (CHECK in active / inactive / unknown),
-  email (optional), notes, created_at, updated_at
-- No FK to any accounts table, now or in 009. An SME is a person who was
-  qualified on a date; an account is a login. Different lifetimes.
 
-On `courses`:
-- developer_id (FK sme, nullable), developer_used_technology (bool, not
-  null, default true — the 4.01.1 fact; default reflects how superCPE
-  content is made), review_cycle (CHECK in annual / biennial, default
-  biennial), published_at (nullable), unpublished_at (nullable)
+One migration. CHECKs by hand. Nothing here is ever deleted.
 
-Table `course_reviews`:
-- id, course_id (FK), reviewer_id (FK sme), reviewed_at (date),
-  content_updated_at_reviewed (timestamp: the course's `content_updated_at`
-  at the moment the review was recorded — the review is of *that* content),
-  decision (CHECK in approved / changes_requested), notes (text),
-  impractical_basis (text, nullable — 4.02.1's rare case; if set, decision
-  may be approved without the reviewer having read... no. Keep it simpler:
-  this field documents why review before first presentation was
-  impractical, and its presence is reported, never used to bypass anything),
-  recorded_by (string; the admin identity available today), created_at
+**`enrollments`**
+- `id`, `account_id` FK RESTRICT (role must be participant at creation;
+  checked in the service, not the DB), `course_id` FK RESTRICT,
+  `enrolled_at`, `expires_at` (= `enrolled_at` + `ENROLLMENT_DAYS`,
+  computed in the service and stored — it is a fact about the enrollment,
+  not derived state), `source` CHECK IN ('admin', 'purchase') — only
+  `'admin'` is written here, `created_by_account_id` FK RESTRICT nullable,
+  `package_versions` JSONB (`{package_id: version}` at enrollment, the pin).
+- Derived, never stored: `status` — `completed` if a completion row
+  exists, else `expired` if `now() > expires_at`, else `active`. One
+  function in `app/services/enrollments.py`.
+- "One active enrollment per (account, course)" cannot be a partial
+  index because it depends on `now()`; enforce in the service (refuse a
+  second active enrollment, 422 naming the existing one) and add a plain
+  index on `(account_id, course_id)`.
 
-A review is immutable once recorded. Corrections are new reviews.
+**`lesson_progress`**
+- `enrollment_id` FK RESTRICT, `package_id` FK RESTRICT,
+  `furthest_seconds` (integer), `updated_at`. Unique on
+  `(enrollment_id, package_id)`.
 
-## Derived
-- `current_review(course)`: latest review with `decision == approved` whose
-  `content_updated_at_reviewed >= course.content_updated_at`. None if the
-  content has changed since.
-- `review_due_at(course)`: `current_review.reviewed_at + 365 or 730 days`.
-- `last_documented_date(course)`: the greater of `published_at` and the
-  latest review's `reviewed_at`; this is the 4.01 disclosure.
+**`review_answers`**
+- `enrollment_id`, `question_id` FK RESTRICT (no ON DELETE, like
+  `attempt_answers`), `choice_id`, `is_correct` (snapshot of the verdict),
+  `answered_at`. Unique on `(enrollment_id, question_id)`; a re-answer
+  updates the row and `answered_at`. The 5.01.2 engagement record.
 
-## Readiness findings (extend `readiness.check`)
-- `developer_missing` (block)
-- `review_missing` (block) — no approved review of the current content;
-  message says whether none exists or the content changed since (with both
-  timestamps)
-- `reviewer_is_developer` (block) — the current review's reviewer is the
-  developer. 4.02 is explicit.
-- `cpa_participation` (block) — field of study is Accounting, Auditing, or
-  Taxes and neither developer nor reviewer has `credential_type == cpa`
-  (for Taxes, also accept tax_attorney or enrolled_agent) with
-  `license_status == active`. Name the field and the rule.
-- `description_missing` (block) — the 8.01 announcement text is blank
-- `review_due` (warn) — `review_due_at` is past; block findings only
-  arise from content and review facts, so an overdue course can still be
-  unpublished and republished after a fresh review, which is the fix
+**`attempts`** (existing)
+- `enrollment_id` gains its FK RESTRICT. CHECK: exactly one of
+  `enrollment_id` / the 007 preview identity is set. The partial unique
+  index for one open attempt extends to `(enrollment_id)` where status =
+  open.
 
-## Publish
-`POST /admin/courses/{code}/publish`: runs `readiness.check`; refuses with
-every block finding at once as 422 (same shape); on success sets `status =
-published`, `published_at = now()`. `POST …/unpublish` sets draft,
-`unpublished_at`. Both call nothing that touches content, so
-`content_updated_at` is unchanged and the review stays current.
+**`completions`**
+- `id`, `enrollment_id` FK RESTRICT unique, `attempt_id` FK RESTRICT
+  unique, `completed_at` (= the passing attempt's `submitted_at`),
+  `credit_awarded` NUMERIC(4,1), `field_of_study`, `certificate_number`
+  (text, unique; `YYYY-NNNNNN` from a per-year sequence), `verification_token`
+  (32 random bytes hex, unique; 018 uses it), `certificate_snapshot` JSONB,
+  `certificate_key` (storage key of the first rendered PDF, nullable until
+  rendered), `certificate_rendered_at` nullable.
+- No update path except `certificate_key`/`certificate_rendered_at`
+  being set once. No delete path.
 
-**Immutability:** every `courses` service mutation that calls `touch`
-(attach, detach, move, update-version, title and description edits)
-refuses with a 422 naming the rule when `status == published`. The message
-says to unpublish first. Setting the developer or recording a review is
-not a content change and is allowed on a published course; it cannot make
-readiness worse. Test that a published course with a new review recorded
-stays published and its disclosure date advances.
+**`certificate_snapshot`** — the 9.01 list, item by item, frozen:
+```
+{
+  "sponsor_name": …,            # 1
+  "sponsor_legal_name": …,      # 9.01.1
+  "participant_name": …,        # 2  (account display_name)
+  "participant_email": …,
+  "course_title": …,            # 3
+  "course_code": …,
+  "completed_at": "…",          # 4
+  "location": null,             # 5  self study: not applicable, printed as such
+  "program_type": …,            # 6  PROGRAM_TYPE constant
+  "credit": "0.4",              # 7  as text, one decimal
+  "field_of_study": …,          # 7
+  "national_registry_id": null, # 8  only if may_claim_registry at completion
+  "state_registrations": [{state, number}],   # 9
+  "time_statement": …,          # 10 TIME_STATEMENT
+  "other_statements": …,        # 11
+  "knowledge_level": …, "package_versions": {…}, "passing_pct": 70,
+  "score_pct": …, "recommended_credit_basis": …,
+  "developed_by": …, "reviewed_by": …,   # names and credentials only
+  "snapshot_version": 1
+}
+```
+Every value is copied at completion time from the rows as they stand
+then. Nothing in the snapshot is ever re-read from the live tables.
 
-Sponsor `missing_fields` does **not** gate publish. Publish makes a course
-visible; the sponsor's registry status gates certificates (010).
+Constants in `app/constants/enrollment.py`: `ENROLLMENT_DAYS = 365`
+(9.02.2(3), with the paragraph quoted), `CERTIFICATE_DEADLINE_DAYS = 60`
+(9.01). In `app/constants/certificate.py` (003's file): `PROGRAM_TYPE =
+"Self study"` — deliberately not "QAS Self Study", which is a Registry
+program designation superCPE may not use until `registry_status` is
+registered; comment says so and points at Phase C.
 
-## Endpoints
-- Admin CRUD `/admin/smes`
-- `PUT /admin/courses/{code}/developer` `{sme_id, used_technology}`
-- `POST /admin/courses/{code}/reviews`, `GET …/reviews`
-- `PUT /admin/courses/{code}/review-cycle`
-- publish / unpublish
-- Public course payload gains: `developed_by` (name, credentials),
-  `reviewed_by` (name, credentials), `last_reviewed` (date),
-  `last_documented_date`. Never license numbers publicly.
+## Tasks
 
-## UI
-- `/admin/smes`: list and edit form. Credential type and license status
-  as selects. A note under the form that license claims are recorded as
-  stated and superCPE does not verify them.
-- `/admin/courses/:code`: a Development & Review card above Readiness:
-  developer (select from SMEs, technology checkbox with the 4.01.1 sentence
-  beside it), review cycle, the review history (reviewer, date, decision,
-  notes, and whether it is the current review or superseded by a content
-  change), a "Record review" form (reviewer, date, decision, notes,
-  impractical basis collapsed under a link). Publish / Unpublish button
-  with the readiness state beside it; when refused, the block findings
-  listed. On a published course, every content control is disabled with
-  the immutability note.
-- `/courses/:code` public page: after the disclosure list, a short
-  provenance block: "Developed by … CPA. Reviewed by … CPA on 12 Sep 2026."
-  and the last documented date.
+1. **Models and migration** as above. Backfill: none. The 007 preview
+   attempts stay valid with a null `enrollment_id`.
 
-## Tests
-- SME CRUD; an SME cannot be deleted while named on any course or review
-- publish refuses with all block findings at once; a course with
-  developer, distinct approved reviewer, active CPA, description, fresh
-  credit, and enough questions publishes
-- reviewer == developer refuses
-- Accounting course with a non-CPA developer and non-CPA reviewer refuses;
-  making either an active CPA passes; a Taxes course accepts an enrolled
-  agent
-- a review recorded, then a content change, then publish → refused as
-  stale, message shows both timestamps; a new review → publishes
-- every `touch` path refuses on a published course; unpublish, edit,
-  re-review, publish works end to end
-- recording a review on a published course does not unpublish it and
-  advances the disclosure date
-- public payload shows names and credentials, never license numbers
-- `review_due_at`: annual vs biennial
+2. **`app/services/enrollments.py`:** `enroll(db, account, course,
+   created_by, source)` — refuses unless the course is published, the
+   account is an active participant, and no active enrollment exists;
+   pins `package_versions` from the course's current lessons; sets
+   `expires_at`. `status(enrollment)`. `list_for_account`,
+   `list_for_course`. `packages_for(enrollment)` — the pinned package
+   rows, which the player and assessment use instead of the course's
+   current lessons. `progress(enrollment)` — per lesson: furthest
+   seconds, review questions answered/total; `assessment_available` is
+   true iff every pinned review question has an answer and status is
+   active.
 
-## COMPLIANCE.md
-Rows for 4.01 (dates disclosed; cycle stored; enforcement of currency is
-reporting only — Gap), 4.01.1 (developer of record with the technology
-flag; credentials recorded not verified — Gap), 4.02 (distinct reviewer;
-CPA participation; before first presentation and after revision enforced
-by immutability plus the stale-review block), 4.02.1 (qualification is a
-recorded judgment; impractical basis documented as a field), 9.02.2(4).
+3. **Player re-gating.** The 006 endpoints gain enrollment-scoped
+   variants under `/api/v1/my/enrollments/{id}/lessons/{package_id}/play`
+   and `…/review/{question_key}`, behind `require_role("participant")`
+   and ownership (a foreign enrollment is 404). Play serves the *pinned*
+   package (video URL, blocks, questions). Review grading persists a
+   `review_answers` row and returns exactly what 006 returned. A
+   `PUT …/progress` records `furthest_seconds` (monotonic: never
+   lowered). The admin/reviewer preview endpoints are untouched.
+
+4. **Assessment re-gating.** `assessment.start` for a participant takes
+   the enrollment: refuses if status is not active (naming expiry or
+   completion), if `assessment_available` is false (naming the unanswered
+   review questions by lesson), or if `RETAKES_ALLOWED` is exhausted
+   (count failed attempts on this enrollment). Questions come from the
+   pinned packages. `submit` past `expires_at` is refused and the open
+   attempt is abandoned as failed (6.01.2: the assessment must be
+   completed by the expiration date). `result` is unchanged in shape —
+   the failed-attempt no-feedback rule from 007 stays exactly as tested.
+
+5. **Completion.** In the same transaction as a passing `submit`:
+   `completions.create` — reads the course's `recommended_credit`
+   (refuses the submit with a 409 if the credit is stale; this cannot
+   happen on a published course but the check is defense in depth),
+   builds the snapshot from the live rows, reads `may_claim_registry`
+   *now* and sets item 8 accordingly, assigns the certificate number and
+   token. If the sponsor's issuance fields (see Decisions) are
+   incomplete, the completion is still recorded (the 9.02.2(1) record
+   does not wait on the sponsor's paperwork) and the snapshot is still
+   frozen, but the PDF is not rendered and the participant sees "Your
+   completion is recorded; your certificate will be issued shortly."
+   Render happens later via the admin action in task 7.
+
+6. **Certificate rendering.** `app/services/certificates.py`:
+   `render(snapshot) -> bytes` — a one-page PDF from the snapshot dict and
+   nothing else (it must not take a db session). Layout: sponsor name
+   and legal name, "Certificate of Completion", participant name, course
+   title and code, completion date, program type, credit with field of
+   study, the time statement verbatim, state registrations, other
+   statements, developed-by / reviewed-by line, certificate number, and
+   the verification token as a short URL placeholder for 018. Item 8
+   prints only when present in the snapshot. Item 5 prints "Not
+   applicable (self study)". Store the first render at
+   `certificates/<certificate_number>.pdf` and set `certificate_key`;
+   `GET /api/v1/my/completions/{id}/certificate.pdf` streams that object.
+   Re-rendering from the snapshot must produce the same text content
+   (assert by extracting text in the test); byte-identity is not required.
+
+7. **Admin.** Under `/api/v1/admin`: `POST /courses/{code}/enrollments`
+   (email of an existing participant), `GET /courses/{code}/enrollments`
+   (status, expiry, progress summary), `GET /courses/{code}/completions`,
+   `POST /completions/{id}/render` (renders if the issuance fields allow;
+   422 naming the missing fields otherwise),
+   `GET /completions/{id}/certificate.pdf`. `readiness.check` gains a
+   sponsor-level (not course-level) finding `certificates_overdue` (warn)
+   listing completions older than `CERTIFICATE_DEADLINE_DAYS` with no
+   render — shown on `/admin/sponsor` beside the launch-readiness panel.
+
+8. **Deletion and unpublish.** `delete_course` refuses while any
+   enrollment exists (422, naming the count). `unpublish` does not affect
+   in-flight enrollments: they are pinned and continue; it only stops new
+   ones. The admin course page says so: "N participants are enrolled on
+   the current versions and will keep them."
+
+9. **Frontend.**
+   - `/my/courses` (participant home, the post-login landing for that
+     role): each enrollment as a card — title, status, expires on, lessons
+     watched, review questions answered, and one primary action:
+     Continue / Take the assessment / Retake (N left) / View certificate /
+     Expired.
+   - `/my/courses/:enrollmentId` — the 004 course page facts, then the
+     lesson list with progress, mounting the 006 player per lesson
+     through the enrollment endpoints; the assessment link enabled only
+     when available, with the reason otherwise.
+   - Assessment and result pages reuse 007's components with the
+     enrollment endpoints; a passed result shows the completion date,
+     credit, and the certificate download (or the "will be issued
+     shortly" line).
+   - Admin course page gains an Enrollments card (enroll-by-email form,
+     table) and a Completions card (table with certificate status and
+     Render / Download). `/admin/sponsor` shows overdue certificates.
+   - Nothing participant-facing renders "National Registry" unless the
+     snapshot carries item 8.
+
+10. **Contract.** No change to `docs/course-package.md`. Say so.
+
+## Tests (`tests/test_enrollments.py`, `tests/test_completion.py`, `tests/test_certificates.py`)
+
+- Enroll: `expires_at` is exactly 365 days after `enrolled_at`;
+  `package_versions` pins the current versions; second active enrollment
+  refused; enrolling on a draft course refused; enrolling a reviewer
+  refused.
+- Pinning: after enrollment, `update_version` on the course (unpublish →
+  update → re-review → republish) leaves the enrollment serving the old
+  package; a new enrollment gets the new one.
+- Player: review grading persists the answer; re-answering updates; a
+  participant cannot reach another participant's enrollment (404, not
+  403); progress never decreases.
+- Assessment: start refused with the unanswered review questions named;
+  start refused after expiry; start refused when retakes are exhausted,
+  naming `RETAKES_ALLOWED`; submit after expiry abandons the attempt as
+  failed; a failed result carries no per-question data (re-assert 007's
+  payload walk through the enrollment path).
+- Completion: a passing submit creates exactly one completion in the same
+  transaction; `credit_awarded` equals the course's award as `Decimal`;
+  `completed_at` equals the attempt's `submitted_at`; certificate number
+  is unique and year-prefixed; the snapshot carries all eleven items.
+- Snapshot immutability: after completion, change the course title, the
+  sponsor name, the participant display name, and the state
+  registrations; the snapshot and the re-rendered PDF text are unchanged.
+- Item 8: with `registry_status = not_registered` the snapshot's
+  `national_registry_id` is null and the PDF text lacks "National
+  Registry"; with `registered` and an ID, both are present. Flipping
+  status *after* completion changes neither.
+- Issuance fields: with a blank `legal_name` the completion is recorded,
+  no PDF exists, the participant payload says pending; after filling it,
+  `POST /completions/{id}/render` produces the PDF — and, deliberately,
+  the legal name filled *after* completion is not on it (see Decisions).
+- `certificates_overdue` lists a 61-day-old unrendered completion and not
+  a 59-day-old one.
+- Delete course with enrollments refused; unpublish leaves an active
+  enrollment's status `active` and its player working.
+- All prior tests pass; the count goes up.
+
+## COMPLIANCE.md rows
+
+Add or append:
+
+| 9.02.2(3) | expiration date, no longer than one year from enrollment | 010 | `ENROLLMENT_DAYS` in `app/constants/enrollment.py`; `expires_at` set at `enroll`; `assessment.start`/`submit` refuse past it | One year uniformly; the longer "integrated learning plan" allowance is not modeled. |
+| 6.01 | (append) | 010 | Completion exists only as a row created inside the passing `submit` transaction, keyed to a participant account through the enrollment | — |
+| 6.01.2 (re-takes) | "at the sponsor's discretion" | 010 | `RETAKES_ALLOWED` (007 constant) enforced per enrollment at `assessment.start` | The retake count is a policy; 011's policies page must state it. |
+| 9.01 | (existing row; append) | 010 | `certificate_snapshot` on `completions` freezes items 1–11 at completion; `render` in `app/services/certificates.py` reads the snapshot only; item 8 present only when `may_claim_registry` was true at completion; `PROGRAM_TYPE` is "Self study", never "QAS" | Delivery "as soon as possible … not exceed 60 days" is reported (`certificates_overdue`), not enforced; email delivery is 018. Location (item 5) printed as not applicable. |
+| 9.01.1 | (append) | 010 | `sponsor_legal_name` in the snapshot is the awarding entity printed on the certificate | — |
+| 9.02.2(1) | (existing row; append) | 010 | `completions` (participant via enrollment, `credit_awarded`, `completed_at`), never deleted; `review_answers` and `lesson_progress` retain the engagement record | Export is 011. |
+| 9.02 | (append) | 010 | `enrollments`, `completions`, `review_answers`, `attempts` FK RESTRICT to accounts and packages; course delete refused with enrollments | Period constant still 011. |
 
 ## Acceptance
-- `pytest` passes; migration round-trips
-- Create yourself as an SME (developer, technology used) and a second SME
-  as reviewer; record an approved review on ASC842-PCX; publish succeeds
-  only when readiness is clean; `/courses` now lists the course publicly
-  with provenance
-- Edit the description on the published course → refused; unpublish, edit,
-  publish → refused as stale review; record a review; publish → succeeds
+
+1. Migration runs on the 009 database; 007's preview attempts still list.
+2. As admin: enroll the participant test account on ASC842-PCX (it must
+   be published — see the note at the end); the enrollment shows a
+   one-year expiry and the pinned versions.
+3. As the participant: `/my/courses` shows the course; the player works
+   through every lesson; answers persist across reload; the assessment
+   link is disabled until the last review question is answered, and says
+   which are missing.
+4. Fail the assessment once: the result shows score and retakes left, no
+   per-question detail. Pass it: a completion appears with the credit and
+   date; with the sponsor profile complete, the certificate PDF downloads
+   and contains every 9.01 item except item 8, and the words "National
+   Registry" appear nowhere.
+5. As admin: edit the course title (unpublish first); the participant's
+   certificate is unchanged; a new enrollment sees the new title.
+6. Delete the course: refused, naming the enrollment.
+7. `pytest`: all pass; count exceeds 137.
 
 ## When done
-Append the 008 entry. Decisions: SMEs not accounts; published courses
-immutable; reviewer must differ from developer; sponsor status does not
-gate publish. Known gaps: licenses recorded not verified; overdue review
-reported not enforced; no reviewer login. Then stop.
+
+- Changelog per CLAUDE.md, including the justification for the PDF
+  library chosen (prefer a pure-Python one with no system dependencies;
+  say which and why), the pinning trade-off (a correction re-exported
+  mid-enrollment does not reach in-flight participants), and the
+  `missing_fields` split below restated.
+- COMPLIANCE.md rows above.
+- Improvement note for ROADMAP if you see one; specifically whether an
+  admin should be able to *extend* an expiry (the Standard says "no
+  longer than one year from … enrollment", which reads as a cap, not a
+  clock that can be reset — say what you concluded).
+- List out-of-scope hits, especially anything 011's bundle will need that
+  is not yet in a row.
+
+## Decisions to restate in the changelog
+
+- **`missing_fields` split.** 003 made `registry_status` a
+  certificate-blocking missing field. That was right for the claim ("no
+  certificate may say National Registry until it is true") and wrong for
+  issuance: a sponsor that is not on the Registry may still issue a
+  certificate — it simply cannot print item 8 — and Phase B's NASBA
+  application needs a sample certificate before membership exists. So:
+  `missing_fields()` gains a `for_issuance` view that excludes
+  `registry_status`; issuance gates on that view; item 8 gates on
+  `may_claim_registry`, snapshotted at completion. 003's COMPLIANCE row
+  is appended to say so.
+- **Snapshot at completion, not at render.** If the sponsor's legal name
+  is blank when a participant completes, the certificate that eventually
+  prints will be missing it, because the snapshot is the truth and it was
+  taken when the credit was earned. The fix is to keep the profile
+  complete *before* opening the site — which the launch-readiness panel
+  already says — not to let a later edit rewrite what a participant
+  earned. `certificates_overdue` is the safety net.
+- **Pinning.** An enrollment is served the package versions it started
+  on. Published courses are immutable (008), so a version change already
+  implies unpublish → re-review → republish; in-flight participants keep
+  what they enrolled on, and the certificate snapshot records exactly
+  which versions.
+
+## A note for the human before acceptance
+
+Acceptance item 2 needs ASC842-PCX published, and today the only way it
+is published in the dev database is the 008/009 test review by a
+fictitious reviewer. That is fine for local acceptance and must not
+survive to deployment: before 012, unpublish, delete the fictitious SME
+and their review, and re-review with the real second CPA. Put that on the
+012 checklist now so it is not forgotten.

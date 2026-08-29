@@ -1,8 +1,30 @@
-.tokenForm {
+.page {
+  max-width: 24rem;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.wordmark {
+  margin: 0;
+  font-size: 2rem;
+  text-align: center;
+}
+
+.accent {
+  color: var(--color-accent);
+}
+
+.form {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  max-width: 24rem;
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .label {
@@ -17,8 +39,14 @@
   font-size: 1rem;
 }
 
+.error {
+  margin: 0;
+  color: var(--color-error);
+  font-size: 0.9375rem;
+}
+
 .button {
-  align-self: flex-start;
+  margin-top: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
   border: none;
   border-radius: var(--radius-sm);

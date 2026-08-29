@@ -33,13 +33,17 @@ def test_valid_package_ingests(client, admin_headers, storage_root, tmp_path):
     assert (storage_root / expected_key).is_file()
 
 
-def test_missing_token_401(client, tmp_path):
+def test_no_session_401(client, tmp_path):
     response = upload(client, build_package(tmp_path), {})
     assert response.status_code == 401
 
 
-def test_wrong_token_401(client, tmp_path):
-    response = upload(client, build_package(tmp_path), {"X-Admin-Token": "wrong"})
+def test_bogus_session_cookie_401(client, tmp_path):
+    response = upload(
+        client,
+        build_package(tmp_path),
+        {"Cookie": "supercpe_session=not-a-real-token"},
+    )
     assert response.status_code == 401
 
 

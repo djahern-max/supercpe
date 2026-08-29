@@ -3,8 +3,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import require_role
 from app.db import get_db
+from app.models.account import Account
 from app.models.course import Course
 from app.models.lesson_package import LessonPackage
 from app.schemas.course import (
@@ -34,7 +35,9 @@ from app.services import courses, credit, development, readiness
 from app.services import questions as questions_service
 from app.services.courses import CourseRuleViolation
 
-router = APIRouter(prefix="/admin/courses", dependencies=[Depends(require_admin)])
+router = APIRouter(
+    prefix="/admin/courses", dependencies=[Depends(require_role("admin"))]
+)
 
 
 def _get_course_or_404(db: Session, course_code: str) -> Course:
@@ -376,7 +379,10 @@ def set_developer(
     responses={422: {"model": ValidationErrors}},
 )
 def record_review(
-    course_code: str, payload: ReviewCreate, db: Session = Depends(get_db)
+    course_code: str,
+    payload: ReviewCreate,
+    db: Session = Depends(get_db),
+    account: Account = Depends(require_role("admin")),
 ):
     course = _get_course_or_404(db, course_code)
     try:
@@ -388,6 +394,7 @@ def record_review(
             payload.decision,
             payload.notes,
             payload.impractical_basis,
+            recorded_by=account,
         )
     except CourseRuleViolation as violation:
         return _violation_response(violation)

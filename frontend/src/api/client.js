@@ -19,6 +19,8 @@ export async function request(path, options = {}) {
   const isFormData = options.body instanceof FormData;
   const response = await fetch(`${baseUrl}${path}`, {
     ...options,
+    // The session lives in an HttpOnly cookie; every request carries it.
+    credentials: "include",
     headers: {
       Accept: "application/json",
       // The browser sets the multipart boundary itself for FormData.

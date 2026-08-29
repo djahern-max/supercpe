@@ -1,9 +1,9 @@
 """The qualified assessment endpoints (6.01.2).
 
-Behind the admin token for now, like the player: attempts are preview
-attempts keyed by an opaque X-Preview-Id header the admin frontend
+Behind admin and reviewer sessions for now, like the player: attempts are
+preview attempts keyed by an opaque X-Preview-Id header the frontend
 generates once per session. Feature 010 re-gates these routes behind
-enrollment; the preview path stays for admins.
+enrollment; the preview path stays for admins and reviewers.
 
 The two result-serving endpoints return `assessment.result`'s dict
 verbatim, with no response model: the sub-ii feedback rule is enforced by
@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import require_role
 from app.constants.assessment import PASSING_PCT, RETAKES_ALLOWED
 from app.db import get_db
 from app.models.attempt import Attempt
@@ -35,9 +35,12 @@ from app.schemas.package import ValidationErrors
 from app.services import assessment, courses
 from app.services.assessment import AssessmentRuleViolation
 
-router = APIRouter(prefix="/courses", dependencies=[Depends(require_admin)])
+router = APIRouter(
+    prefix="/courses",
+    dependencies=[Depends(require_role("admin", "reviewer"))],
+)
 admin_router = APIRouter(
-    prefix="/admin/courses", dependencies=[Depends(require_admin)]
+    prefix="/admin/courses", dependencies=[Depends(require_role("admin"))]
 )
 
 

@@ -11,14 +11,11 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.constants.review_cycle import REVIEW_CYCLE_DAYS
+from app.models.account import Account
 from app.models.course import Course
 from app.models.review import CourseReview
 from app.models.sme import SubjectMatterExpert
 from app.services.courses import CourseRuleViolation
-
-# With a shared admin token, "admin" is the only recorder identity that
-# exists today; 009's logins would replace this, not this module's records.
-RECORDED_BY_ADMIN = "admin"
 
 
 def _get_sme(db: Session, sme_id: int) -> SubjectMatterExpert:
@@ -52,8 +49,13 @@ def record_review(
     decision: str,
     notes: str = "",
     impractical_basis: str | None = None,
+    *,
+    recorded_by: Account,
 ) -> CourseReview:
     _get_sme(db, reviewer_id)
+    # recorded_by snapshots the account's email at the time, so the record
+    # reads the same after a display-name change; pre-009 rows carry the
+    # literal "admin" and a null account.
     review = CourseReview(
         course_id=course.id,
         reviewer_id=reviewer_id,
@@ -62,7 +64,8 @@ def record_review(
         decision=decision,
         notes=notes,
         impractical_basis=impractical_basis,
-        recorded_by=RECORDED_BY_ADMIN,
+        recorded_by=recorded_by.email,
+        recorded_by_account_id=recorded_by.id,
     )
     course.reviews.append(review)
     db.commit()

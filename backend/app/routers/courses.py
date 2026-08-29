@@ -1,10 +1,13 @@
 """Public catalog. Serves published courses only, with the full 8.01
 disclosure payload; while nothing is published it correctly serves nothing.
-No auth: this is what a potential participant reads before enrolling."""
+This is what a potential participant reads before enrolling — public while
+the site is open; while it is coming_soon, only sessions get through and
+everyone else sees 404 (require_site_open_or_session)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.auth import require_site_open_or_session
 from app.db import get_db
 from app.models.course import Course
 from app.schemas.course import (
@@ -16,7 +19,10 @@ from app.schemas.course import (
 )
 from app.services import courses, credit, development
 
-router = APIRouter(prefix="/courses")
+router = APIRouter(
+    prefix="/courses",
+    dependencies=[Depends(require_site_open_or_session)],
+)
 
 
 def _person(sme) -> PublicPerson | None:

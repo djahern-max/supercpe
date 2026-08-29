@@ -1,25 +1,19 @@
 import { request } from "./client";
 
-function authHeaders(token) {
-  return { "X-Admin-Token": token };
+export function getSponsor() {
+  return request("/api/v1/admin/sponsor");
 }
 
-export function getSponsor(token) {
-  return request("/api/v1/admin/sponsor", { headers: authHeaders(token) });
-}
-
-export function updateSponsor(token, data) {
+export function updateSponsor(data) {
   return request("/api/v1/admin/sponsor", {
     method: "PUT",
     body: JSON.stringify(data),
-    headers: authHeaders(token),
   });
 }
 
-export function setStateRegistrations(token, rows) {
+export function setStateRegistrations(rows) {
   return request("/api/v1/admin/sponsor/state-registrations", {
     method: "PUT",
     body: JSON.stringify(rows),
-    headers: authHeaders(token),
   });
 }

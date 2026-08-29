@@ -6,8 +6,10 @@ class Settings(BaseSettings):
 
     database_url: str
     cors_origins: str = "http://localhost:5173"
-    admin_token: str
     storage_root: str = "uploads"
+    # True on a developer machine: the session cookie is sent without the
+    # Secure flag so plain-http localhost works. Production sets DEV=false.
+    dev: bool = True
 
     @property
     def cors_origins_list(self) -> list[str]:

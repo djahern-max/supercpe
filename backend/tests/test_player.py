@@ -67,8 +67,9 @@ def test_play_video_url_serves_the_video(client, admin_headers, tmp_path):
     assert media.headers["content-type"] == "video/mp4"
 
 
-def test_play_requires_admin_token(client, admin_headers, tmp_path):
+def test_play_requires_session(client, admin_headers, tmp_path):
     package_id = setup_course(client, admin_headers, tmp_path)
+    client.cookies.clear()
     assert client.get(play_url("ASC606-CON", package_id)).status_code == 401
 
 

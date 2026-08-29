@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import AdminNav from "../../admin/AdminNav.jsx";
-import TokenForm from "../../admin/TokenForm.jsx";
-import { clearToken, getToken, setToken } from "../../admin/token";
+import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
 import {
   attachLesson,
@@ -66,7 +65,7 @@ function ErrorPanel({ errors }) {
 function AdminCourseDetail() {
   const { code } = useParams();
   const navigate = useNavigate();
-  const [token, setTokenState] = useState(getToken());
+  const { refresh: refreshSession } = useSession();
   const [course, setCourse] = useState(null);
   const [packages, setPackages] = useState(null);
   const [attempts, setAttempts] = useState(null);
@@ -89,11 +88,8 @@ function AdminCourseDetail() {
   const [publishErrors, setPublishErrors] = useState(null);
 
   const handleAuthFailure = useCallback(() => {
-    clearToken();
-    setTokenState(null);
-    setCourse(null);
-    setPackages(null);
-  }, []);
+    refreshSession();
+  }, [refreshSession]);
 
   const applyCourse = useCallback((data) => {
     setCourse(data);
@@ -108,8 +104,7 @@ function AdminCourseDetail() {
   }, []);
 
   const refresh = useCallback(() => {
-    if (!token) return;
-    getCourse(code, token)
+    getCourse(code)
       .then((data) => {
         applyCourse(data);
         setLoadError(null);
@@ -119,16 +114,16 @@ function AdminCourseDetail() {
         else if (err instanceof ApiError && err.status === 404) setNotFound(true);
         else setLoadError("Could not load the course. Is the backend running?");
       });
-    listPackages(token)
+    listPackages()
       .then(setPackages)
       .catch(() => setPackages([]));
-    listAttempts(code, token)
+    listAttempts(code)
       .then(setAttempts)
       .catch(() => setAttempts([]));
-    listSmes(token)
+    listSmes()
       .then(setSmes)
       .catch(() => setSmes([]));
-  }, [token, code, applyCourse, handleAuthFailure]);
+  }, [code, applyCourse, handleAuthFailure]);
 
   useEffect(() => {
     refresh();
@@ -153,21 +148,6 @@ function AdminCourseDetail() {
       return false;
     }
   };
-
-  if (!token) {
-    return (
-      <main className={styles.page}>
-        <AdminNav />
-        <h1 className={styles.heading}>Course {code}</h1>
-        <TokenForm
-          onSubmit={(value) => {
-            setToken(value);
-            setTokenState(value);
-          }}
-        />
-      </main>
-    );
-  }
 
   if (notFound) {
     return (
@@ -215,14 +195,14 @@ function AdminCourseDetail() {
 
   const handleSave = () =>
     mutate(
-      () => updateCourse(code, { title: title.trim(), description }, token),
+      () => updateCourse(code, { title: title.trim(), description }),
       setEditErrors
     );
 
   const handleSaveDeveloper = () =>
     mutate(
       () =>
-        setCourseDeveloper(code, Number(developerSmeId), usedTechnology, token),
+        setCourseDeveloper(code, Number(developerSmeId), usedTechnology),
       setDeveloperErrors
     );
 
@@ -235,7 +215,7 @@ function AdminCourseDetail() {
       impractical_basis: reviewForm.impractical_basis.trim() || null,
     };
     const ok = await mutate(
-      () => recordCourseReview(code, body, token),
+      () => recordCourseReview(code, body),
       setReviewErrors
     );
     if (ok) {
@@ -249,7 +229,7 @@ function AdminCourseDetail() {
       return;
     }
     const ok = await mutate(async () => {
-      await deleteCourse(code, token);
+      await deleteCourse(code);
       return null;
     }, setEditErrors);
     if (ok) navigate("/admin/courses");
@@ -336,7 +316,7 @@ function AdminCourseDetail() {
               className={styles.smallButton}
               type="button"
               onClick={() =>
-                mutate(() => recomputeCredit(code, token), setCreditErrors)
+                mutate(() => recomputeCredit(code), setCreditErrors)
               }
             >
               Recompute
@@ -474,7 +454,7 @@ function AdminCourseDetail() {
                       disabled={published || index === 0}
                       onClick={() =>
                         mutate(
-                          () => moveLesson(code, lesson.package_id, "up", token),
+                          () => moveLesson(code, lesson.package_id, "up"),
                           setLessonErrors
                         )
                       }
@@ -487,7 +467,7 @@ function AdminCourseDetail() {
                       disabled={published || index === course.lessons.length - 1}
                       onClick={() =>
                         mutate(
-                          () => moveLesson(code, lesson.package_id, "down", token),
+                          () => moveLesson(code, lesson.package_id, "down"),
                           setLessonErrors
                         )
                       }
@@ -505,8 +485,7 @@ function AdminCourseDetail() {
                               updateLessonVersion(
                                 code,
                                 lesson.package_id,
-                                lesson.newer_package_id,
-                                token
+                                lesson.newer_package_id
                               ),
                             setLessonErrors
                           )
@@ -521,7 +500,7 @@ function AdminCourseDetail() {
                       disabled={published}
                       onClick={() =>
                         mutate(
-                          () => detachLesson(code, lesson.package_id, token),
+                          () => detachLesson(code, lesson.package_id),
                           setLessonErrors
                         )
                       }
@@ -588,7 +567,7 @@ function AdminCourseDetail() {
             value={development.review_cycle}
             onChange={(event) =>
               mutate(
-                () => setCourseReviewCycle(code, event.target.value, token),
+                () => setCourseReviewCycle(code, event.target.value),
                 setDeveloperErrors
               )
             }
@@ -623,6 +602,7 @@ function AdminCourseDetail() {
                 <th>Date</th>
                 <th>Decision</th>
                 <th>Notes</th>
+                <th>Recorded by</th>
                 <th>Standing</th>
               </tr>
             </thead>
@@ -646,6 +626,7 @@ function AdminCourseDetail() {
                       </span>
                     )}
                   </td>
+                  <td>{review.recorded_by}</td>
                   <td>
                     {review.is_current
                       ? "current"
@@ -744,7 +725,7 @@ function AdminCourseDetail() {
               className={styles.dangerButton}
               type="button"
               onClick={() =>
-                mutate(() => unpublishCourse(code, token), setPublishErrors)
+                mutate(() => unpublishCourse(code), setPublishErrors)
               }
             >
               Unpublish
@@ -754,7 +735,7 @@ function AdminCourseDetail() {
               className={styles.button}
               type="button"
               onClick={() =>
-                mutate(() => publishCourse(code, token), setPublishErrors)
+                mutate(() => publishCourse(code), setPublishErrors)
               }
             >
               Publish
@@ -905,7 +886,7 @@ function AdminCourseDetail() {
                       disabled={published || attachedIds.has(pkg.id)}
                       onClick={async () => {
                         const ok = await mutate(
-                          () => attachLesson(code, { package_id: pkg.id }, token),
+                          () => attachLesson(code, { package_id: pkg.id }),
                           setAttachErrors
                         );
                         if (ok) refresh();

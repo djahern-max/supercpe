@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import require_role
 from app.db import get_db
 from app.models.sme import SubjectMatterExpert
 from app.schemas.package import ValidationErrors
@@ -10,7 +10,9 @@ from app.schemas.sme import SmeCreate, SmeOut, SmeUpdate
 from app.services import smes
 from app.services.courses import CourseRuleViolation
 
-router = APIRouter(prefix="/admin/smes", dependencies=[Depends(require_admin)])
+router = APIRouter(
+    prefix="/admin/smes", dependencies=[Depends(require_role("admin"))]
+)
 
 
 def _get_sme_or_404(db: Session, sme_id: int) -> SubjectMatterExpert:

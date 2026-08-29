@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import require_role
 from app.db import get_db
 from app.schemas.package import (
     IngestResponse,
@@ -18,7 +18,7 @@ from app.services import packages
 from app.services.courses import CourseRuleViolation
 from app.storage import Storage, get_storage
 
-router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/admin", dependencies=[Depends(require_role("admin"))])
 
 
 @router.post(

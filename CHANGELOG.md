@@ -684,3 +684,115 @@ Shipped: 2026-08-27
 - Deleting a draft course cascades its reviews away; retention of reviews
   on delivered courses is protected only by delete being draft-only (010
   revisits deletion).
+
+## 009 — Accounts, roles, sessions, and site mode
+Shipped: 2026-08-29
+
+**What changed**
+- `accounts` (email, argon2id hash, role, active flag, forced first-login
+  password change, login-attempt counter with lockout) and `sessions`
+  (sha256 token hash, idle and absolute expiry, revocation) tables, one
+  migration; `site_mode` on `sponsor_profile` with an append-only
+  `site_mode_changes` log; `recorded_by_account_id` on `course_reviews`.
+- `app/services/auth.py` (authenticate, sessions, password change, role
+  and activation management) and `app/services/site.py` (mode read/write
+  with the log row in the same transaction). Constants in
+  `app/constants/auth.py` — none of them NASBA numbers, and the docstring
+  says so.
+- `require_role(*roles)` in `app/auth.py` replaced `require_admin`
+  everywhere; `ADMIN_TOKEN` removed from config, `.env.example` (both),
+  and the local `.env`. Every `/api/v1/admin/*` route takes
+  `require_role("admin")`; the player and assessment preview take
+  `require_role("admin", "reviewer")`. Auth failures are 401 with one
+  fixed message, authorization failures 403, and the closed site answers
+  404 (`require_site_open_or_session` on `GET /courses`,
+  `GET /courses/{code}`, `GET /sponsor`) so it does not advertise what is
+  behind it. `/api/v1/health`, `/api/v1/site`, and `/api/v1/auth/*` are
+  never gated.
+- Routes: `/api/v1/auth` (login, logout, logout-all, me,
+  change-password), `/api/v1/admin/accounts` (list, create with a
+  one-time initial password, role, deactivate/reactivate,
+  revoke-sessions), `/api/v1/admin/site-mode` (+ `/changes`),
+  `GET /api/v1/site` (public: mode and sponsor name only), and the
+  reviewer surface `/api/v1/review/courses` (list with current-review
+  standing), `/api/v1/review/courses/{code}` (read-only facts, history,
+  and the SME names the form needs), and
+  `POST /api/v1/review/courses/{code}/reviews`.
+- `development.record_review` now requires the recording account:
+  `recorded_by` snapshots the account's email, `recorded_by_account_id`
+  the account. The 008 literal `"admin"` rows are untouched history.
+- `python -m app.cli create-admin --email …` creates the first admin,
+  prompting for the password (no flag; it would land in shell history);
+  refuses if an admin exists unless `--force`.
+- Frontend: session context from `GET /me`, `RequireRole` route wrapper,
+  `/login` (unlinked), `/change-password`, `/admin/accounts`, a Site mode
+  card with confirm step and change log on `/admin/sponsor`, `/review`
+  and `/review/courses/:code` for reviewers, and the coming-soon
+  placeholder on public pages. The four admin token forms are deleted
+  (AdminPackages and AdminSponsor inline, the shared `admin/TokenForm.jsx`
+  and `admin/token.js`); `api/client.js` sends `credentials: 'include'`
+  and no header. The preview pages now serve reviewers too, reading the
+  lesson list from the review endpoint.
+- `X-Preview-Id` is unchanged from 007; 010 replaces it with the
+  enrollment.
+- Tests: 22 new in `test_auth.py` and `test_site.py`, including a walk of
+  the router table so a new `/admin` route cannot ship unguarded. 137
+  total (was 115), with prior fixtures switched from the token header to
+  a logged-in admin client.
+
+**Standards touched**
+- 4.02 — reviewers enter their review in the first person; who recorded
+  it is stored beside it
+- 4.02.1 — unchanged: the SME record stays the qualification, the
+  account is only the login (compliance row unchanged)
+- 6.01 — the server-vouched participant identity 010's completion
+  verification will hang on; new compliance row
+- 9.02 — accounts are deactivated, never deleted; sessions and reviews
+  FK RESTRICT to accounts
+- 9.02.2(1) — unchanged: completion records still wait on 010
+  (compliance row unchanged)
+- 9.02.2(4) — the account that recorded each review is retained beside
+  the reviewer's name and credentials
+- COMPLIANCE.md: 4.02, 9.02, and 9.02.2(4) rows appended; a 6.01 row
+  added.
+
+**Decisions**
+- `argon2-cffi` is the one new dependency: a single maintained library
+  for the one hashing primitive needed (argon2id); `passlib` is
+  unmaintained. No JWT library — sessions are rows, revocable by UPDATE.
+- CSRF posture: the session cookie is `HttpOnly`, `SameSite=Lax`,
+  `Secure` outside dev; CORS is same-origin; mutating auth routes
+  require `Content-Type: application/json`, which a cross-site form
+  cannot send. No CSRF token on top of that.
+- No SME↔account FK, ever (restating 008): a person who was qualified on
+  a date outlives any login. The reviewer surface names an SME id on the
+  review exactly as 008's admin form did.
+- Login failures are uniform: unknown email, wrong password, and
+  inactive account share one 401 body, and unknown emails still cost a
+  hash verification.
+- The initial password for an admin-created account is generated
+  server-side, returned once in the create response, and stored only as
+  a hash; the account must change it on first login.
+- The closed site answers 404, not 401, on public routes; any valid
+  session of any role passes the gate.
+- Test fixtures log the shared TestClient in as an admin (the cookie jar
+  carries the session), so prior tests' bare public GETs pass the site
+  gate the same way a signed-in tester's browser does.
+- `GET /api/v1/review/courses/{code}` was added beyond the two endpoints
+  the feature spec listed: the reviewer's page needs the course facts,
+  history, and SME names, and the admin SME routes are rightly closed to
+  reviewers. It serves both roles, and the preview pages read it too.
+
+**Known gaps**
+- `grep -r ADMIN_TOKEN` is empty across code, config, and both
+  `.env.example` files; the string still appears in this file's 001–008
+  entries (append-only history) and in `current-feature.md` (replaced
+  when 010 begins).
+- An admin may still record a review on a reviewer's behalf through
+  either surface; the record then shows the admin as recorder. 010
+  should decide whether completion-era reviews must be recorded by an
+  account holding the reviewer role.
+- No rate limiting beyond the login attempt counter; no MFA, OAuth,
+  password reset, or self-registration (016).
+- Sessions are not tied to IP or user agent; both are recorded on the
+  row but nothing checks them.

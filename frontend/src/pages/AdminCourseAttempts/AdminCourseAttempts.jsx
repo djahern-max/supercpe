@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import AdminNav from "../../admin/AdminNav.jsx";
-import TokenForm from "../../admin/TokenForm.jsx";
-import { clearToken, getToken, setToken } from "../../admin/token";
+import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
 import { listAttempts } from "../../api/admin";
 import styles from "./AdminCourseAttempts.module.css";
@@ -19,20 +18,17 @@ function formatTimestamp(value) {
  */
 function AdminCourseAttempts() {
   const { code } = useParams();
-  const [token, setTokenState] = useState(getToken());
+  const { refresh: refreshSession } = useSession();
   const [attempts, setAttempts] = useState(null);
   const [error, setError] = useState(null);
   const [openId, setOpenId] = useState(null);
 
   const handleAuthFailure = useCallback(() => {
-    clearToken();
-    setTokenState(null);
-    setAttempts(null);
-  }, []);
+    refreshSession();
+  }, [refreshSession]);
 
   useEffect(() => {
-    if (!token) return;
-    listAttempts(code, token)
+    listAttempts(code)
       .then(setAttempts)
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) handleAuthFailure();
@@ -40,22 +36,7 @@ function AdminCourseAttempts() {
           setError("There is no course with this code.");
         else setError("Could not load attempts. Is the backend running?");
       });
-  }, [token, code, handleAuthFailure]);
-
-  if (!token) {
-    return (
-      <main className={styles.page}>
-        <AdminNav />
-        <h1 className={styles.heading}>Attempts for {code}</h1>
-        <TokenForm
-          onSubmit={(value) => {
-            setToken(value);
-            setTokenState(value);
-          }}
-        />
-      </main>
-    );
-  }
+  }, [code, handleAuthFailure]);
 
   return (
     <main className={styles.page}>

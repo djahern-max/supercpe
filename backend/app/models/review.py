@@ -48,7 +48,15 @@ class CourseReview(Base):
     # 4.02.1's rare case: why review before first presentation was
     # impractical. Documented and reported, never used to bypass anything.
     impractical_basis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Who entered the record. Rows from 008 carry the literal "admin" and a
+    # null account (the shared token was the only identity then); rows from
+    # 009 on carry the account id and, in `recorded_by`, the account's email
+    # at the time — a snapshot, so the record reads the same after a
+    # display-name change.
     recorded_by: Mapped[str] = mapped_column(String, nullable=False)
+    recorded_by_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

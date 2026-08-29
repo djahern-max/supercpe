@@ -35,6 +35,13 @@ class SponsorProfile(Base):
     other_certificate_statements: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=""
     )
+    # Phase B gate: while `coming_soon`, public routes and pages 404 for
+    # anyone without a session. A logged setting here, not an environment
+    # variable, so it flips without a deploy; every change writes a
+    # `site_mode_changes` row (services.site.set_site_mode).
+    site_mode: Mapped[str] = mapped_column(
+        String, nullable=False, default="coming_soon", server_default="coming_soon"
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
@@ -50,6 +57,10 @@ class SponsorProfile(Base):
         CheckConstraint(
             "registry_status = 'registered' OR national_registry_id = ''",
             name="ck_sponsor_profile_registry_id_requires_registered",
+        ),
+        CheckConstraint(
+            "site_mode IN ('coming_soon', 'open')",
+            name="ck_sponsor_profile_site_mode",
         ),
     )
 

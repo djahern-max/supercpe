@@ -22,13 +22,6 @@
   margin: 0;
 }
 
-.tokenForm {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  max-width: 24rem;
-}
-
 .form {
   display: flex;
   flex-direction: column;
@@ -172,4 +165,13 @@
   display: flex;
   align-items: center;
   gap: var(--space-md);
+}
+
+.modeConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-warning-bg);
+  border-radius: var(--radius-sm);
 }

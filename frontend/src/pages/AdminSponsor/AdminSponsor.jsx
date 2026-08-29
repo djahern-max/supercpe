@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import AdminNav from "../../admin/AdminNav.jsx";
-import { clearToken, getToken, setToken } from "../../admin/token";
+import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
 import {
   getSponsor,
   setStateRegistrations,
   updateSponsor,
 } from "../../api/sponsor";
+import { getSite, listSiteModeChanges, setSiteMode } from "../../api/site";
 import styles from "./AdminSponsor.module.css";
 
 const PROFILE_FIELDS = [
@@ -24,33 +25,12 @@ const MISSING_LABELS = {
   registry_status: "Not yet on the National Registry",
 };
 
-function TokenForm({ onSubmit }) {
-  const [value, setValue] = useState("");
-  return (
-    <form
-      className={styles.tokenForm}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (value.trim()) onSubmit(value.trim());
-      }}
-    >
-      <label className={styles.label} htmlFor="admin-token">
-        Admin token
-      </label>
-      <input
-        id="admin-token"
-        className={styles.input}
-        type="password"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Paste the admin token"
-      />
-      <button className={styles.button} type="submit" disabled={!value.trim()}>
-        Continue
-      </button>
-    </form>
-  );
-}
+// What each flip changes, quoted in the confirm step.
+const MODE_CONSEQUENCE = {
+  open: "The catalog and course pages become public.",
+  coming_soon:
+    "The catalog and course pages show only the coming-soon placeholder to anyone not signed in.",
+};
 
 function StatusPanel({ missingFields }) {
   if (missingFields.length === 0) {
@@ -83,6 +63,146 @@ function ErrorPanel({ errors }) {
   );
 }
 
+/**
+ * The site mode card: current mode, a switch with a confirm step that
+ * quotes what changes, an optional note, and the change log. Reads only
+ * /api/v1/site and the change log — deliberately nothing that could carry
+ * registry facts.
+ */
+function SiteModeCard({ onAuthFailure }) {
+  const [mode, setMode] = useState(null);
+  const [changes, setChanges] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [note, setNote] = useState("");
+  const [errors, setErrors] = useState(null);
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => {
+    getSite()
+      .then((site) => setMode(site.site_mode))
+      .catch(() => setErrors(["Could not load the site mode."]));
+    listSiteModeChanges()
+      .then(setChanges)
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) onAuthFailure();
+        else setChanges([]);
+      });
+  }, [onAuthFailure]);
+
+  if (mode === null) {
+    return (
+      <section className={styles.registrations}>
+        <h2 className={styles.subheading}>Site mode</h2>
+        <ErrorPanel errors={errors} />
+        {!errors && <p className={styles.muted}>Loading…</p>}
+      </section>
+    );
+  }
+
+  const target = mode === "open" ? "coming_soon" : "open";
+
+  const handleConfirm = async () => {
+    setSwitching(true);
+    setErrors(null);
+    try {
+      const log = await setSiteMode(target, note.trim());
+      setChanges(log);
+      setMode(target);
+      setConfirming(false);
+      setNote("");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) onAuthFailure();
+      else if (err instanceof ApiError && err.status === 422 && err.data?.errors)
+        setErrors(err.data.errors);
+      else setErrors(["The switch failed. Try again."]);
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  return (
+    <section className={styles.registrations}>
+      <h2 className={styles.subheading}>Site mode</h2>
+      <p className={styles.muted}>
+        Current mode: <strong>{mode}</strong>.{" "}
+        {mode === "open"
+          ? "The catalog and course pages are public."
+          : "Visitors without a sign-in see only the coming-soon placeholder."}
+      </p>
+
+      {!confirming ? (
+        <button
+          className={styles.button}
+          type="button"
+          onClick={() => setConfirming(true)}
+        >
+          Switch to {target === "open" ? "open" : "coming soon"}…
+        </button>
+      ) : (
+        <div className={styles.modeConfirm}>
+          <p className={styles.panelTitle}>{MODE_CONSEQUENCE[target]}</p>
+          <input
+            className={styles.input}
+            placeholder="Note for the change log (optional)"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+          />
+          <div className={styles.registrationActions}>
+            <button
+              className={styles.button}
+              type="button"
+              disabled={switching}
+              onClick={handleConfirm}
+            >
+              {switching ? "Switching…" : `Switch to ${target}`}
+            </button>
+            <button
+              className={styles.linkButton}
+              type="button"
+              onClick={() => {
+                setConfirming(false);
+                setNote("");
+                setErrors(null);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      <ErrorPanel errors={errors} />
+
+      {changes !== null && changes.length > 0 && (
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Who</th>
+              <th>Change</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {changes.map((change) => (
+              <tr key={change.id}>
+                <td>{new Date(change.changed_at).toLocaleString()}</td>
+                <td>{change.changed_by_email}</td>
+                <td>
+                  {change.from_mode} → {change.to_mode}
+                </td>
+                <td>{change.note || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {changes !== null && changes.length === 0 && (
+        <p className={styles.muted}>The mode has never been changed.</p>
+      )}
+    </section>
+  );
+}
+
 function profileToForm(profile) {
   return {
     name: profile.name,
@@ -98,7 +218,7 @@ function profileToForm(profile) {
 }
 
 function AdminSponsor() {
-  const [token, setTokenState] = useState(getToken());
+  const { refresh: refreshSession } = useSession();
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState(null);
   const [registrations, setRegistrations] = useState(null);
@@ -109,17 +229,12 @@ function AdminSponsor() {
   const [savingRegistrations, setSavingRegistrations] = useState(false);
 
   const handleAuthFailure = useCallback(() => {
-    clearToken();
-    setTokenState(null);
-    setProfile(null);
-    setForm(null);
-    setRegistrations(null);
-  }, []);
+    refreshSession();
+  }, [refreshSession]);
 
   useEffect(() => {
-    if (!token) return;
     let cancelled = false;
-    getSponsor(token)
+    getSponsor()
       .then((data) => {
         if (cancelled) return;
         setProfile(data);
@@ -135,22 +250,7 @@ function AdminSponsor() {
     return () => {
       cancelled = true;
     };
-  }, [token, handleAuthFailure]);
-
-  if (!token) {
-    return (
-      <main className={styles.page}>
-        <AdminNav />
-        <h1 className={styles.heading}>Sponsor</h1>
-        <TokenForm
-          onSubmit={(value) => {
-            setToken(value);
-            setTokenState(value);
-          }}
-        />
-      </main>
-    );
-  }
+  }, [handleAuthFailure]);
 
   const setField = (name, value) => {
     setForm((current) => ({ ...current, [name]: value }));
@@ -171,7 +271,7 @@ function AdminSponsor() {
     setSaving(true);
     setProfileErrors(null);
     try {
-      const data = await updateSponsor(token, form);
+      const data = await updateSponsor(form);
       setProfile(data);
       setForm(profileToForm(data));
       setRegistrations(data.state_registrations);
@@ -194,7 +294,7 @@ function AdminSponsor() {
         registration_number: row.registration_number,
         notes: row.notes,
       }));
-      const data = await setStateRegistrations(token, rows);
+      const data = await setStateRegistrations(rows);
       setRegistrations(data);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) handleAuthFailure();
@@ -303,6 +403,8 @@ function AdminSponsor() {
               {saving ? "Saving…" : "Save profile"}
             </button>
           </form>
+
+          <SiteModeCard onAuthFailure={handleAuthFailure} />
 
           <section className={styles.registrations}>
             <h2 className={styles.subheading}>State registrations</h2>

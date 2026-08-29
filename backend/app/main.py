@@ -5,15 +5,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import (
+    admin_accounts,
     admin_courses,
     admin_packages,
     admin_smes,
     admin_sponsor,
     assessment,
+    auth,
     courses,
     health,
     media,
     player,
+    review,
+    site,
     sponsor,
 )
 from app.services.ffprobe import ensure_ffprobe_available
@@ -37,6 +41,11 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(site.router, prefix="/api/v1")
+app.include_router(site.admin_router, prefix="/api/v1")
+app.include_router(admin_accounts.router, prefix="/api/v1")
+app.include_router(review.router, prefix="/api/v1")
 app.include_router(admin_courses.router, prefix="/api/v1")
 app.include_router(admin_packages.router, prefix="/api/v1")
 app.include_router(admin_smes.router, prefix="/api/v1")

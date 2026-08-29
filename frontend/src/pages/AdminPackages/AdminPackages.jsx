@@ -8,41 +8,13 @@ import {
   uploadPackage,
 } from "../../api/admin";
 import AdminNav from "../../admin/AdminNav.jsx";
-import { clearToken, getToken, setToken } from "../../admin/token";
+import { useSession } from "../../auth/SessionContext.jsx";
 import styles from "./AdminPackages.module.css";
 
 function formatDuration(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
-function TokenForm({ onSubmit }) {
-  const [value, setValue] = useState("");
-  return (
-    <form
-      className={styles.tokenForm}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (value.trim()) onSubmit(value.trim());
-      }}
-    >
-      <label className={styles.label} htmlFor="admin-token">
-        Admin token
-      </label>
-      <input
-        id="admin-token"
-        className={styles.input}
-        type="password"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Paste the admin token"
-      />
-      <button className={styles.button} type="submit" disabled={!value.trim()}>
-        Continue
-      </button>
-    </form>
-  );
 }
 
 function UploadResult({ result }) {
@@ -79,14 +51,14 @@ function UploadResult({ result }) {
   );
 }
 
-function PackageDetail({ id, token, onAuthFailure }) {
+function PackageDetail({ id, onAuthFailure }) {
   const [detail, setDetail] = useState(null);
   const [transcript, setTranscript] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    getPackage(id, token)
+    getPackage(id)
       .then((data) => {
         if (!cancelled) setDetail(data);
       })
@@ -98,13 +70,13 @@ function PackageDetail({ id, token, onAuthFailure }) {
     return () => {
       cancelled = true;
     };
-  }, [id, token, onAuthFailure]);
+  }, [id, onAuthFailure]);
 
   if (error) return <div className={styles.errorPanel}>{error}</div>;
   if (!detail) return <p className={styles.muted}>Loading detail…</p>;
 
   const loadTranscript = () => {
-    getTranscript(id, token)
+    getTranscript(id)
       .then(setTranscript)
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) onAuthFailure();
@@ -134,7 +106,7 @@ function PackageDetail({ id, token, onAuthFailure }) {
 }
 
 function AdminPackages() {
-  const [token, setTokenState] = useState(getToken());
+  const { refresh: refreshSession } = useSession();
   const [packages, setPackages] = useState(null);
   const [listError, setListError] = useState(null);
   const [file, setFile] = useState(null);
@@ -144,19 +116,11 @@ function AdminPackages() {
   const [selectedId, setSelectedId] = useState(null);
 
   const handleAuthFailure = useCallback(() => {
-    clearToken();
-    setTokenState(null);
-    setPackages(null);
-    setSelectedId(null);
-    setResult({
-      kind: "failure",
-      message: "The token was rejected. Enter it again.",
-    });
-  }, []);
+    refreshSession();
+  }, [refreshSession]);
 
   const refresh = useCallback(() => {
-    if (!token) return;
-    listPackages(token)
+    listPackages()
       .then((data) => {
         setPackages(data);
         setListError(null);
@@ -165,28 +129,11 @@ function AdminPackages() {
         if (err instanceof ApiError && err.status === 401) handleAuthFailure();
         else setListError("Could not load packages. Is the backend running?");
       });
-  }, [token, handleAuthFailure]);
+  }, [handleAuthFailure]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
-
-  if (!token) {
-    return (
-      <main className={styles.page}>
-        <AdminNav />
-        <h1 className={styles.heading}>Lesson packages</h1>
-        <UploadResult result={result} />
-        <TokenForm
-          onSubmit={(value) => {
-            setToken(value);
-            setTokenState(value);
-            setResult(null);
-          }}
-        />
-      </main>
-    );
-  }
 
   const handleDelete = async (pkg) => {
     if (
@@ -197,7 +144,7 @@ function AdminPackages() {
       return;
     }
     try {
-      await deletePackage(pkg.id, token);
+      await deletePackage(pkg.id);
       if (pkg.id === selectedId) setSelectedId(null);
       setResult(null);
       refresh();
@@ -217,7 +164,7 @@ function AdminPackages() {
     setUploading(true);
     setResult(null);
     try {
-      const data = await uploadPackage(file, token);
+      const data = await uploadPackage(file);
       setResult({ kind: "success", data });
       setFile(null);
       setFileInputKey((key) => key + 1);
@@ -323,7 +270,6 @@ function AdminPackages() {
         <PackageDetail
           key={selectedId}
           id={selectedId}
-          token={token}
           onAuthFailure={handleAuthFailure}
         />
       )}

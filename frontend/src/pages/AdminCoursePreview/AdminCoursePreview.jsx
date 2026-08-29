@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import AdminNav from "../../admin/AdminNav.jsx";
-import TokenForm from "../../admin/TokenForm.jsx";
-import { clearToken, getToken, setToken } from "../../admin/token";
+import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
-import { getCourse, getPlayLesson, gradeReview } from "../../api/admin";
+import { getPlayLesson, gradeReview } from "../../api/admin";
+import { getReviewCourse } from "../../api/review";
 import Player from "../../components/Player/Player.jsx";
 import styles from "./AdminCoursePreview.module.css";
 
@@ -15,30 +15,27 @@ function formatDuration(totalSeconds) {
 }
 
 /**
- * The admin preview mount for the participant player. 010 mounts the same
- * Player for enrolled participants and adds persistence; nothing a
- * previewing admin does here is recorded anywhere.
+ * The preview mount for the participant player, for admins and reviewers
+ * (a reviewer must see the program they sign off on, 4.02). 010 mounts the
+ * same Player for enrolled participants and adds persistence; nothing a
+ * previewer does here is recorded anywhere.
  */
 function AdminCoursePreview() {
   const { code, packageId } = useParams();
-  const [token, setTokenState] = useState(getToken());
+  const { account, refresh: refreshSession } = useSession();
   const [course, setCourse] = useState(null);
   const [lesson, setLesson] = useState(null);
   const [error, setError] = useState(null);
 
   const handleAuthFailure = useCallback(() => {
-    clearToken();
-    setTokenState(null);
-    setCourse(null);
-    setLesson(null);
-  }, []);
+    refreshSession();
+  }, [refreshSession]);
 
   useEffect(() => {
-    if (!token) return;
     setError(null);
     setLesson(null);
     if (packageId) {
-      getPlayLesson(code, packageId, token)
+      getPlayLesson(code, packageId)
         .then(setLesson)
         .catch((err) => {
           if (err instanceof ApiError && err.status === 401) handleAuthFailure();
@@ -47,7 +44,7 @@ function AdminCoursePreview() {
           else setError("Could not load the lesson. Is the backend running?");
         });
     } else {
-      getCourse(code, token)
+      getReviewCourse(code)
         .then(setCourse)
         .catch((err) => {
           if (err instanceof ApiError && err.status === 401) handleAuthFailure();
@@ -56,30 +53,27 @@ function AdminCoursePreview() {
           else setError("Could not load the course. Is the backend running?");
         });
     }
-  }, [token, code, packageId, handleAuthFailure]);
+  }, [code, packageId, handleAuthFailure]);
 
-  if (!token) {
-    return (
-      <main className={styles.page}>
-        <AdminNav />
-        <h1 className={styles.heading}>Preview {code}</h1>
-        <TokenForm
-          onSubmit={(value) => {
-            setToken(value);
-            setTokenState(value);
-          }}
-        />
-      </main>
-    );
-  }
+  const isAdmin = account?.role === "admin";
 
   return (
     <main className={styles.page}>
-      <AdminNav />
+      {isAdmin && <AdminNav />}
       <div className={styles.banner}>Preview — nothing is recorded.</div>
       <p className={styles.breadcrumb}>
-        <Link to="/admin/courses">Courses</Link> /{" "}
-        <Link to={`/admin/courses/${code}`}>{code}</Link> /{" "}
+        {isAdmin ? (
+          <>
+            <Link to="/admin/courses">Courses</Link> /{" "}
+            <Link to={`/admin/courses/${code}`}>{code}</Link>
+          </>
+        ) : (
+          <>
+            <Link to="/review">Review</Link> /{" "}
+            <Link to={`/review/courses/${code}`}>{code}</Link>
+          </>
+        )}{" "}
+        /{" "}
         {packageId ? (
           <Link to={`/admin/courses/${code}/preview`}>preview</Link>
         ) : (
@@ -127,7 +121,7 @@ function AdminCoursePreview() {
         <Player
           lesson={lesson}
           gradeAnswer={(questionKey, choiceKey) =>
-            gradeReview(code, packageId, questionKey, choiceKey, token)
+            gradeReview(code, packageId, questionKey, choiceKey)
           }
         />
       )}
