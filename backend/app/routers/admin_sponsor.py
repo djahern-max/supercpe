@@ -7,11 +7,12 @@ from app.db import get_db
 from app.models.sponsor import SponsorProfile
 from app.schemas.package import ValidationErrors
 from app.schemas.sponsor import (
+    SponsorFinding,
     SponsorProfileAdmin,
     SponsorProfileUpdate,
     StateRegistration,
 )
-from app.services import sponsor
+from app.services import readiness, sponsor
 from app.services.sponsor import SponsorRuleViolation
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_role("admin"))])
@@ -30,10 +31,15 @@ def _admin_view(db: Session, profile: SponsorProfile) -> SponsorProfileAdmin:
         other_certificate_statements=profile.other_certificate_statements,
         updated_at=profile.updated_at,
         missing_fields=profile.missing_fields(),
+        missing_for_issuance=profile.missing_fields(for_issuance=True),
         may_claim_registry=profile.may_claim_registry,
         state_registrations=[
             StateRegistration.model_validate(row)
             for row in sponsor.get_state_registrations(db)
+        ],
+        findings=[
+            SponsorFinding(**vars(finding))
+            for finding in readiness.sponsor_findings(db)
         ],
     )
 

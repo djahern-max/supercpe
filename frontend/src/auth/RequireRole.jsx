@@ -4,7 +4,7 @@ import { useSession } from "./SessionContext.jsx";
 export function roleHome(role) {
   if (role === "admin") return "/admin/courses";
   if (role === "reviewer") return "/review";
-  return "/courses";
+  return "/my/courses";
 }
 
 /**

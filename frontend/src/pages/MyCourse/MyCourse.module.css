@@ -1,0 +1,141 @@
+.page {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-lg);
+}
+
+.muted {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.breadcrumb {
+  margin: 0 0 var(--space-md);
+  font-size: 0.9375rem;
+}
+
+.breadcrumb a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.title {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.2;
+}
+
+.description {
+  margin: var(--space-md) 0 0;
+  font-size: 1.0625rem;
+  line-height: 1.7;
+}
+
+.deadline {
+  margin: var(--space-md) 0 0;
+  color: var(--color-text-muted);
+}
+
+.completedPanel {
+  margin: var(--space-md) 0 0;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-success);
+  background: var(--color-success-bg);
+  border-radius: var(--radius-md);
+  color: var(--color-success);
+}
+
+.completedPanel a {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.facts {
+  margin: var(--space-lg) 0 0;
+  line-height: 1.6;
+}
+
+.facts dt {
+  margin-top: var(--space-sm);
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.sectionTitle {
+  margin: var(--space-xl) 0 var(--space-sm);
+  font-size: 1.25rem;
+}
+
+.lessonList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lessonRow {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.lessonLink {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.lessonLink:hover .lessonTitle {
+  color: var(--color-accent);
+}
+
+.lessonPosition {
+  color: var(--color-text-muted);
+}
+
+.lessonTitle {
+  flex: 1;
+}
+
+.lessonMeta {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.action {
+  display: inline-block;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-md);
+  text-decoration: none;
+  font-size: 0.9375rem;
+}
+
+.action:hover {
+  opacity: 0.92;
+}
+
+.reasonPanel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.reasonList {
+  margin: var(--space-xs) 0 0;
+  padding-left: 1.25rem;
+  color: var(--color-text-muted);
+}

@@ -10,6 +10,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.constants.assessment import RETAKES_ALLOWED
 from app.constants.question_minimums import required_assessment_questions
 from app.services import assessment, credit, questions, readiness
 from app.services.assessment import AssessmentRuleViolation
@@ -296,7 +297,7 @@ def test_failed_result_payload_has_no_feedback(client, admin_headers, db_session
     assert body["score_pct"] == "50.00"
     assert body["correct_count"] == 2
     assert body["question_count"] == 4
-    assert body["retakes_allowed"] is True
+    assert body["retakes_allowed"] == RETAKES_ALLOWED
     walk_asserting_no_feedback(body)
     # The GET result is the same payload.
     fetched = client.get(

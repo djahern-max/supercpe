@@ -11,3 +11,16 @@ TIME_STATEMENT = "CPE credits have been granted based on a 50-minute hour."
 # identification number). Item 9 (state registration number) is conditional
 # on the state boards, so state registrations are not in this list.
 CERTIFICATE_SPONSOR_FIELDS = ["name", "national_registry_id"]
+
+# The fields issuance actually gates on (010): item 1 and 9.01.1's awarding
+# entity. Item 8 is deliberately NOT here — a sponsor that is not on the
+# National Registry may still issue certificates; it simply cannot print a
+# sponsor ID, and Phase B's NASBA application needs a sample certificate
+# before membership exists. Item 8 gates on `may_claim_registry` instead,
+# snapshotted at completion.
+ISSUANCE_SPONSOR_FIELDS = ["name", "legal_name"]
+
+# 9.01 item 6: type of formal learning program. Deliberately "Self study",
+# not "QAS Self Study": QAS is a National Registry program designation
+# superCPE may not use until `registry_status` is registered (Phase C).
+PROGRAM_TYPE = "Self study"

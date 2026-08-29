@@ -4,17 +4,22 @@ import AdminNav from "../../admin/AdminNav.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
 import {
+  adminCertificateUrl,
   attachLesson,
   deleteCourse,
   detachLesson,
+  enrollParticipant,
   getCourse,
   listAttempts,
+  listCompletions,
+  listEnrollments,
   listPackages,
   listSmes,
   moveLesson,
   publishCourse,
   recomputeCredit,
   recordCourseReview,
+  renderCertificate,
   setCourseDeveloper,
   setCourseReviewCycle,
   unpublishCourse,
@@ -86,6 +91,11 @@ function AdminCourseDetail() {
   const [showImpractical, setShowImpractical] = useState(false);
   const [reviewErrors, setReviewErrors] = useState(null);
   const [publishErrors, setPublishErrors] = useState(null);
+  const [enrollments, setEnrollments] = useState(null);
+  const [completions, setCompletions] = useState(null);
+  const [enrollEmail, setEnrollEmail] = useState("");
+  const [enrollErrors, setEnrollErrors] = useState(null);
+  const [certificateErrors, setCertificateErrors] = useState(null);
 
   const handleAuthFailure = useCallback(() => {
     refreshSession();
@@ -123,6 +133,12 @@ function AdminCourseDetail() {
     listSmes()
       .then(setSmes)
       .catch(() => setSmes([]));
+    listEnrollments(code)
+      .then(setEnrollments)
+      .catch(() => setEnrollments([]));
+    listCompletions(code)
+      .then(setCompletions)
+      .catch(() => setCompletions([]));
   }, [code, applyCourse, handleAuthFailure]);
 
   useEffect(() => {
@@ -221,6 +237,37 @@ function AdminCourseDetail() {
     if (ok) {
       setReviewForm(EMPTY_REVIEW_FORM);
       setShowImpractical(false);
+    }
+  };
+
+  const handleEnroll = async () => {
+    setEnrollErrors(null);
+    try {
+      await enrollParticipant(code, enrollEmail.trim());
+      setEnrollEmail("");
+      listEnrollments(code).then(setEnrollments).catch(() => {});
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422 && err.data?.errors) {
+        setEnrollErrors(err.data.errors);
+      } else if (err instanceof ApiError && err.status === 401) {
+        handleAuthFailure();
+      } else {
+        setEnrollErrors(["The enrollment failed. Try again."]);
+      }
+    }
+  };
+
+  const handleRenderCertificate = async (completionId) => {
+    setCertificateErrors(null);
+    try {
+      await renderCertificate(completionId);
+      listCompletions(code).then(setCompletions).catch(() => {});
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422 && err.data?.errors) {
+        setCertificateErrors(err.data.errors);
+      } else {
+        setCertificateErrors(["The render failed. Try again."]);
+      }
     }
   };
 
@@ -747,6 +794,11 @@ function AdminCourseDetail() {
               : blockFindings.length === 0
                 ? "Readiness is clean; the course can publish."
                 : `${blockFindings.length} blocking finding${blockFindings.length === 1 ? "" : "s"} below.`}
+            {published &&
+              course.active_enrollment_count > 0 &&
+              ` ${course.active_enrollment_count} participant${
+                course.active_enrollment_count === 1 ? " is" : "s are"
+              } enrolled on the current versions and will keep them if the course is unpublished.`}
           </span>
         </div>
         <ErrorPanel errors={publishErrors} />
@@ -805,6 +857,137 @@ function AdminCourseDetail() {
               View all attempts
             </Link>
           </>
+        )}
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Enrollments</h2>
+        <div className={styles.enrollForm}>
+          <input
+            className={styles.input}
+            type="email"
+            placeholder="participant@example.com"
+            value={enrollEmail}
+            onChange={(event) => setEnrollEmail(event.target.value)}
+          />
+          <button
+            className={styles.smallButton}
+            type="button"
+            disabled={!published || enrollEmail.trim() === ""}
+            onClick={handleEnroll}
+          >
+            Enroll
+          </button>
+          {!published && (
+            <span className={styles.muted}>
+              Only published courses can be enrolled in.
+            </span>
+          )}
+        </div>
+        <ErrorPanel errors={enrollErrors} />
+        {enrollments === null && (
+          <p className={styles.muted}>Loading enrollments…</p>
+        )}
+        {enrollments !== null && enrollments.length === 0 && (
+          <p className={styles.muted}>No enrollments yet.</p>
+        )}
+        {enrollments !== null && enrollments.length > 0 && (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Participant</th>
+                <th>Status</th>
+                <th>Enrolled</th>
+                <th>Expires</th>
+                <th>Progress</th>
+              </tr>
+            </thead>
+            <tbody>
+              {enrollments.map((enrollment) => (
+                <tr key={enrollment.id}>
+                  <td>{enrollment.email}</td>
+                  <td>{enrollment.status}</td>
+                  <td>{new Date(enrollment.enrolled_at).toLocaleDateString()}</td>
+                  <td>{new Date(enrollment.expires_at).toLocaleDateString()}</td>
+                  <td>
+                    {enrollment.lessons_watched}/{enrollment.lessons_total}{" "}
+                    lessons · {enrollment.review_answered}/
+                    {enrollment.review_total} review answers
+                    {enrollment.failed_attempts > 0 &&
+                      ` · ${enrollment.failed_attempts} failed attempt${enrollment.failed_attempts === 1 ? "" : "s"}`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Completions</h2>
+        <ErrorPanel errors={certificateErrors} />
+        {completions === null && (
+          <p className={styles.muted}>Loading completions…</p>
+        )}
+        {completions !== null && completions.length === 0 && (
+          <p className={styles.muted}>No completions yet.</p>
+        )}
+        {completions !== null && completions.length > 0 && (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Participant</th>
+                <th>Completed</th>
+                <th>Credit</th>
+                <th>Certificate</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {completions.map((completion) => (
+                <tr key={completion.id}>
+                  <td>{completion.email}</td>
+                  <td>
+                    {new Date(completion.completed_at).toLocaleDateString()}
+                    {completion.overdue && (
+                      <span className={styles.twoChoiceBadge}>
+                        certificate overdue
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {completion.credit_awarded} · {completion.field_of_study}
+                  </td>
+                  <td>
+                    {completion.certificate_number}
+                    {completion.certificate_rendered_at === null &&
+                      " (not rendered)"}
+                  </td>
+                  <td className={styles.actions}>
+                    {completion.certificate_rendered_at === null && (
+                      <button
+                        className={styles.smallButton}
+                        type="button"
+                        onClick={() => handleRenderCertificate(completion.id)}
+                      >
+                        Render
+                      </button>
+                    )}
+                    {completion.certificate_rendered_at !== null && (
+                      <a
+                        className={styles.previewLink}
+                        href={adminCertificateUrl(completion.id)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
 

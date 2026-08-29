@@ -32,6 +32,7 @@ from app.schemas.course import (
 )
 from app.schemas.package import ValidationErrors
 from app.services import courses, credit, development, readiness
+from app.services import enrollments as enrollments_service
 from app.services import questions as questions_service
 from app.services.courses import CourseRuleViolation
 
@@ -200,6 +201,11 @@ def _detail(db: Session, course: Course) -> CourseDetailAdmin:
             **vars(readiness.review_counts(db, course))
         ),
         development=_development_panel(course),
+        active_enrollment_count=sum(
+            1
+            for enrollment in enrollments_service.list_for_course(db, course)
+            if enrollments_service.status(enrollment) == "active"
+        ),
     )
 
 

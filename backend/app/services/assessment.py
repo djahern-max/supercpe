@@ -16,13 +16,16 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.constants.assessment import PASSING_PCT, RETAKES_ALLOWED
 from app.models.attempt import Attempt, AttemptAnswer
 from app.models.course import Course
+from app.models.enrollment import Enrollment
 from app.models.question import Question
+from app.services import completions as completions_service
 from app.services import credit, readiness
+from app.services import enrollments as enrollments_service
 from app.services import questions as questions_service
 
 _PCT_2DP = Decimal("0.01")
@@ -42,11 +45,51 @@ def questions_for(db: Session, course: Course) -> list[Question]:
     return questions_service.course_assessment_questions(db, course)
 
 
+def questions_for_attempt(db: Session, attempt: Attempt) -> list[Question]:
+    """The questions this attempt was started against, from the package
+    versions it recorded at start — for an enrollment attempt those are the
+    pinned versions, whatever the course serves today."""
+    rows = []
+    for entry in attempt.package_versions:
+        rows += [
+            q
+            for q in questions_service.for_package(db, entry["package_id"])
+            if q.kind == "assessment"
+        ]
+    return rows
+
+
+def questions_for_enrollment(
+    db: Session, enrollment: Enrollment
+) -> list[Question]:
+    """The pinned assessment questions, in lesson order — what a
+    participant's attempt serves instead of the course's current lessons."""
+    rows = []
+    for package in enrollments_service.packages_for(db, enrollment):
+        rows += [
+            q
+            for q in questions_service.for_package(db, package.id)
+            if q.kind == "assessment"
+        ]
+    return rows
+
+
 def open_attempt(db: Session, course: Course, preview_id: str) -> Attempt | None:
     return db.scalar(
         select(Attempt).where(
             Attempt.course_id == course.id,
             Attempt.preview_id == preview_id,
+            Attempt.status == "open",
+        )
+    )
+
+
+def open_attempt_for_enrollment(
+    db: Session, enrollment: Enrollment
+) -> Attempt | None:
+    return db.scalar(
+        select(Attempt).where(
+            Attempt.enrollment_id == enrollment.id,
             Attempt.status == "open",
         )
     )
@@ -103,12 +146,83 @@ def start(db: Session, course: Course, preview_id: str) -> Attempt:
     return attempt
 
 
+def start_for_enrollment(db: Session, enrollment: Enrollment) -> Attempt:
+    """Open a real attempt behind an enrollment. Refuses unless the
+    enrollment is active, every pinned review question is answered
+    (5.01.2.1 puts the review questions before the assessment), and a
+    sitting is left (6.01.2 leaves the re-take count to the sponsor;
+    RETAKES_ALLOWED is that policy). Questions come from the pinned
+    packages, recorded on the attempt."""
+    status = enrollments_service.status(enrollment)
+    if status == "completed":
+        raise AssessmentRuleViolation(
+            [
+                "this enrollment is already completed; its credit was "
+                "awarded and the assessment cannot be taken again"
+            ]
+        )
+    if status == "expired":
+        raise AssessmentRuleViolation(
+            [
+                "the enrollment expired on "
+                f"{enrollment.expires_at.date().isoformat()}; the qualified "
+                "assessment had to be completed by then (9.02.2(3))"
+            ]
+        )
+    progress = enrollments_service.progress(db, enrollment)
+    if not progress["assessment_available"]:
+        raise AssessmentRuleViolation(
+            [
+                "review questions are still unanswered: "
+                + "; ".join(
+                    f"{group['lesson_id']}: {', '.join(group['question_keys'])}"
+                    for group in progress["unanswered"]
+                )
+            ]
+        )
+    if enrollments_service.retakes_remaining(db, enrollment) == 0:
+        raise AssessmentRuleViolation(
+            [
+                f"no sittings left: RETAKES_ALLOWED is {RETAKES_ALLOWED} "
+                "re-takes per enrollment after the first sitting, and all "
+                "are used"
+            ]
+        )
+    if open_attempt_for_enrollment(db, enrollment) is not None:
+        raise AssessmentRuleViolation(
+            ["an attempt is already open; submit or abandon it first"]
+        )
+
+    packages = enrollments_service.packages_for(db, enrollment)
+    questions = questions_for_enrollment(db, enrollment)
+    if not questions:
+        raise AssessmentRuleViolation(
+            ["the course has no assessment questions"]
+        )
+    attempt = Attempt(
+        course_id=enrollment.course_id,
+        enrollment_id=enrollment.id,
+        preview_id=None,
+        is_preview=False,
+        status="open",
+        passing_pct=PASSING_PCT,
+        question_count=len(questions),
+        package_versions=[
+            {"package_id": package.id, "version": package.version}
+            for package in packages
+        ],
+    )
+    db.add(attempt)
+    db.commit()
+    return attempt
+
+
 def _validated_choices(
     db: Session, attempt: Attempt, answers: dict[int, int]
 ) -> dict[int, "object"]:
     """Map question_id -> Choice row for the given answers, refusing ids
     that are not this assessment's questions or their choices."""
-    questions = {q.id: q for q in questions_for(db, attempt.course)}
+    questions = {q.id: q for q in questions_for_attempt(db, attempt)}
     errors = []
     chosen = {}
     for question_id, choice_id in answers.items():
@@ -175,10 +289,27 @@ def grade(correct_count: int, question_count: int) -> tuple[Decimal, bool]:
 
 def submit(db: Session, attempt: Attempt, answers: dict[int, int]) -> Attempt:
     """Grade the whole assessment at once. Every question must be answered;
-    the submission is the complete form (6.01.2 sub-ii)."""
+    the submission is the complete form (6.01.2 sub-ii). A passing submit
+    on an enrollment creates the completion in the same transaction: the
+    completion row exists if and only if this commit happened (6.01)."""
     _require_open(attempt)
+    if (
+        attempt.enrollment_id is not None
+        and datetime.now(timezone.utc) > attempt.enrollment.expires_at
+    ):
+        # 9.02.2(3): the assessment must be completed by the expiration
+        # date. The open attempt is abandoned, not graded.
+        attempt.status = "failed"
+        db.commit()
+        raise AssessmentRuleViolation(
+            [
+                "the enrollment expired on "
+                f"{attempt.enrollment.expires_at.date().isoformat()}; the "
+                "attempt is closed unscored (9.02.2(3))"
+            ]
+        )
     chosen = _validated_choices(db, attempt, answers)
-    questions = questions_for(db, attempt.course)
+    questions = questions_for_attempt(db, attempt)
     unanswered = [q for q in questions if q.id not in chosen]
     if unanswered:
         raise AssessmentRuleViolation(
@@ -196,6 +327,10 @@ def submit(db: Session, attempt: Attempt, answers: dict[int, int]) -> Attempt:
     attempt.score_pct = score_pct
     attempt.status = "passed" if passed else "failed"
     attempt.submitted_at = datetime.now(timezone.utc)
+    if passed and attempt.enrollment_id is not None:
+        # May raise CreditStale, in which case nothing here commits and the
+        # attempt stays open.
+        completions_service.create(db, attempt.enrollment, attempt)
     db.commit()
     return attempt
 
@@ -243,7 +378,31 @@ def result(attempt: Attempt) -> dict:
         else None,
     }
     if attempt.status == "failed":
-        return base | {"retakes_allowed": RETAKES_ALLOWED}
+        base |= {"retakes_allowed": RETAKES_ALLOWED}
+        if attempt.enrollment_id is not None:
+            base |= {
+                "retakes_remaining": enrollments_service.retakes_remaining(
+                    object_session(attempt), attempt.enrollment
+                )
+            }
+        return base
+
+    if attempt.enrollment_id is not None:
+        completion = attempt.enrollment.completion
+        if completion is not None:
+            db = object_session(attempt)
+            base |= {
+                "completion": {
+                    "completion_id": completion.id,
+                    "completed_at": completion.completed_at.isoformat(),
+                    "credit_awarded": str(completion.credit_awarded),
+                    "field_of_study": completion.field_of_study,
+                    "certificate_number": completion.certificate_number,
+                    "certificate_ready": completions_service.certificate_ready(
+                        db, completion
+                    ),
+                }
+            }
 
     package_order = [p["package_id"] for p in attempt.package_versions]
     answers = sorted(

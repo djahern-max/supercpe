@@ -54,6 +54,38 @@ class Finding:
     message: str
 
 
+def sponsor_findings(db: Session) -> list[Finding]:
+    """Sponsor-level findings, not tied to any one course. Today just
+    `certificates_overdue`: 9.01 expects the certificate "as soon as
+    possible" and within 60 days, and a completion older than that with no
+    rendered PDF means the sponsor's paperwork is holding up a
+    participant's earned credit."""
+    from app.constants.enrollment import CERTIFICATE_DEADLINE_DAYS
+    from app.services import completions as completions_service
+
+    findings: list[Finding] = []
+    overdue = completions_service.overdue(db)
+    if overdue:
+        named = ", ".join(
+            f"{c.certificate_number} (completed "
+            f"{c.completed_at.date().isoformat()})"
+            for c in overdue
+        )
+        findings.append(
+            Finding(
+                code="certificates_overdue",
+                level="warn",
+                message=(
+                    f"{len(overdue)} completion(s) older than "
+                    f"{CERTIFICATE_DEADLINE_DAYS} days have no rendered "
+                    f"certificate: {named}. 9.01 expects delivery within "
+                    f"{CERTIFICATE_DEADLINE_DAYS} days."
+                ),
+            )
+        )
+    return findings
+
+
 @dataclass
 class ReviewCounts:
     """The 5.01.2.1 comparison, also shown when it is satisfied and no

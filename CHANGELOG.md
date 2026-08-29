@@ -796,3 +796,154 @@ Shipped: 2026-08-29
   password reset, or self-registration (016).
 - Sessions are not tied to IP or user agent; both are recorded on the
   row but nothing checks them.
+
+## 010 — Enrollment, completion record, and certificate
+Shipped: 2026-08-29
+
+**What changed**
+- `enrollments`: the record everything now hangs off. Created only by an
+  admin (`POST /api/v1/admin/courses/{code}/enrollments` by participant
+  email; 017 adds `source = 'purchase'`), on a published course, for an
+  active participant, one active enrollment per (account, course).
+  `expires_at` is stamped at creation as `enrolled_at + ENROLLMENT_DAYS`
+  (365, 9.02.2(3)); status (active / expired / completed) is derived,
+  never stored.
+- Pinning: an enrollment records `{package_id: version}` at creation and
+  the participant player and assessment serve those versions until it
+  completes or expires. Unpublish stops new enrollments only; in-flight
+  ones continue on their pin (the admin course page says so).
+- Participant surface under `/api/v1/my` behind
+  `require_role("participant")`, foreign enrollments 404: `/my/courses`
+  (the post-login landing for the role), enrollment detail, per-lesson
+  play/review/progress, the assessment, and the certificate download.
+  Frontend routes `/my/courses`, `/my/courses/:id`,
+  `/my/courses/:id/lessons/:packageId`, `/my/courses/:id/assessment`,
+  reusing 006's Player (now with resume + throttled progress reports) and
+  007's Assessment component. The admin/reviewer preview endpoints are
+  untouched.
+- Progress persistence, replacing 006's "nothing is persisted":
+  `review_answers` (one row per question per enrollment, verdict
+  snapshotted, re-answer updates — the 5.01.2 engagement record) and
+  `lesson_progress` (`furthest_seconds`, monotonic).
+- Assessment re-gating: `attempts.enrollment_id` gains its FK, the
+  exactly-one-identity CHECK, and a one-open-attempt partial index.
+  `start_for_enrollment` refuses a non-active enrollment (naming expiry or
+  completion), unanswered review questions (named by lesson), and
+  exhausted re-takes; `submit` past `expires_at` abandons the attempt
+  unscored. Grading now reads the questions from the attempt's own
+  recorded package versions. 007's failed-attempt no-feedback payload is
+  re-asserted through the enrollment path.
+- `completions`: one immutable row per passed enrollment, created inside
+  the passing `submit` transaction — `completed_at` (= the attempt's
+  `submitted_at`), `credit_awarded`, a per-year `YYYY-NNNNNN` certificate
+  number, a verification token for 018, and `certificate_snapshot`
+  freezing all eleven 9.01 items plus the awarding entity (9.01.1) at that
+  moment. Nothing in the snapshot is ever re-read from live tables; the
+  snapshot-immutability tests edit the course, sponsor, account, and
+  state registrations after completion and prove the certificate text
+  unchanged.
+- Certificate rendering: `render(snapshot) -> bytes` in
+  `app/services/certificates.py`, a one-page PDF from the snapshot alone
+  (no db session). Stored once at `certificates/<number>.pdf`; the
+  participant download renders lazily when the issuance fields allow and
+  answers 409 "will be issued shortly" while they do not; admin has
+  explicit Render/Download. Item 8 prints only when the snapshot carries
+  it; item 5 prints "Not applicable (self study)".
+- `certificates_overdue`: a sponsor-level warn finding
+  (`readiness.sponsor_findings`) listing completions older than
+  `CERTIFICATE_DEADLINE_DAYS` (60, 9.01) with no rendered PDF, shown on
+  `/admin/sponsor` beside the launch-readiness panel.
+- Admin course page gains Enrollments (enroll-by-email form, table) and
+  Completions (table with certificate status, Render, Download) cards;
+  `delete_course` refuses while any enrollment exists, whatever the
+  course status.
+- No change to `docs/course-package.md`; the contract is untouched.
+- Tests: 31 new across `test_enrollments.py`, `test_completion.py`, and
+  `test_certificates.py`; 168 total (was 137), all passing.
+
+**Standards touched**
+- 9.02.2(3) — `expires_at` stamped at enrollment, one year, enforced at
+  assessment start and submit; new compliance row
+- 6.01 — completion exists only as a row the passing submit transaction
+  created, keyed to a participant account through the enrollment
+- 6.01.2 — 70 percent, the no-feedback rule, and the question floors all
+  preserved through the enrollment path; re-takes now a counted
+  per-enrollment policy (new compliance row)
+- 9.01 — the eleven-item snapshot frozen at completion; the 60-day
+  delivery expectation reported, not enforced
+- 9.01.1 — `sponsor_legal_name` in the snapshot is the awarding entity
+  printed on the certificate
+- 9.02.2(1) — `completions`, `review_answers`, `lesson_progress` retained
+  per individual participant
+- 7.01 — the certificate prints the course's one-fifth-rounded award and
+  the verbatim `TIME_STATEMENT`
+- 9.02 — every new table FK RESTRICT, no delete paths, course deletion
+  refused with enrollments
+- COMPLIANCE.md: 9.01, 9.01.1, 9.02, 9.02.2(1), and 6.01 rows appended;
+  9.02.2(3) and 6.01.2 (re-takes) rows added.
+
+**Decisions**
+- PDF library: `fpdf2` (pinned 2.8.3) — pure Python, zero system
+  dependencies, one small library for the one document produced.
+  `reportlab` was rejected as far heavier than one page of centered text
+  needs, and HTML-to-PDF routes (weasyprint, wkhtmltopdf) all drag in
+  native dependencies. Its core fonts are Latin-1 only, so text is
+  sanitized with replacement characters; re-rendering a snapshot
+  reproduces the same text (asserted by extraction), while byte identity
+  is not promised (PDF metadata carries a timestamp). `pypdf` is added as
+  a test-side dependency to extract and assert that text.
+- **`missing_fields` split.** 003 made `registry_status` a
+  certificate-blocking missing field. That was right for the claim ("no
+  certificate may say National Registry until it is true") and wrong for
+  issuance: a sponsor not on the Registry may still issue a certificate —
+  it simply cannot print item 8 — and Phase B's NASBA application needs a
+  sample certificate before membership exists. So `missing_fields()`
+  gains a `for_issuance` view (`name`, `legal_name`) that excludes
+  `registry_status`; issuance gates on that view; item 8 gates on
+  `may_claim_registry`, snapshotted at completion. 003's compliance row
+  is appended to say so, and `/admin/sponsor` now shows the two lists
+  separately.
+- **Snapshot at completion, not at render.** If the sponsor's legal name
+  is blank when a participant completes, the certificate that eventually
+  prints will be missing it, because the snapshot is the truth and it was
+  taken when the credit was earned. The fix is keeping the profile
+  complete *before* opening the site — which the launch-readiness panel
+  already says — not letting a later edit rewrite what a participant
+  earned. `certificates_overdue` is the safety net, and the test suite
+  proves the late-filled legal name is deliberately not on the PDF.
+- **Pinning.** An enrollment is served the package versions it started
+  on. Published courses are immutable (008), so a version change already
+  implies unpublish → re-review → republish; in-flight participants keep
+  what they enrolled on, and the certificate snapshot records exactly
+  which versions. The trade-off is accepted: a correction re-exported
+  mid-enrollment does not reach in-flight participants.
+- **Re-take count.** 007 set `RETAKES_ALLOWED = True` (unlimited) when no
+  enrollment existed to count against. 010 makes it the number it always
+  wanted to be: 3 re-takes per enrollment after the first sitting —
+  sponsor's discretion under 6.01.2, exhausted-retake starts refused
+  naming the constant, preview attempts never counted. 007's test was
+  updated to assert against the constant rather than the literal `True`;
+  011's policies page must disclose the number.
+- Certificate numbers come from a per-year counter table read under a row
+  lock (`certificate_sequences`), with the unique constraint as backstop;
+  the verification token is 32 random bytes hex, stored for 018.
+- The completion re-reads nothing, with one exception by design: the
+  render *gate* checks the live issuance fields (today's paperwork),
+  while everything printed comes from the snapshot.
+
+**Known gaps**
+- Pinned lessons are ordered by the course's current position for the
+  same lesson (falling back to the manifest position), because JSONB does
+  not preserve key order; reordering lessons mid-enrollment would reorder
+  an in-flight participant's list, though published courses being
+  immutable makes that reachable only through unpublish.
+- The participant can still play lessons and answer review questions on
+  an expired or completed enrollment; only the assessment is gated. The
+  engagement record may therefore gain rows after completion.
+- Certificate delivery is a download; email delivery and the public
+  verification page that resolves the stored token are 018.
+- Out-of-scope hits for 011: the policies page must state the re-take
+  policy (`RETAKES_ALLOWED`) and the refund policy; the program
+  evaluation (4.04) attaches to the completion row that now exists;
+  everything else the audit bundle needs (attempts, answers, progress,
+  completions, snapshots, the credit record) is already in rows.

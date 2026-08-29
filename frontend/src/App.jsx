@@ -17,6 +17,10 @@ import Catalog from "./pages/Catalog/Catalog.jsx";
 import ChangePassword from "./pages/ChangePassword/ChangePassword.jsx";
 import CoursePage from "./pages/CoursePage/CoursePage.jsx";
 import Login from "./pages/Login/Login.jsx";
+import MyAssessment from "./pages/MyAssessment/MyAssessment.jsx";
+import MyCourse from "./pages/MyCourse/MyCourse.jsx";
+import MyCourses from "./pages/MyCourses/MyCourses.jsx";
+import MyLesson from "./pages/MyLesson/MyLesson.jsx";
 import ReviewCourse from "./pages/ReviewCourse/ReviewCourse.jsx";
 import ReviewHome from "./pages/ReviewHome/ReviewHome.jsx";
 import styles from "./App.module.css";
@@ -67,6 +71,9 @@ const admin = (page) => <RequireRole roles={["admin"]}>{page}</RequireRole>;
 const preview = (page) => (
   <RequireRole roles={["admin", "reviewer"]}>{page}</RequireRole>
 );
+const participant = (page) => (
+  <RequireRole roles={["participant"]}>{page}</RequireRole>
+);
 
 function App() {
   return (
@@ -81,6 +88,19 @@ function App() {
         {/* Reachable but unlinked; staff and testers know the address. */}
         <Route path="/login" element={<Login />} />
         <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="/my/courses" element={participant(<MyCourses />)} />
+        <Route
+          path="/my/courses/:enrollmentId"
+          element={participant(<MyCourse />)}
+        />
+        <Route
+          path="/my/courses/:enrollmentId/lessons/:packageId"
+          element={participant(<MyLesson />)}
+        />
+        <Route
+          path="/my/courses/:enrollmentId/assessment"
+          element={participant(<MyAssessment />)}
+        />
         <Route path="/review" element={preview(<ReviewHome />)} />
         <Route path="/review/courses/:code" element={preview(<ReviewCourse />)} />
         <Route path="/admin/courses" element={admin(<AdminCourses />)} />

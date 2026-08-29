@@ -7,6 +7,7 @@ from app.config import settings
 from app.routers import (
     admin_accounts,
     admin_courses,
+    admin_enrollments,
     admin_packages,
     admin_smes,
     admin_sponsor,
@@ -15,6 +16,7 @@ from app.routers import (
     courses,
     health,
     media,
+    my,
     player,
     review,
     site,
@@ -47,6 +49,7 @@ app.include_router(site.admin_router, prefix="/api/v1")
 app.include_router(admin_accounts.router, prefix="/api/v1")
 app.include_router(review.router, prefix="/api/v1")
 app.include_router(admin_courses.router, prefix="/api/v1")
+app.include_router(admin_enrollments.router, prefix="/api/v1")
 app.include_router(admin_packages.router, prefix="/api/v1")
 app.include_router(admin_smes.router, prefix="/api/v1")
 app.include_router(admin_sponsor.router, prefix="/api/v1")
@@ -54,5 +57,6 @@ app.include_router(assessment.router, prefix="/api/v1")
 app.include_router(assessment.admin_router, prefix="/api/v1")
 app.include_router(courses.router, prefix="/api/v1")
 app.include_router(media.router, prefix="/api/v1")
+app.include_router(my.router, prefix="/api/v1")
 app.include_router(player.router, prefix="/api/v1")
 app.include_router(sponsor.router, prefix="/api/v1")

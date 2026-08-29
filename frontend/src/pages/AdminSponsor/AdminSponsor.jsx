@@ -21,6 +21,7 @@ const PROFILE_FIELDS = [
 
 const MISSING_LABELS = {
   name: "Sponsor name is blank",
+  legal_name: "Legal name is blank",
   national_registry_id: "NASBA sponsor ID is blank",
   registry_status: "Not yet on the National Registry",
 };
@@ -32,18 +33,52 @@ const MODE_CONSEQUENCE = {
     "The catalog and course pages show only the coming-soon placeholder to anyone not signed in.",
 };
 
-function StatusPanel({ missingFields }) {
-  if (missingFields.length === 0) {
-    return <div className={styles.successPanel}>Certificates can be issued.</div>;
-  }
+function StatusPanel({ missingFields, missingForIssuance }) {
+  // Issuance gates on the smaller list (010): a sponsor off the Registry
+  // may still issue certificates — they simply cannot print item 8.
+  const launchOnly = missingFields.filter(
+    (field) => !missingForIssuance.includes(field)
+  );
+  return (
+    <>
+      {missingForIssuance.length === 0 ? (
+        <div className={styles.successPanel}>Certificates can be issued.</div>
+      ) : (
+        <div className={styles.warnPanel}>
+          <p className={styles.panelTitle}>
+            Certificates cannot be issued yet. Missing:
+          </p>
+          <ul className={styles.panelList}>
+            {missingForIssuance.map((field) => (
+              <li key={field}>{MISSING_LABELS[field] ?? field}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {launchOnly.length > 0 && (
+        <div className={styles.warnPanel}>
+          <p className={styles.panelTitle}>
+            Not yet fully credentialed for launch:
+          </p>
+          <ul className={styles.panelList}>
+            {launchOnly.map((field) => (
+              <li key={field}>{MISSING_LABELS[field] ?? field}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+}
+
+function FindingsPanel({ findings }) {
+  if (!findings || findings.length === 0) return null;
   return (
     <div className={styles.warnPanel}>
-      <p className={styles.panelTitle}>
-        Certificates cannot be issued yet. Missing:
-      </p>
+      <p className={styles.panelTitle}>Overdue certificates</p>
       <ul className={styles.panelList}>
-        {missingFields.map((field) => (
-          <li key={field}>{MISSING_LABELS[field] ?? field}</li>
+        {findings.map((finding) => (
+          <li key={finding.code + finding.message}>{finding.message}</li>
         ))}
       </ul>
     </div>
@@ -330,7 +365,11 @@ function AdminSponsor() {
 
       {profile !== null && form !== null && (
         <>
-          <StatusPanel missingFields={profile.missing_fields} />
+          <StatusPanel
+            missingFields={profile.missing_fields}
+            missingForIssuance={profile.missing_for_issuance}
+          />
+          <FindingsPanel findings={profile.findings} />
 
           <form className={styles.form} onSubmit={handleSaveProfile}>
             {PROFILE_FIELDS.map(({ name, label }) => (

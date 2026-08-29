@@ -39,6 +39,15 @@ class SponsorProfileUpdate(BaseModel):
         return value
 
 
+class SponsorFinding(BaseModel):
+    """A sponsor-level readiness finding (readiness.sponsor_findings),
+    shown beside the launch-readiness panel on /admin/sponsor."""
+
+    code: str
+    level: str
+    message: str
+
+
 class SponsorProfileAdmin(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -53,8 +62,10 @@ class SponsorProfileAdmin(BaseModel):
     other_certificate_statements: str
     updated_at: datetime
     missing_fields: list[str]
+    missing_for_issuance: list[str]
     may_claim_registry: bool
     state_registrations: list[StateRegistration]
+    findings: list[SponsorFinding]
 
 
 class SponsorProfilePublic(BaseModel):

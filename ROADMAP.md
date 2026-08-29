@@ -41,7 +41,10 @@ Everything runs on the developer's machine. No public surface.
 - 011 Program evaluation (4.04), policies pages (8.01.1), retention
   constant, and the per-course audit bundle export (9.02)
 - 012 Spaces storage implementation, production config, deployment to
-  superCPE.com
+  superCPE.com. **Checklist before deploying** (from 010): the dev
+  database's ASC842-PCX was published on a test review by a fictitious
+  reviewer; unpublish, delete the fictitious SME and their review, and
+  re-review with the real second CPA before anything ships.
 
 ## Phase B — Deployed, closed
 superCPE.com is live but the public sees a coming-soon page.
@@ -100,3 +103,11 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   a re-export that rewords prerequisites can only be swapped in by
   detach-then-attach; the agreement check could exclude the lesson being
   updated.
+- Admin extension of an enrollment's expiry: deliberately not built (010).
+  9.02.2(3) reads "no longer than one year from the date of purchase or
+  enrollment" — a cap anchored to the original enrollment, not a clock that
+  can be reset — so an extension past that year would put the qualified
+  assessment outside the window the Standard fixes. The remedy for a lapsed
+  participant is a new enrollment with its own year (and, once 017 exists, a
+  goodwill re-enrollment at no charge is a sponsor policy, not a Standards
+  question).

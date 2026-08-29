@@ -1,0 +1,37 @@
+.page {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: var(--space-lg);
+}
+
+.breadcrumb {
+  margin: 0 0 var(--space-md);
+  font-size: 0.9375rem;
+}
+
+.breadcrumb a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.reasonPanel {
+  border: 1px solid var(--color-warning);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.reasonTitle {
+  margin: 0;
+  font-weight: 600;
+}
+
+.reasonList {
+  margin: var(--space-xs) 0 0;
+  padding-left: 1.25rem;
+}

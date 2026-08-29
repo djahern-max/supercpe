@@ -187,6 +187,32 @@ export function setCourseReviewCycle(code, reviewCycle) {
   });
 }
 
+export function listEnrollments(code) {
+  return request(`/api/v1/admin/courses/${code}/enrollments`);
+}
+
+export function enrollParticipant(code, email) {
+  return request(`/api/v1/admin/courses/${code}/enrollments`, {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function listCompletions(code) {
+  return request(`/api/v1/admin/courses/${code}/completions`);
+}
+
+export function renderCertificate(completionId) {
+  return request(`/api/v1/admin/completions/${completionId}/render`, {
+    method: "POST",
+  });
+}
+
+export function adminCertificateUrl(completionId) {
+  const baseUrl = import.meta.env.VITE_API_URL;
+  return `${baseUrl}/api/v1/admin/completions/${completionId}/certificate.pdf`;
+}
+
 export function publishCourse(code) {
   return request(`/api/v1/admin/courses/${code}/publish`, { method: "POST" });
 }

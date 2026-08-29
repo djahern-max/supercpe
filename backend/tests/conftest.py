@@ -48,7 +48,9 @@ def db_session(test_engine):
     with test_engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE attempt_answers, attempts, choices, questions, "
+                "TRUNCATE completions, certificate_sequences, "
+                "review_answers, lesson_progress, attempt_answers, "
+                "attempts, enrollments, choices, questions, "
                 "course_reviews, course_lessons, courses, lesson_packages, "
                 "site_mode_changes, sponsor_profile, "
                 "sponsor_state_registrations, subject_matter_experts, "

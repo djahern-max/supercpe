@@ -10,11 +10,14 @@ import styles from "./Assessment.module.css";
  * the whole form is scored. The server enforces this by what the payloads
  * contain; this component simply renders them.
  *
- * Mounted by the admin preview now; 010 mounts it for enrolled
- * participants. `api` carries {getAssessment, start, saveAnswers, submit,
- * getAttempt}, already bound to the course and credentials.
+ * Mounted by the admin preview and by the enrollment (010). `api` carries
+ * {getAssessment, start, saveAnswers, submit, getAttempt}, already bound
+ * to the course and credentials. `certificateUrl(completionId)` is passed
+ * by the enrollment mount so a passed result can offer the download; the
+ * preview mount passes nothing and no completion ever appears in its
+ * results.
  */
-function Assessment({ api }) {
+function Assessment({ api, certificateUrl }) {
   const [info, setInfo] = useState(null);
   const [attemptId, setAttemptId] = useState(null);
   const [answers, setAnswers] = useState({});
@@ -105,6 +108,7 @@ function Assessment({ api }) {
   );
 
   if (result && result.status === "passed") {
+    const completion = result.completion;
     return (
       <section className={styles.card}>
         <p className={styles.scoreLine}>
@@ -115,6 +119,31 @@ function Assessment({ api }) {
           {result.correct_count} of {result.question_count} correct. The
           course&apos;s completion is recorded.
         </p>
+        {completion && (
+          <div className={styles.completionPanel}>
+            <p className={styles.completionLine}>
+              Completed {new Date(completion.completed_at).toLocaleDateString()}{" "}
+              — {completion.credit_awarded} CPE credit in{" "}
+              {completion.field_of_study}. Certificate{" "}
+              {completion.certificate_number}.
+            </p>
+            {completion.certificate_ready && certificateUrl ? (
+              <a
+                className={styles.certificateLink}
+                href={certificateUrl(completion.completion_id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Download certificate (PDF)
+              </a>
+            ) : (
+              <p className={styles.muted}>
+                Your completion is recorded; your certificate will be issued
+                shortly.
+              </p>
+            )}
+          </div>
+        )}
         <ol className={styles.reviewList}>
           {result.questions.map((question) => (
             <li key={question.question_id} className={styles.reviewItem}>
@@ -168,10 +197,18 @@ function Assessment({ api }) {
           Consider re-watching the lessons before trying again.
         </p>
         {errorPanel}
-        {result.retakes_allowed && (
-          <button className={styles.button} type="button" onClick={begin}>
-            Try again
-          </button>
+        {result.retakes_remaining === 0 ? (
+          <p className={styles.muted}>
+            No re-takes are left on this enrollment.
+          </p>
+        ) : (
+          result.retakes_allowed && (
+            <button className={styles.button} type="button" onClick={begin}>
+              Try again
+              {result.retakes_remaining != null &&
+                ` (${result.retakes_remaining} left)`}
+            </button>
+          )
         )}
       </section>
     );
@@ -184,8 +221,8 @@ function Assessment({ api }) {
         <p>
           {info.question_count} questions. A cumulative score of at least{" "}
           {Number(info.passing_pct)} percent is required. Results come after
-          all questions are submitted{info.retakes_allowed &&
-            ", and retakes are allowed"}.
+          all questions are submitted{info.retakes_allowed > 0 &&
+            `, and up to ${info.retakes_allowed} re-takes are allowed`}.
         </p>
         {errorPanel}
         <button className={styles.button} type="button" onClick={begin}>

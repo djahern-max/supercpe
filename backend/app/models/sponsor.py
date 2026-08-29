@@ -3,7 +3,10 @@ from datetime import datetime
 from sqlalchemy import CheckConstraint, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.constants.certificate import CERTIFICATE_SPONSOR_FIELDS
+from app.constants.certificate import (
+    CERTIFICATE_SPONSOR_FIELDS,
+    ISSUANCE_SPONSOR_FIELDS,
+)
 from app.db import Base
 
 REGISTRY_STATUSES = ("not_registered", "registered")
@@ -70,10 +73,22 @@ class SponsorProfile(Base):
         the words "National Registry" or a sponsor ID anywhere."""
         return self.registry_status == "registered" and self.national_registry_id != ""
 
-    def missing_fields(self) -> list[str]:
-        """Names of the sponsor facts a certificate cannot be issued
-        without that are still blank. Empty list means a certificate may
-        name this sponsor."""
+    def missing_fields(self, for_issuance: bool = False) -> list[str]:
+        """Names of the sponsor facts still blank.
+
+        The default view is 003's launch-readiness list: everything a fully
+        credentialed certificate names, Registry membership included. The
+        `for_issuance` view is what actually gates issuing a certificate
+        (010): a sponsor that is not on the Registry may still issue one —
+        it simply cannot print item 8, which gates on `may_claim_registry`
+        at completion instead — and Phase B's NASBA application needs a
+        sample certificate before membership exists."""
+        if for_issuance:
+            return [
+                field
+                for field in ISSUANCE_SPONSOR_FIELDS
+                if getattr(self, field) == ""
+            ]
         missing = [
             field for field in CERTIFICATE_SPONSOR_FIELDS if getattr(self, field) == ""
         ]

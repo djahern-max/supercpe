@@ -28,7 +28,9 @@ class AssessmentInfo(BaseModel):
     title: str
     question_count: int
     passing_pct: str
-    retakes_allowed: bool
+    # The number of re-takes allowed after the first sitting (010; the
+    # sponsor's 6.01.2 policy).
+    retakes_allowed: int
     open_attempt_id: int | None
     questions: list[AssessmentQuestion]
 

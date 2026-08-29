@@ -6,5 +6,9 @@ psycopg[binary]==3.2.3
 pydantic-settings==2.7.0
 argon2-cffi==25.1.0
 python-multipart==0.0.20
+# Certificate rendering (010): pure Python, no system dependencies.
+fpdf2==2.8.3
 pytest==8.3.4
 httpx==0.28.1
+# Test-side PDF text extraction for the certificate tests (010).
+pypdf==6.1.1

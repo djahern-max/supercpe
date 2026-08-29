@@ -6,6 +6,9 @@ import styles from "./Player.module.css";
 // granularity, not participants.
 const SEEK_TOLERANCE_SECONDS = 0.25;
 const ARROW_SEEK_SECONDS = 5;
+// Progress reports go out at most this often while playing; pause and
+// question stops always report.
+const PROGRESS_REPORT_SECONDS = 10;
 
 function formatTime(totalSeconds) {
   const whole = Math.max(0, Math.floor(totalSeconds || 0));
@@ -23,8 +26,13 @@ function formatTime(totalSeconds) {
  *
  * Forward seeking past the furthest point watched is prevented. That is a
  * sponsor design choice, not a Standards requirement.
+ *
+ * `initialFurthestSeconds` restores the furthest point from a prior
+ * session (the enrollment mount, 010); `onProgress(seconds)` reports the
+ * furthest point back, throttled, fire-and-forget. The preview mount
+ * passes neither and behaves exactly as before.
  */
-function Player({ lesson, gradeAnswer }) {
+function Player({ lesson, gradeAnswer, initialFurthestSeconds = 0, onProgress }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const lastTimeRef = useRef(0);
@@ -39,8 +47,18 @@ function Player({ lesson, gradeAnswer }) {
   const [muted, setMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(lesson.duration_seconds);
-  const [furthest, setFurthest] = useState(0);
-  const furthestRef = useRef(0);
+  const [furthest, setFurthest] = useState(initialFurthestSeconds);
+  const furthestRef = useRef(initialFurthestSeconds);
+  const lastReportedRef = useRef(initialFurthestSeconds);
+
+  const reportProgress = () => {
+    if (!onProgress) return;
+    const seconds = Math.floor(furthestRef.current);
+    if (seconds > lastReportedRef.current) {
+      lastReportedRef.current = seconds;
+      onProgress(seconds);
+    }
+  };
 
   const [activeQuestion, setActiveQuestion] = useState(null);
   const [selectedChoice, setSelectedChoice] = useState(null);
@@ -63,8 +81,18 @@ function Player({ lesson, gradeAnswer }) {
     if (time > furthestRef.current) {
       furthestRef.current = time;
       setFurthest(time);
+      if (time - lastReportedRef.current >= PROGRESS_REPORT_SECONDS) {
+        reportProgress();
+      }
     }
   };
+
+  // A final report when the player unmounts, so navigating away mid-lesson
+  // loses at most the throttle window.
+  useEffect(() => {
+    return () => reportProgress();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const openQuestion = (question) => {
     setActiveQuestion(question);
@@ -242,8 +270,27 @@ function Player({ lesson, gradeAnswer }) {
           }}
           onSeeked={handleSeeked}
           onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onLoadedMetadata={(event) => setDuration(event.target.duration)}
+          onPause={() => {
+            setPlaying(false);
+            reportProgress();
+          }}
+          onEnded={reportProgress}
+          onLoadedMetadata={(event) => {
+            setDuration(event.target.duration);
+            // Resume at the furthest point watched; the seeked handler
+            // realigns the crossing detector so earlier questions are not
+            // re-asked on the way in.
+            const video = event.target;
+            if (
+              furthestRef.current > 0 &&
+              video.currentTime < furthestRef.current
+            ) {
+              video.currentTime = Math.min(
+                furthestRef.current,
+                video.duration
+              );
+            }
+          }}
           onClick={togglePlay}
           playsInline
         />

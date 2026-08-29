@@ -1,6 +1,13 @@
 from app.models.account import Account, AuthSession
 from app.models.attempt import Attempt, AttemptAnswer
 from app.models.course import Course, CourseLesson
+from app.models.enrollment import (
+    CertificateSequence,
+    Completion,
+    Enrollment,
+    LessonProgress,
+    ReviewAnswer,
+)
 from app.models.lesson_package import LessonPackage
 from app.models.question import Choice, Question
 from app.models.review import CourseReview
@@ -13,12 +20,17 @@ __all__ = [
     "Attempt",
     "AttemptAnswer",
     "AuthSession",
+    "CertificateSequence",
     "Choice",
+    "Completion",
     "Course",
     "CourseLesson",
     "CourseReview",
+    "Enrollment",
     "LessonPackage",
+    "LessonProgress",
     "Question",
+    "ReviewAnswer",
     "SiteModeChange",
     "SponsorProfile",
     "SponsorStateRegistration",

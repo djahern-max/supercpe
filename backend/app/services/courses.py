@@ -9,10 +9,11 @@ and must agree across them (3.01.1, 3.02.1). Rule violations raise
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.course import Course, CourseLesson
+from app.models.enrollment import Enrollment
 from app.models.lesson_package import LessonPackage
 from app.services import credit
 
@@ -109,8 +110,23 @@ def update_course(
 
 
 def delete_course(db: Session, course: Course) -> None:
-    """Detaches the lessons (rows cascade), never deletes packages. 010
-    revisits deletion once publishing and enrollment exist."""
+    """Detaches the lessons (rows cascade), never deletes packages. A
+    course with enrollments is never deleted, whatever its status: the
+    enrollments, completions, and attempts hanging off it are 9.02
+    records."""
+    enrollment_count = db.scalar(
+        select(func.count())
+        .select_from(Enrollment)
+        .where(Enrollment.course_id == course.id)
+    )
+    if enrollment_count:
+        raise CourseRuleViolation(
+            [
+                f"course {course.course_code} has {enrollment_count} "
+                "enrollment(s); courses with enrollments are never deleted "
+                "(9.02 retains their records)"
+            ]
+        )
     if course.status != "draft":
         raise CourseRuleViolation(
             [f"course {course.course_code} is {course.status}; only draft courses can be deleted"]

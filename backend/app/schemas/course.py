@@ -217,6 +217,9 @@ class CourseDetailAdmin(BaseModel):
     readiness: list[ReadinessFinding]
     review_counts: ReviewCountsOut
     development: CourseDevelopmentAdmin
+    # 010: enrollments whose derived status is active right now; the admin
+    # page quotes it beside unpublish and delete.
+    active_enrollment_count: int
 
 
 class PublicLesson(BaseModel):

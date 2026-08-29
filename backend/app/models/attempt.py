@@ -27,11 +27,10 @@ class Attempt(Base):
     whatever its outcome: attempts are the raw material of the 9.02.2(1)
     completion-verification record.
 
-    In this feature every attempt is a preview attempt keyed by an opaque
-    `preview_id` the admin frontend generates per session. Feature 010 keys
-    real attempts to an enrollment instead — `enrollment_id` is a plain
-    nullable column until then (010 adds the FK) — and the preview path
-    stays for admins."""
+    An attempt carries exactly one identity: an enrollment (a participant's
+    real sitting, 010) or an opaque `preview_id` the admin frontend
+    generates per session (007's preview path, which stays for admins and
+    reviewers)."""
 
     __tablename__ = "attempts"
 
@@ -39,7 +38,9 @@ class Attempt(Base):
     course_id: Mapped[int] = mapped_column(
         ForeignKey("courses.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    enrollment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    enrollment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("enrollments.id", ondelete="RESTRICT"), nullable=True
+    )
     preview_id: Mapped[str | None] = mapped_column(String, nullable=True)
     is_preview: Mapped[bool] = mapped_column(Boolean, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="open")
@@ -64,22 +65,33 @@ class Attempt(Base):
         back_populates="attempt", cascade="all, delete-orphan"
     )
     course = relationship("Course")
+    enrollment = relationship("Enrollment")
 
     __table_args__ = (
         CheckConstraint(
             "status IN ('open', 'passed', 'failed')", name="ck_attempts_status"
         ),
-        # A preview attempt is exactly one with a preview identity; 010's
-        # enrollment attempts have neither.
+        # A preview attempt is exactly one with a preview identity.
         CheckConstraint(
             "is_preview = (preview_id IS NOT NULL)",
             name="ck_attempts_preview_id_iff_preview",
         ),
-        # Only one open attempt per (course, preview identity) at a time.
+        # Every attempt carries exactly one identity: enrollment or preview.
+        CheckConstraint(
+            "(enrollment_id IS NULL) != (preview_id IS NULL)",
+            name="ck_attempts_enrollment_xor_preview",
+        ),
+        # Only one open attempt per identity at a time.
         Index(
             "uq_attempts_one_open_per_preview",
             "course_id",
             "preview_id",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+        ),
+        Index(
+            "uq_attempts_one_open_per_enrollment",
+            "enrollment_id",
             unique=True,
             postgresql_where=text("status = 'open'"),
         ),
