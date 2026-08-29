@@ -51,6 +51,10 @@ Everything runs on the developer's machine. No public surface.
   write-once: nothing in code overwrites or deletes an existing key under
   any of them.
 
+Phase A is code-complete (012 built and tested 2026-08-29); it closes for
+good when 012's first deployment and restore drill are executed and its
+changelog entry lands.
+
 ## Phase B — Deployed, closed
 superCPE.com is live but the public sees a coming-soon page.
 
@@ -129,3 +133,9 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   participant is a new enrollment with its own year (and, once 017 exists, a
   goodwill re-enrollment at no charge is a sponsor policy, not a Standards
   question).
+- Off-provider backup copies: 012 keeps snapshots and nightly dumps at
+  DigitalOcean only, so a provider-level failure (account lockout,
+  regional loss) could take the originals and every backup together —
+  which 9.02 arguably wants covered. A second bucket at a different
+  provider, or a periodic download to a machine the sponsor controls,
+  would close it.

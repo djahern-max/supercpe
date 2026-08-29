@@ -1,0 +1,39 @@
+# Production runtime on the droplet: Caddy (TLS + static frontend) and
+# the API. Postgres is the managed cluster, never a container here —
+# its daily snapshots are part of 9.02 retention. Run from the repo
+# checkout with `docker compose -f deploy/docker-compose.yml ...`;
+# GIT_SHA is exported by deploy.sh so images stay tagged per sha and
+# rollback is a rebuild from cache.
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    image: supercpe-api:${GIT_SHA:-dev}
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      # Secrets stay on the server, written by hand, never in the repo.
+      - /srv/supercpe/.env:/srv/app/.env:ro
+
+  caddy:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    image: supercpe-web:${GIT_SHA:-dev}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Let's Encrypt certificates and Caddy state survive restarts.
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

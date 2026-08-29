@@ -1,0 +1,44 @@
+# supercpe.com behind Caddy: automatic Let's Encrypt TLS, HSTS, static
+# frontend, /api/* proxied to the API container, and a login rate limit
+# (009's known gap). rate_limit is the mholt/caddy-ratelimit plugin,
+# compiled in by deploy/Dockerfile.web.
+
+{
+	# rate_limit is a non-standard directive; give it a place in the
+	# middleware order.
+	order rate_limit before reverse_proxy
+	email admin@supercpe.com
+}
+
+www.supercpe.com {
+	redir https://supercpe.com{uri} permanent
+}
+
+supercpe.com {
+	encode gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	handle /api/* {
+		rate_limit {
+			zone login {
+				match {
+					method POST
+					path /api/v1/auth/login
+				}
+				key {client_ip}
+				events 10
+				window 1m
+			}
+		}
+		reverse_proxy api:8000
+	}
+
+	# Everything else is the built SPA; client-side routes fall back to
+	# index.html. /media/* is not special-cased: in prod the API never
+	# mounts it, so it 404s like any unknown /api path would.
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}

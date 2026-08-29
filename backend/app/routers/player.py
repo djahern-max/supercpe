@@ -25,6 +25,7 @@ from app.schemas.player import (
 )
 from app.services import courses
 from app.services import questions as questions_service
+from app.constants.storage import VIDEO_URL_SECONDS
 from app.storage import Storage, get_storage
 
 router = APIRouter(
@@ -60,7 +61,7 @@ def play_lesson(
     return PlayLesson(
         lesson_id=package.lesson_id,
         title=package.title,
-        video_url=storage.url(package.video_key),
+        video_url=storage.url_for(package.video_key, VIDEO_URL_SECONDS),
         duration_seconds=package.duration_seconds,
         blocks=[PlayBlock(**block) for block in (package.blocks or [])],
         questions=[

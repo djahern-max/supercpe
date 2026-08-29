@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_role
 from app.constants.assessment import PASSING_PCT, RETAKES_ALLOWED
+from app.constants.storage import VIDEO_URL_SECONDS
 from app.constants.evaluation import (
     PROMPTS,
     RATED_ELEMENTS,
@@ -228,7 +229,7 @@ def play_lesson(
     return MyPlayLesson(
         lesson_id=package.lesson_id,
         title=package.title,
-        video_url=storage.url(package.video_key),
+        video_url=storage.url_for(package.video_key, VIDEO_URL_SECONDS),
         duration_seconds=package.duration_seconds,
         blocks=[PlayBlock(**block) for block in (package.blocks or [])],
         questions=[

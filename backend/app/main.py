@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
+from app.config import ensure_boot_config, settings
 from app.routers import (
     admin_accounts,
     admin_audit,
@@ -30,7 +30,9 @@ from app.services.ffprobe import ensure_ffprobe_available
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Fail at boot, not at first upload, if ffprobe is missing.
+    # Fail at boot, with every violation listed, not one restart at a
+    # time in production — and not at first upload if ffprobe is missing.
+    ensure_boot_config(settings)
     ensure_ffprobe_available()
     yield
 
@@ -61,7 +63,10 @@ app.include_router(admin_sponsor.router, prefix="/api/v1")
 app.include_router(assessment.router, prefix="/api/v1")
 app.include_router(assessment.admin_router, prefix="/api/v1")
 app.include_router(courses.router, prefix="/api/v1")
-app.include_router(media.router, prefix="/api/v1")
+# Under Spaces, video plays from presigned URLs and /media/ must 404;
+# the route simply does not exist.
+if settings.storage_backend == "local":
+    app.include_router(media.router, prefix="/api/v1")
 app.include_router(my.router, prefix="/api/v1")
 app.include_router(player.router, prefix="/api/v1")
 app.include_router(policies.router, prefix="/api/v1")

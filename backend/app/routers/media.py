@@ -2,9 +2,11 @@
 
 The local stand-in for a presigned Spaces URL (012): a <video> element
 cannot send the admin token header, and a presigned URL carries no auth
-either. Only ever referenced by URLs `LocalStorage.url` hands out; the
-Spaces implementation returns absolute presigned URLs and never routes
-here.
+either. Only ever referenced by URLs `LocalStorage.url_for` hands out;
+`SpacesStorage.url_for` returns absolute presigned URLs and never routes
+here. Mounted only when STORAGE_BACKEND=local (see app/main.py); the
+isinstance guard below is defense in depth for tests that override
+`get_storage`.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
