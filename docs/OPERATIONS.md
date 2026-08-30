@@ -41,8 +41,13 @@ Spaces bucket, and these procedures are how they stay alive.
   Namecheap BasicDNS (`@` and `www` A records → the droplet).
 - Uptime monitor and its login: not yet set up as of 2026-08-30 — fill
   in when it exists (alert on non-200 at
-  `https://supercpe.com/api/v1/health`, and on `last_backup_at` stale
-  beyond ~26 hours if the monitor can match response text).
+  `https://supercpe.com/api/v1/health`, and on `last_backup_at` or
+  `last_offsite_backup_at` stale beyond ~26 hours if the monitor can
+  match response text — the nightly run is at 03:15 UTC, so ~26 hours
+  means one missed night plus slack).
+- Off-site provider and its login: not yet chosen as of 2026-08-30 —
+  fill in when the bucket exists (provider, account owner, bucket name,
+  region, and where the `OFFSITE_*` key was created).
 
 ## Layout on the droplet
 
@@ -176,24 +181,124 @@ never straight over production):
 1. List what exists (prefix per the GIT_SHA note above):
    `cd /srv/supercpe/repo && export GIT_SHA=$(git rev-parse HEAD) && docker compose -f deploy/docker-compose.yml run --rm api python -c "from app.storage import get_storage; from app.services.backups import dump_dates; print(sorted(dump_dates(get_storage())))"`
 2. Download the chosen dump to the droplet:
-   `docker compose -f deploy/docker-compose.yml run --rm -v /srv/supercpe/backups:/backups api python -c "import shutil; from app.storage import get_storage; s=get_storage(); shutil.copyfileobj(s.open('backups/<DATE>.dump.gz'), open('/backups/restore.dump.gz','wb'))"`
-   (same shell, so `GIT_SHA` is still exported)
+   `docker compose -f deploy/docker-compose.yml run --rm --user $(id -u) -v /srv/supercpe/backups:/backups api python -c "import shutil; from app.storage import get_storage; s=get_storage(); shutil.copyfileobj(s.open('backups/<DATE>.dump.gz'), open('/backups/restore.dump.gz','wb'))"`
+   (same shell, so `GIT_SHA` is still exported). The `--user $(id -u)`
+   matters: the api container runs as non-root and is writing into a
+   host mount, so without it the copy fails with `PermissionError`.
 3. Create a scratch database on the cluster (control panel or `createdb`),
    then:
    `gunzip -c /srv/supercpe/backups/restore.dump.gz | docker run --rm -i postgres:16 pg_restore --no-owner -d "<postgresql://...scratch db url>"`
+   This works from the droplet even though the cluster only trusts the
+   droplet: container traffic NATs through the droplet, which is the
+   cluster's trusted source — do not add a Cloud Firewall rule for it.
+   Ownership trap, same as first-deploy step 6: a panel-created database
+   is owned by `doadmin`, so either restore as `doadmin` or run
+   `ALTER DATABASE <scratch> OWNER TO supercpe` first.
 4. Verify the restore lines up with the bucket: every
    `completions.certificate_key` in the scratch database should exist
    under `certificates/` in Spaces
    (`SELECT certificate_key FROM completions WHERE certificate_key IS NOT NULL`
    against `storage.exists(...)`).
-5. Only after that verification, either point `DATABASE_URL` at the
+5. Verify the restore against production directly — these checks are not
+   vacuous even when the database is empty: `alembic_version` in the
+   scratch database matches production's, the table list (`\dt`) matches,
+   and `SELECT count(*) FROM accounts` matches.
+6. Only after those verifications, either point `DATABASE_URL` at the
    scratch database or `pg_restore` into the real one.
 
 **Restore drill record** (required by 012 before launch; repeat yearly):
 
 | Date | Source | Time taken | Verified by |
 |------|--------|-----------|-------------|
-| _not yet performed — run the dump-restore drill against the empty production database and record it here_ | | | |
+| _not yet performed — run the dump-restore drill from the most recent dump into a scratch database and record it here_ | | | |
+
+**Bucket-layer recovery drill record** (013's acceptance 7; record its
+date here when run): overwrite `health/sentinel` by running
+`write-sentinel` twice, list the key's versions, recover the older by
+`VersionId` per the Bucket versioning section below.
+
+| Date | Verified by |
+|------|-------------|
+| _not yet performed_ | |
+
+## Bucket versioning
+
+Object versioning on `supercpe-prod-nyc3` (013) keeps every prior
+version of a retained object, so an accidental overwrite or delete at
+the bucket layer is recoverable. It was enabled once by
+`deploy/bucket-setup.py`, run by hand from the laptop's backend venv
+with a **temporary Full Access** Spaces key (created at API → Spaces
+Keys, deleted immediately after):
+
+    SETUP_SPACES_KEY=... SETUP_SPACES_SECRET=... \
+        python deploy/bucket-setup.py supercpe-prod-nyc3
+
+The same run sets the one lifecycle rule: noncurrent versions under
+`backups/` expire after `BACKUP_NONCURRENT_DAYS` (7) days; no other
+prefix has any rule — `packages/`, `certificates/`, and `audits/`
+versions are never expired. The script reads both back and exits
+non-zero if the bucket does not report them as set.
+
+The runtime Limited Access key can *read* the versioning status but
+cannot change versioning or lifecycle — that is the point: in `prod` the
+app refuses to boot while versioning is not `Enabled`, and `/health`
+reports `bucket_versioning: error` (a 503) if it is ever suspended
+afterwards. Run `bucket-setup.py` **before** deploying 013 or later, or
+the new api container will refuse to start.
+
+**To recover a prior version of an object** (with any key that can read
+the bucket; restoring needs write):
+
+    # list the versions of a key
+    aws s3api list-object-versions --bucket supercpe-prod-nyc3 \
+        --prefix <key> --endpoint-url https://nyc3.digitaloceanspaces.com
+    # download the version you want by VersionId
+    aws s3api get-object --bucket supercpe-prod-nyc3 --key <key> \
+        --version-id <VersionId> restored-file \
+        --endpoint-url https://nyc3.digitaloceanspaces.com
+
+Then put the recovered bytes back as a new write (a new current
+version); never delete the bad version — the history is the control. A
+deleted key is recovered the same way: its versions are still listed
+under a delete marker.
+
+## Off-site copy
+
+The second copy of the 9.02 records (013) lives in an S3-compatible
+bucket at a **different provider**, so a DigitalOcean-level failure
+(account lockout, region loss, billing lapse) cannot take the originals
+and every backup together.
+
+- Provider, bucket, region, and account login: see "Who and where"
+  above (fill in when chosen).
+- The `OFFSITE_*` values in `/srv/supercpe/.env` come from that
+  provider: an application key scoped to the one bucket,
+  read/write/delete. All five variables or none
+  (`deploy/env.production.example` documents them).
+- What is mirrored, nightly by `deploy/backup.sh` via
+  `python -m app.cli mirror-offsite`: that night's dump under
+  `backups/`, a `backups/LATEST` stamp, and every object under
+  `certificates/` and `audits/` that is absent or changed off-site.
+  Nothing is ever deleted off-site. `packages/` is **not** mirrored:
+  videos are large and every exported zip also exists in video-tool's
+  `dist/` on the machine that produced it.
+- On success the primary bucket gets `backups/OFFSITE`, which `/health`
+  reports as `last_offsite_backup_at` — stale beyond ~26 hours means the
+  mirror is failing (check `/srv/supercpe/backup.log`; the off-site step
+  is named in it). An off-site failure exits non-zero **after** the
+  primary backup is stamped, so it can never mask a primary failure.
+
+**To restore a dump from the off-site copy**: same `pg_restore` path as
+the Restore section above; only the download step differs — fetch the
+dump from the off-site bucket instead of Spaces:
+
+    aws s3 cp s3://<offsite-bucket>/backups/<DATE>.dump.gz \
+        /srv/supercpe/backups/restore.dump.gz \
+        --endpoint-url <OFFSITE_ENDPOINT>
+
+(credentials: the `OFFSITE_*` key from `.env`, e.g. via
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`). Then continue from step 3
+of the dump-path restore. The drill for this path is a Phase C item.
 
 ## Rotate a secret
 
@@ -245,9 +350,19 @@ The monitor alerts on non-200. Fields, in the order to check:
 - `ffprobe: error` — the image is broken (ffmpeg is installed by the
   Dockerfile); a deploy with a modified Dockerfile is the likely cause.
   Roll back.
+- `bucket_versioning: error` — someone suspended versioning on the
+  bucket, or the versioning read itself failed. Nothing in the runtime
+  can have done it (the Limited Access key cannot change versioning);
+  check who touched the bucket, then re-enable with
+  `deploy/bucket-setup.py` per the Bucket versioning section.
 - `last_backup_at` stale (not a 503 by itself) — the nightly backup
   failed. `tail /srv/supercpe/backup.log`; run
   `/srv/supercpe/repo/deploy/backup.sh` by hand and watch it.
+- `last_offsite_backup_at` stale or null (not a 503 by itself) — null
+  means `OFFSITE_*` is unconfigured or no mirror has ever succeeded;
+  stale means the off-site provider or its key is the problem. The
+  backup log names the off-site step; the primary backup is unaffected
+  either way.
 - Whole endpoint unreachable — Caddy or the droplet. `docker compose -f
   deploy/docker-compose.yml ps`, then `logs caddy`; then the droplet
   console in the control panel.

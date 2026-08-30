@@ -149,3 +149,12 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   which 9.02 arguably wants covered. A second bucket at a different
   provider, or a periodic download to a machine the sponsor controls,
   would close it.
+- The off-provider note above is closed by 013: nightly dumps,
+  `certificates/`, and `audits/` mirror to a second S3-compatible bucket
+  at a different provider, and `/health` reports
+  `last_offsite_backup_at`.
+- `packages/` has no off-site copy (013 decision): videos are large and
+  every exported zip also exists in video-tool's `dist/` on the machine
+  that produced it. If video-tool's machine and DigitalOcean were both
+  lost, the lesson videos would be too; mirroring `packages/` (or an
+  archival copy of video-tool's `dist/`) would close it.

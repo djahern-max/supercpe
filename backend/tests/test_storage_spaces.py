@@ -16,8 +16,9 @@ from app.constants.storage import (
     HEALTH_SENTINEL_KEY,
     VIDEO_URL_SECONDS,
 )
+from app.config import ConfigurationError
 from app.services import backups
-from app.storage import LocalStorage, SpacesStorage
+from app.storage import LocalStorage, SpacesStorage, ensure_bucket_versioning
 
 BUCKET = "supercpe-test"
 
@@ -144,3 +145,68 @@ def test_backup_upload_prunes(spaces, tmp_path, monkeypatch):
     # June's first dump survives as the monthly keeper; the second is gone.
     assert spaces.exists("backups/2026-06-01.dump.gz")
     assert not spaces.exists("backups/2026-06-02.dump.gz")
+
+
+def enable_versioning(spaces):
+    spaces.client.put_bucket_versioning(
+        Bucket=BUCKET, VersioningConfiguration={"Status": "Enabled"}
+    )
+
+
+def test_versioning_enabled_reads_the_bucket_status(spaces):
+    assert not spaces.versioning_enabled()
+    enable_versioning(spaces)
+    assert spaces.versioning_enabled()
+
+
+def test_boot_refuses_when_versioning_is_off(spaces):
+    """The 013 boot refusal main.py applies in prod: a 9.02 control that
+    can be switched off in a control panel while the app runs normally is
+    a control that will be found off during an audit."""
+    with pytest.raises(ConfigurationError) as excinfo:
+        ensure_bucket_versioning(spaces)
+    assert "versioning" in str(excinfo.value)
+
+    enable_versioning(spaces)
+    ensure_bucket_versioning(spaces)
+
+
+def test_boot_versioning_check_skips_local_storage(tmp_path):
+    ensure_bucket_versioning(LocalStorage(tmp_path))
+
+
+def test_prune_under_versioning_hides_dumps_but_keeps_noncurrent_versions(
+    spaces, tmp_path, monkeypatch
+):
+    """Task 4 of 013: with versioning on, prune's delete writes a delete
+    marker — the dump leaves the current listing (so retention still
+    behaves) but its bytes stay recoverable as a noncurrent version until
+    the bucket-setup lifecycle rule expires them."""
+    enable_versioning(spaces)
+    monkeypatch.setattr(backups, "BACKUP_KEEP_RECENT", 1)
+    for day in ("2026-07-01", "2026-07-02", "2026-07-03"):
+        dump = tmp_path / f"{day}.dump.gz"
+        dump.write_bytes(day.encode())
+        backups.upload(spaces, dump)
+
+    # 07-03 is the recent keeper, 07-01 July's monthly keeper; 07-02 was
+    # pruned and is gone from the current listing dump_dates reads.
+    assert backups.dump_dates(spaces) == [date(2026, 7, 1), date(2026, 7, 3)]
+    assert not spaces.exists("backups/2026-07-02.dump.gz")
+
+    versions = spaces.client.list_object_versions(
+        Bucket=BUCKET, Prefix="backups/2026-07-02"
+    )
+    # The delete marker is what made it "gone"; the original bytes are a
+    # noncurrent version the operator could still recover by VersionId.
+    assert any(
+        marker["IsLatest"] for marker in versions["DeleteMarkers"]
+    )
+    noncurrent = [v for v in versions["Versions"] if not v["IsLatest"]]
+    assert len(noncurrent) == 1
+    recovered = spaces.client.get_object(
+        Bucket=BUCKET,
+        Key="backups/2026-07-02.dump.gz",
+        VersionId=noncurrent[0]["VersionId"],
+    )
+    assert recovered["Body"].read() == b"2026-07-02"

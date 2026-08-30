@@ -26,6 +26,7 @@ from app.routers import (
     sponsor,
 )
 from app.services.ffprobe import ensure_ffprobe_available
+from app.storage import ensure_bucket_versioning, get_storage
 
 
 @asynccontextmanager
@@ -33,6 +34,8 @@ async def lifespan(app: FastAPI):
     # Fail at boot, with every violation listed, not one restart at a
     # time in production — and not at first upload if ffprobe is missing.
     ensure_boot_config(settings)
+    if settings.env == "prod":
+        ensure_bucket_versioning(get_storage())
     ensure_ffprobe_available()
     yield
 

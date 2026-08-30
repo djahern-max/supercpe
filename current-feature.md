@@ -1,231 +1,252 @@
-# 012 — Spaces storage, production config, and deployment to superCPE.com
+# 013 — Durability of retained records
+
+First Phase B feature. Production is live at `62de030` in `coming_soon`
+mode with an empty database. Feature 012's changelog entry is still
+owed: it waits on the restore drill and acceptance items 3–5 of 012,
+which are the operator's hands, not code. 013 does not depend on them,
+but the drill must be run before ASC842-PCX is re-ingested (feature
+014), because it is only free while the database is empty.
 
 ## Goal
 
-Put superCPE on supercpe.com in `coming_soon` mode with a fresh, empty
-production database, durable object storage, automated backups, and a
-written operations runbook — so that Phase B can start and the records
-Section 9 requires the sponsor to keep for five years are kept somewhere
-that survives a lost laptop or a dead droplet.
+012 put the 9.02 records — completions, certificates, audit bundles,
+program materials — in one managed database and one Spaces bucket, both
+at DigitalOcean, both protected by application discipline (no delete
+paths, write-once keys) and by backups that also live at DigitalOcean.
+Two things can still lose a retained record: an accidental overwrite or
+delete at the bucket layer, which nothing recovers; and a provider-level
+failure (account lockout, region loss, billing lapse), which takes the
+originals and every backup together.
 
-This feature builds no product behavior. It changes where the existing
-behavior runs and adds what running it responsibly requires: a second
-`Storage` implementation, presigned video delivery, a health endpoint
-that tells the truth, and deploy/rollback/restore procedures that have
-each been exercised once before the feature is called done.
+After this feature the bucket itself keeps every prior version of a
+retained object, a second copy of the database dumps and the small
+retained objects lives at a different provider, and `/health` reports
+both so the uptime monitor sees them go stale. ROADMAP's "off-provider
+backup copies" improvement note is closed by this feature.
 
 ## In scope
 
-- `SpacesStorage`: the second implementation of the 002 `Storage`
-  protocol, plus presigned GET URLs for video; the `/media/` route
-  becomes local-only.
-- Production settings: environment-driven, `dev` off, secure cookies,
-  same-origin CORS, secrets outside the repo.
-- Containerized runtime (API + reverse proxy with automatic TLS),
-  managed Postgres, deploy and rollback scripts, migrations on deploy.
-- Backups: managed-database daily snapshots plus a nightly logical dump
-  to Spaces under `backups/`; a restore drill.
-- `/api/v1/health` reporting version, database, storage, and ffprobe
-  status; an external uptime check.
-- Login rate limiting at the proxy (009's known gap).
-- `docs/OPERATIONS.md`: deploy, rollback, restore, rotate a secret, create
-  the first admin, re-ingest a course.
-- First deployment, with the site in `coming_soon` and nothing public but
-  009's placeholder and `/api/v1/site`.
+- Object versioning on `supercpe-prod-nyc3`, enabled once by a script in
+  the repo run with a temporary Full Access key, then verified from the
+  runtime key on every boot and in `/health`.
+- Storage reclamation under versioning: noncurrent versions under
+  `backups/` are expired; noncurrent versions under `packages/`,
+  `certificates/`, and `audits/` are never expired.
+- Off-site copy: `backup.sh` also uploads the nightly dump to a second
+  S3-compatible bucket at a different provider, and mirrors
+  `certificates/` and `audits/` there. `/health` reports
+  `last_offsite_backup_at`.
+- Boot validation and `env.production.example` for the new variables.
+- COMPLIANCE.md and `docs/OPERATIONS.md` entries; the four runbook
+  corrections found during the 2026-08-30 restore-procedure review
+  (listed under task 6).
 
 ## Out of scope
 
-- The landing page and waiting list (013), tester accounts (014).
-- Any product code change not required to run in production. If a bug
-  surfaces during deployment, fix it as its own changelog entry, not
-  inside this one.
-- Copying the development database to production. Production starts
-  empty. The dev database's fictitious reviewer, test participant, and
-  test policies never leave the laptop; ASC842-PCX is re-ingested from
-  the four exported zips and reviewed for real when the second CPA
-  exists.
-- CDN, multi-region, autoscaling, Kubernetes.
-- Email of any kind (016/018/020).
+- CDN, edge caching, or any change to presigned playback (012 decision
+  stands).
+- Mirroring `packages/` off-site. Videos are large, and every exported
+  zip also exists on the machine that produced it (video-tool's
+  `dist/`). Recorded as a known gap, not built.
+- Encryption at rest beyond what the providers do by default.
+- Restoring *from* the off-site copy as an automated path. The
+  procedure is documented; the drill for it is a Phase C item.
+- Anything touching accounts, enrollments, or course content.
 
-## Locators — read these before writing code
+## Locators
 
-- **9.02** — retain adequate documentation for a minimum of five years.
-  This is the paragraph that makes backups and durable storage a
-  compliance matter, not just an engineering one: a record that exists
-  only on one disk is not retained.
-- **4.05.2** — facilities and technology "carefully monitored." The
-  health endpoint and uptime check are the monitoring.
-- **9.01** — certificates delivered and retrievable; the `certificates/`
-  prefix must survive.
-- **9.02.2(7)** — program materials retained; the `packages/` prefix.
+Quote these in COMPLIANCE.md rows; do not paraphrase.
+
+- **9.02** — "CPE program sponsors must retain adequate documentation
+  (electronic or paper) for a minimum of five years to support their
+  compliance with these Standards and the reports that may be required
+  of participants." This feature's claim: a record that exists at
+  completion still exists five years later even if the bucket is
+  mis-handled or the provider is lost. The Standard says *retain*, not
+  *back up*; superCPE reads durability as part of retaining.
+- **9.02.2(1)** through **9.02.2(7)** — the self-study documentation
+  elements the audit bundle already exports (011). The bundle zips under
+  `audits/` are the retained form of that set; they are the first thing
+  the off-site mirror covers.
+- **9.01 item 2** — for self study, the evidence of completion is the
+  certificate the sponsor supplies. Certificates under `certificates/`
+  are the second thing the mirror covers.
 
 ## Human tasks before Claude Code starts
 
-These need your DigitalOcean account and DNS, not code. Do them first so
-the build can be tested against real endpoints.
-
-1. Create a Spaces bucket (private, region of your choice — NYC3 is
-   nearest), and an access key scoped to it. Note the bucket name,
-   region, and endpoint.
-2. Create a managed Postgres 16 cluster (smallest size is fine), with a
-   `supercpe` database and a `supercpe` user; enable daily backups (on
-   by default). Note the connection string with `sslmode=require`.
-3. Create a droplet (Ubuntu 24.04, 2 GB is enough for Phase B) in the
-   same region; add your SSH key; note its IP.
-4. Point `supercpe.com` and `www.supercpe.com` A records at the droplet.
-5. Set up an external uptime monitor (DigitalOcean's own, UptimeRobot,
-   or similar) on `https://supercpe.com/api/v1/health` — do this after
-   the first deploy.
-
-Give Claude Code the bucket name, region, endpoint, database host, and
-droplet IP. Never give it the keys or passwords; they go into the
-server's `.env` by your hand (the runbook says where).
-
-## Data model
-
-No migration. No model changes. `audit_exports.storage_key`,
-`completions.certificate_key`, and package video keys are already
-storage-relative; they work unchanged under the new implementation.
+1. Create a bucket at a second provider. Any S3-compatible target works
+   (Backblaze B2, Cloudflare R2, Wasabi, AWS S3). Pick a region that is
+   not NYC. Private, versioning **on** if the provider offers it.
+2. Create a key for that bucket scoped to it alone, read/write/delete.
+   Note the endpoint URL, region string, bucket name, key, secret.
+3. Create a **temporary** Full Access Spaces key at DigitalOcean for
+   task 1 below. It is used once and deleted in the acceptance
+   walkthrough. Do not put it in `/srv/supercpe/.env`.
 
 ## Tasks
 
-1. **`SpacesStorage`** in `app/services/storage.py` alongside
-   `LocalStorage`: `put`, `open`, `exists`, `delete`, and a new protocol
-   method `url_for(key, expires_seconds)`. Spaces is S3-compatible; use
-   `boto3` against the Spaces endpoint. `LocalStorage.url_for` returns the
-   existing `/media/` path. Selected by `STORAGE_BACKEND` (`local` |
-   `spaces`); refuse to boot on `spaces` with any of `SPACES_BUCKET`,
-   `SPACES_REGION`, `SPACES_ENDPOINT`, `SPACES_KEY`, `SPACES_SECRET`
-   missing. Objects are written with `ContentType` set and no public
-   ACL. Bucket is private; nothing is ever served directly.
+### 1. Bucket setup script
 
-2. **Video delivery.** The play endpoints (006 preview and 010
-   enrollment) hand out `storage.url_for(key, VIDEO_URL_SECONDS)` —
-   `VIDEO_URL_SECONDS = 3600` in `app/constants/storage.py`, ours — so a
-   URL expires within an hour and cannot be shared usefully. Under
-   `local`, that is the `/media/` path as today; under `spaces`, a
-   presigned GET. The `/media/` route is mounted only when
-   `STORAGE_BACKEND=local`. Certificate and audit downloads keep
-   streaming through the API (they need the session check), reading from
-   storage as today.
+`deploy/bucket-setup.py` — run once, by hand, with Full Access
+credentials passed only as environment variables
+(`SETUP_SPACES_KEY`, `SETUP_SPACES_SECRET`), never read from `.env`.
 
-3. **Settings.** `app/config.py` gains `ENV` (`dev` | `prod`), and in
-   `prod`: `dev` is false (Secure cookies), `CORS_ORIGINS` must be exactly
-   `https://supercpe.com`, `DATABASE_URL` must carry `sslmode=require`,
-   `STORAGE_BACKEND` must be `spaces`, and `SECRET_KEY`-class values must
-   be present and at least 32 bytes. Boot refuses with every violation
-   listed, in the 002 style. `.env.example` documents every variable
-   with a one-line meaning; `.env` is gitignored (verify).
+- Enables object versioning on the bucket.
+- Puts a lifecycle configuration with one rule: expire noncurrent
+  versions under prefix `backups/` after `BACKUP_NONCURRENT_DAYS = 7`
+  (new constant in `constants/storage.py`, docstring explaining that a
+  nightly dump overwritten by the same day's re-run has no retention
+  value beyond a week, whereas every other prefix is 9.02 material and
+  is never expired). No other rules.
+- Prints the resulting versioning status and lifecycle configuration,
+  and exits non-zero if either does not read back as set.
+- **Verify first** that DigitalOcean Spaces honors
+  `NoncurrentVersionExpiration` with a prefix filter. If it does not,
+  stop and report before writing the fallback (`backups.py` prune
+  would then delete noncurrent `backups/` versions explicitly by
+  `VersionId`, and the runtime key needs a permission check for that).
+  Do not guess; test it against the real bucket.
 
-4. **Runtime.** `deploy/` at the repo root:
-   - `Dockerfile` for the API: Python 3.12 slim, `ffmpeg` installed
-     (ffprobe is a boot requirement from 002), non-root user, `alembic
-     upgrade head` as a separate entrypoint command, uvicorn with a
-     fixed worker count.
-   - `Dockerfile.web` building the Vite frontend to static files.
-   - `Caddyfile`: TLS for supercpe.com (automatic via Let's Encrypt),
-     `www` → apex redirect, static frontend, `/api/*` proxied to the API,
-     `/media/*` absent in prod, HSTS, and a rate limit on
-     `POST /api/v1/auth/login` (10/minute per IP) — Caddy's rate-limit
-     plugin, or nginx if that plugin proves awkward; justify the choice.
-   - `docker-compose.yml`: `caddy` and `api` services; Postgres is the
-     managed cluster, not a container; `.env` mounted read-only.
-   - `deploy.sh` (run on the droplet): `git fetch`, check out the
-     requested tag or sha, build, run migrations, restart, verify
-     `/api/v1/health` reports the new version, and print it. Keeps the
-     previous image tagged so `rollback.sh <sha>` is a checkout, a
-     rebuild from cache, and a restart — with the explicit note that
-     rollback does not undo a migration, and which migrations since 001
-     are reversible.
-   - `backup.sh` and a cron entry: nightly `pg_dump` (custom format) of
-     the managed database, gzip, upload to `backups/<date>.dump.gz`,
-     delete local copy, keep the last 90 in Spaces and one per month
-     beyond that; failure of the upload exits non-zero and is logged
-     where the uptime monitor can see it (a `last_backup_at` in
-     `/health`, task 5).
+Idempotent: running it twice changes nothing and reports the same.
 
-5. **Health.** `GET /api/v1/health` returns `{version, env, database:
-   ok|error, storage: ok|error, ffprobe: ok|error, last_backup_at}` with
-   HTTP 503 if any is `error`. `version` is the git sha baked at build
-   time. Storage check is a HEAD on a known sentinel key written at first
-   deploy (`health/sentinel`); database check is `SELECT 1`;
-   `last_backup_at` is read from a `backups/LATEST` object the backup
-   script writes. The endpoint stays ungated (009).
+### 2. Versioning as a boot and health check
 
-6. **Security posture, stated in one place.** `docs/OPERATIONS.md` opens
-   with it: TLS only, HSTS, HttpOnly/Secure/SameSite=Lax session cookie,
-   argon2id, login rate limit, private bucket with hour-lived presigned
-   video, secrets in the server `.env` (mode 600, owned by the deploy
-   user), managed Postgres reachable only from the droplet's private
-   network with SSL required, no ports open but 22, 80, 443. Include what
-   is deliberately *not* done yet: no WAF, no MFA, no intrusion detection.
+- `SpacesStorage.versioning_enabled()` — `GetBucketVersioning` with the
+  runtime Limited Access key. Confirm the runtime key can read it; if it
+  cannot, report before building and we will choose between widening
+  the key and dropping the check.
+- `ensure_boot_config`: in `prod`, refuse to boot if versioning is not
+  `Enabled`. A 9.02 control that can be switched off in a control panel
+  and leave the application running normally is a control that will be
+  found off during an audit.
+- `/health` gains `bucket_versioning: "ok" | "error"`, contributing to
+  the 503 rule like the other components. `LocalStorage` reports `ok`
+  (there is nothing to version) with a comment saying so.
 
-7. **`docs/OPERATIONS.md` procedures**, each written as numbered steps
-   that were actually executed once during this feature:
-   - First deploy on a fresh droplet (packages, Docker, clone, `.env`,
-     `deploy.sh`, sentinel, first admin via `python -m app.cli
-     create-admin` inside the container).
-   - Routine deploy of a tag.
-   - Rollback.
-   - Restore: from a managed snapshot, and from a `backups/` dump into
-     a scratch database, then verifying `completions` and
-     `certificates/` line up. This drill must be done for real against
-     the empty production database before the feature ships, and the
-     runbook records the date it was done and how long it took.
-   - Rotate: Spaces key, database password, `SECRET_KEY` (and what a
-     `SECRET_KEY` rotation does to sessions — everyone is signed out).
-   - Re-ingest a course from its exported zips.
-   - What to do when `/health` goes red, per field.
+### 3. Off-site mirror
 
-8. **Tests.** `SpacesStorage` against `moto`'s S3 mock (test-only
-   dependency; justify): put/open/exists/delete round-trip, `url_for`
-   returns a signed URL containing the key and an expiry, `put` never
-   sets a public ACL. Config validation: every `prod` refusal fires with
-   the offending variable named. `/health` returns 503 and names the
-   failing component when storage is unreachable (mock). The `/media/`
-   route is absent when `STORAGE_BACKEND=spaces`. All prior tests pass
-   under `local`; the count goes up.
+- Config: `OFFSITE_ENDPOINT`, `OFFSITE_REGION`, `OFFSITE_BUCKET`,
+  `OFFSITE_KEY`, `OFFSITE_SECRET`. `ensure_boot_config`: if any is set,
+  all must be set; `OFFSITE_SECRET` follows the ≥32-byte rule; in
+  `prod`, `OFFSITE_ENDPOINT` must not be the DigitalOcean endpoint
+  (that would be a second bucket, not a second provider). Not required
+  in `prod` — the missing-offsite state is reported, not refused, so
+  the site can stay up while a provider is chosen or replaced.
+- `services/offsite.py`: a second boto3 client from the `OFFSITE_*`
+  vars. Two operations: `mirror_backup(date)` copies
+  `backups/<date>.dump.gz` and stamps `backups/LATEST` in the off-site
+  bucket; `mirror_prefix(prefix)` copies every object under
+  `certificates/` or `audits/` that is absent off-site or differs by
+  ETag. Never deletes anything off-site. Idempotent.
+- `backup.sh`: after the local upload succeeds, call a new CLI command
+  `mirror-offsite` that runs `mirror_backup` for tonight's date and
+  `mirror_prefix` for `certificates/` and `audits/`. A failure here
+  logs and exits non-zero **after** the primary backup is already
+  stamped, so a dead off-site provider cannot make `last_backup_at`
+  stale and mask the primary as the problem.
+- On success, write `backups/OFFSITE` in the **primary** bucket
+  containing the ISO timestamp. `/health` reads it as
+  `last_offsite_backup_at`; `null` when unconfigured or never run.
+- `/health` 503 rule: `last_offsite_backup_at` does **not** contribute.
+  Staleness is for the uptime monitor to alert on, same as
+  `last_backup_at`. Document the ~26-hour threshold for both.
 
-## COMPLIANCE.md rows
+### 4. Retention pruning under versioning
 
-| 9.02 | (append) | 012 | Object storage on Spaces (private bucket; `packages/`, `certificates/`, `audits/` write-once); managed Postgres with daily snapshots; nightly logical dump to `backups/` with 90-day + monthly retention; restore drill recorded in `docs/OPERATIONS.md` | Spaces has no object versioning; write-once discipline is enforced by the application, not the bucket. Off-provider copy of backups is not implemented. |
-| 4.05.2 | facilities and technology carefully monitored | 012 | `/api/v1/health` (db, storage, ffprobe, last backup) with 503 on failure; external uptime monitor on it | Monitoring is availability only; no load testing has been done. |
-| 9.01 | (append) | 012 | Certificates persist in `certificates/` on Spaces and are covered by the backup policy | — |
+`backups.py` prune currently deletes old dumps. With versioning on, a
+delete writes a delete marker; the lifecycle rule from task 1 reclaims
+the bytes after `BACKUP_NONCURRENT_DAYS`. Confirm the prune still
+behaves (the current-version listing no longer shows pruned dumps) and
+add a test with `moto` versioning enabled that asserts pruned dumps are
+absent from the current listing and present as noncurrent versions.
+
+### 5. Documentation
+
+- COMPLIANCE.md: append entries (never edit) — 9.02 row for bucket
+  versioning replacing the "no object versioning" gap that 012's entry
+  already corrected once; 9.02 row for the off-site copy; 9.02.2 and
+  9.01 rows noting which prefixes are mirrored and that `packages/` is
+  not, with the reason.
+- `docs/OPERATIONS.md`: new section "Off-site copy" (provider, bucket,
+  where its key came from, how to restore a dump from it — same
+  `pg_restore` path with a different download step); "Bucket
+  versioning" section (how to recover a prior version of an object by
+  `VersionId`, and that the runtime key cannot change versioning or
+  lifecycle); add the off-site provider login to "Who and where".
+- `deploy/env.production.example`: the five `OFFSITE_*` lines, marked
+  optional, with the different-provider rule stated.
+- ROADMAP.md: remove nothing; append a line under the improvement notes
+  saying the off-provider note is closed by 013, and add the
+  `packages/` off-site gap as a new note.
+
+### 6. Runbook corrections from the 2026-08-30 review
+
+These are small and belong in this commit, not a separate one.
+
+- Restore, dump path, step 3: the `postgres:16 pg_restore` container
+  reaches the VPC private host because container traffic NATs through
+  the droplet, which is the cluster's trusted source. One sentence, so
+  nobody adds a Cloud Firewall rule that breaks it.
+- Restore, dump path: the scratch database has the same ownership trap
+  as the first-deploy step 6 — a panel-created database is owned by
+  `doadmin`. Say to either restore as `doadmin` or `ALTER DATABASE ...
+  OWNER TO supercpe` first.
+- Restore, dump path, step 2: the api container runs as non-root and
+  writes into a host mount. If it fails with `PermissionError`, the fix
+  is `--user $(id -u)` on the `docker compose run`. Add the flag to the
+  documented command.
+- Restore drill record: the empty-row text says "against the empty
+  production database"; production is never the target. Reword to "from
+  the most recent dump into a scratch database". Add a fourth
+  verification that is not vacuous on an empty database:
+  `alembic_version` matches production, table list matches, account
+  count matches.
+- "Who and where": the DigitalOcean owner line still carries a
+  "confirm/correct" note. Leave the note; the operator will resolve it.
 
 ## Acceptance
 
-1. `https://supercpe.com` serves 009's coming-soon placeholder over TLS
-   with a valid certificate; `http://` and `www` redirect; `/api/v1/site`
-   reports `coming_soon`; `/api/v1/health` reports every component `ok`,
-   the deployed sha, and a `last_backup_at` from the first manual run of
-   `backup.sh`.
-2. `/login` works; the first admin created on the server signs in; the
-   session cookie is `Secure` and `HttpOnly` (check in the browser).
-3. As admin: upload `ASC842-PCX-01.zip`; the object appears in the
-   bucket under `packages/`; the preview player plays it via a presigned
-   URL that stops working after an hour; `/media/` returns 404.
-4. Create a draft course, attach the package, generate an audit bundle;
-   it lands under `audits/` and downloads.
-5. Run `rollback.sh` to the previous sha and back; `/health` shows each
-   version in turn.
-6. The restore drill in `docs/OPERATIONS.md` has a date on it.
-7. `ADMIN_TOKEN`, keys, and passwords appear nowhere in the repo
-   (`git grep` for each variable name's value pattern is empty; `.env`
-   is ignored).
-8. `pytest`: all pass; count exceeds 199.
+Claude Code runs 1–4 and 8. The operator runs 5–7 on production after
+deploy and reports results.
+
+1. `pytest` all pass, count > 227. New tests cover: boot refusal when
+   versioning is not enabled in `prod`; `OFFSITE_*` all-or-nothing;
+   same-provider endpoint refused in `prod`; `mirror_prefix` copies
+   missing and changed objects and never deletes; `mirror_backup`
+   stamps `LATEST` off-site and `OFFSITE` in the primary; `/health`
+   shows `bucket_versioning` and `last_offsite_backup_at`; prune under
+   versioning per task 4.
+2. `bucket-setup.py` against a `moto` bucket: enables versioning, sets
+   exactly one lifecycle rule, is idempotent, exits non-zero if
+   read-back fails.
+3. `ensure_boot_config` with `OFFSITE_*` unset in `prod` boots and
+   `/health` reports `last_offsite_backup_at: null`.
+4. `backup.sh` with off-site failing: primary `LATEST` is stamped, exit
+   code is non-zero, log names the off-site step as the failure.
+5. **Operator:** run `bucket-setup.py` with the temporary key, see
+   versioning `Enabled` and the one rule; delete the temporary key;
+   confirm `/health` shows `bucket_versioning: ok` after deploy.
+6. **Operator:** run `backup.sh` by hand; the dump, `LATEST`, and the
+   (empty, today) `certificates/` and `audits/` prefixes appear at the
+   second provider; `/health` shows `last_offsite_backup_at` within a
+   minute of now.
+7. **Operator:** overwrite `health/sentinel` by running `write-sentinel`
+   twice, then list versions of that key and see two. Recover the older
+   by `VersionId` per the new OPERATIONS.md section. (This is the
+   recovery drill for the bucket layer; record its date next to the
+   restore drill.)
+8. Secrets nowhere in the repo: `git grep -i offsite_secret` and
+   `git grep -i setup_spaces` return only the example file and the
+   script's variable names.
 
 ## When done
 
-- Changelog per CLAUDE.md, including: why managed Postgres over a
-  container (backups are 9.02), why Caddy (or nginx), the `moto` and
-  `boto3` justifications, the presigned-URL lifetime, and the note that
-  production started from an empty database by design.
-- COMPLIANCE.md rows above.
-- ROADMAP: mark Phase A complete; add an improvement note for
-  off-provider backup copies (a second bucket at a different provider,
-  or a periodic download), which 9.02 arguably wants and this feature
-  does not do.
-- Record in `docs/OPERATIONS.md` the four things that live only in your
-  head today: the DigitalOcean account owner, where the `.env` values
-  came from, the domain registrar, and the uptime monitor login — so the
-  next person (or you, in a year) can run the site.
+Write the 013 changelog entry per CLAUDE.md. Cover: why boot refuses on
+versioning-off but only reports on offsite-missing; why `packages/` is
+not mirrored; the lifecycle rule and why `backups/` alone; what
+DigitalOcean actually honored in the lifecycle API; the provider
+chosen off-site and why; and the 012 runbook corrections folded in.
+
+Then stop. 014 is the ASC842-PCX re-ingest on production with the real
+second CPA's review, and it is gated on the 012 restore drill being
+dated in `docs/OPERATIONS.md`.

@@ -13,10 +13,14 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.constants.storage import BACKUP_LATEST_KEY, HEALTH_SENTINEL_KEY
+from app.constants.storage import (
+    BACKUP_LATEST_KEY,
+    HEALTH_SENTINEL_KEY,
+    OFFSITE_STAMP_KEY,
+)
 from app.db import get_db
 from app.schemas.health import HealthResponse
-from app.storage import LocalStorage, Storage, get_storage
+from app.storage import LocalStorage, SpacesStorage, Storage, get_storage
 
 router = APIRouter()
 
@@ -47,11 +51,33 @@ def _storage_check(storage: Storage) -> str:
 def _last_backup_at(storage: Storage) -> str | None:
     """First line of backups/LATEST, written by the backup upload; absent
     until the first backup succeeds."""
+    return _first_line(storage, BACKUP_LATEST_KEY)
+
+
+def _last_offsite_backup_at(storage: Storage) -> str | None:
+    """backups/OFFSITE in the primary bucket, stamped by mirror-offsite;
+    null while OFFSITE_* is unconfigured or no mirror has succeeded."""
+    return _first_line(storage, OFFSITE_STAMP_KEY)
+
+
+def _first_line(storage: Storage, key: str) -> str | None:
     try:
-        with storage.open(BACKUP_LATEST_KEY) as latest:
-            return latest.read().decode("utf-8").splitlines()[0]
+        with storage.open(key) as stamp:
+            return stamp.read().decode("utf-8").splitlines()[0]
     except Exception:
         return None
+
+
+def _versioning_check(storage: Storage) -> str:
+    """The 9.02 bucket-versioning control (013). LocalStorage is ok by
+    definition — a developer disk has nothing to version; the control
+    exists at the bucket layer only."""
+    if not isinstance(storage, SpacesStorage):
+        return "ok"
+    try:
+        return "ok" if storage.versioning_enabled() else "error"
+    except Exception:
+        return "error"
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -64,8 +90,15 @@ def health(
         "database": _database_check(db),
         "storage": _storage_check(storage),
         "ffprobe": "ok" if shutil.which("ffprobe") else "error",
+        "bucket_versioning": _versioning_check(storage),
         "last_backup_at": _last_backup_at(storage),
+        "last_offsite_backup_at": _last_offsite_backup_at(storage),
     }
-    if "error" in (body["database"], body["storage"], body["ffprobe"]):
+    if "error" in (
+        body["database"],
+        body["storage"],
+        body["ffprobe"],
+        body["bucket_versioning"],
+    ):
         return JSONResponse(status_code=503, content=body)
     return body

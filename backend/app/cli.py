@@ -15,17 +15,29 @@ first deploy).
 
 uploads a nightly dump to backups/, stamps backups/LATEST, and prunes to
 the retention policy. Called by deploy/backup.sh, Spaces-only.
+
+    python -m app.cli mirror-offsite 2026-08-30
+
+mirrors that night's dump plus certificates/ and audits/ to the off-site
+bucket, then stamps backups/OFFSITE in the primary. Called by
+deploy/backup.sh after upload-backup, so an off-site failure exits
+non-zero without ever leaving backups/LATEST unstamped.
 """
 
 import argparse
 import getpass
 import io
 import sys
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import select
 
-from app.constants.storage import HEALTH_SENTINEL_KEY
+from app.constants.storage import (
+    HEALTH_SENTINEL_KEY,
+    MIRRORED_PREFIXES,
+    OFFSITE_STAMP_KEY,
+)
 from app.db import SessionLocal
 from app.models.account import Account
 from app.services import auth as auth_service
@@ -100,6 +112,43 @@ def upload_backup(path: str) -> int:
     return 0
 
 
+def mirror_offsite(day_text: str | None) -> int:
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    from app.services import offsite as offsite_service
+
+    storage = get_storage()
+    if not isinstance(storage, SpacesStorage):
+        print(
+            "mirror-offsite requires STORAGE_BACKEND=spaces: there is no "
+            "primary bucket to mirror from.",
+            file=sys.stderr,
+        )
+        return 1
+    offsite = offsite_service.get_offsite()
+    if offsite is None:
+        # Not a failure: the missing-offsite state is reported by /health
+        # (last_offsite_backup_at: null), not refused, so an unconfigured
+        # night must not make the backup cron look broken.
+        print("OFFSITE_* is not configured; nothing mirrored.")
+        return 0
+    day = date.fromisoformat(day_text) if day_text else datetime.now(timezone.utc).date()
+    try:
+        key = offsite_service.mirror_backup(storage, offsite, day)
+        copied = {
+            prefix: offsite_service.mirror_prefix(storage, offsite, prefix)
+            for prefix in MIRRORED_PREFIXES
+        }
+    except (BotoCoreError, ClientError, OSError) as error:
+        print(f"off-site mirror failed: {error}", file=sys.stderr)
+        return 1
+    stamp = datetime.now(timezone.utc).isoformat()
+    storage.put(OFFSITE_STAMP_KEY, io.BytesIO(f"{stamp}\n".encode()))
+    mirrored = ", ".join(f"{count} under {prefix}" for prefix, count in copied.items())
+    print(f"Mirrored {key} off-site ({mirrored}) and stamped {OFFSITE_STAMP_KEY}.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -124,6 +173,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     backup.add_argument("path")
 
+    mirror = subparsers.add_parser(
+        "mirror-offsite",
+        help="Mirror tonight's dump, certificates/, and audits/ off-site",
+    )
+    mirror.add_argument(
+        "day",
+        nargs="?",
+        help="Dump date as YYYY-MM-DD (default: today, UTC)",
+    )
+
     args = parser.parse_args(argv)
     if args.command == "create-admin":
         return create_admin(args.email, args.force)
@@ -131,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
         return write_sentinel()
     if args.command == "upload-backup":
         return upload_backup(args.path)
+    if args.command == "mirror-offsite":
+        return mirror_offsite(args.day)
     return 1
 
 

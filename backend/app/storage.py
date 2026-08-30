@@ -7,7 +7,7 @@ import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 
-from app.config import settings
+from app.config import ConfigurationError, settings
 
 
 class Storage(Protocol):
@@ -106,6 +106,30 @@ class SpacesStorage:
             "get_object",
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=expires_seconds,
+        )
+
+    def versioning_enabled(self) -> bool:
+        """GetBucketVersioning with the runtime key (DigitalOcean grants
+        it at Read permission, so the Limited Access key can ask). An
+        unversioned bucket returns no Status at all; Suspended is just as
+        much a failure as never-enabled."""
+        response = self.client.get_bucket_versioning(Bucket=self.bucket)
+        return response.get("Status") == "Enabled"
+
+
+def ensure_bucket_versioning(storage: Storage) -> None:
+    """Boot refusal (013): a 9.02 control that can be switched off in a
+    control panel while the application keeps running normally is a
+    control that will be found off during an audit. LocalStorage has
+    nothing to version, so only Spaces is checked."""
+    if not isinstance(storage, SpacesStorage):
+        return
+    if not storage.versioning_enabled():
+        raise ConfigurationError(
+            f"Refusing to boot: object versioning is not Enabled on "
+            f"bucket '{storage.bucket}'. Run deploy/bucket-setup.py with "
+            "a temporary Full Access key (see docs/OPERATIONS.md, "
+            "'Bucket versioning')."
         )
 
 

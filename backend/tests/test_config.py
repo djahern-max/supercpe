@@ -82,6 +82,64 @@ def test_unknown_env_and_backend_are_refused():
     assert any("STORAGE_BACKEND" in violation for violation in violations)
 
 
+OFFSITE_OK = dict(
+    offsite_endpoint="https://s3.us-west-004.backblazeb2.com",
+    offsite_region="us-west-004",
+    offsite_bucket="supercpe-offsite",
+    offsite_key="004example0000000000000",
+    offsite_secret="o" * 43,
+)
+
+
+def test_prod_with_full_offsite_config_has_no_violations():
+    assert boot_violations(make_settings(**PROD_OK, **OFFSITE_OK)) == []
+
+
+def test_prod_without_offsite_boots():
+    """The missing-offsite state is reported by /health, not refused at
+    boot, so the site stays up while a provider is chosen or replaced."""
+    assert boot_violations(make_settings(**PROD_OK)) == []
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "offsite_endpoint",
+        "offsite_region",
+        "offsite_bucket",
+        "offsite_key",
+        "offsite_secret",
+    ],
+)
+def test_offsite_config_is_all_or_nothing(missing):
+    # In dev too: a partial OFFSITE_* is a typo, never a valid state.
+    values = dict(OFFSITE_OK)
+    values[missing] = ""
+    violations = boot_violations(make_settings(**values))
+    assert len(violations) == 1
+    assert missing.upper() in violations[0]
+
+
+def test_prod_offsite_endpoint_at_digitalocean_is_refused():
+    values = dict(PROD_OK, **OFFSITE_OK)
+    values["offsite_endpoint"] = "https://sfo3.digitaloceanspaces.com"
+    violations = boot_violations(make_settings(**values))
+    assert any("OFFSITE_ENDPOINT" in violation for violation in violations)
+
+
+def test_offsite_endpoint_at_digitalocean_is_allowed_in_dev():
+    values = dict(OFFSITE_OK)
+    values["offsite_endpoint"] = "https://sfo3.digitaloceanspaces.com"
+    assert boot_violations(make_settings(**values)) == []
+
+
+def test_prod_offsite_secret_follows_the_length_rule():
+    values = dict(PROD_OK, **OFFSITE_OK)
+    values["offsite_secret"] = "short"
+    violations = boot_violations(make_settings(**values))
+    assert any("OFFSITE_SECRET" in violation for violation in violations)
+
+
 def test_ensure_boot_config_lists_every_violation_at_once():
     values = dict(PROD_OK)
     values.update(dev=True, cors_origins="*", storage_backend="local")

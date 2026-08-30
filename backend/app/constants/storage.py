@@ -27,3 +27,25 @@ BACKUP_LATEST_KEY = "backups/LATEST"
 # Retention: every dump from the last 90 days, and the first dump of each
 # calendar month forever beyond that.
 BACKUP_KEEP_RECENT = 90
+
+# With bucket versioning on (013), a pruned or re-uploaded dump leaves a
+# noncurrent version behind; the lifecycle rule set by
+# deploy/bucket-setup.py expires those under backups/ after this many
+# days. A nightly dump overwritten by the same day's re-run has no
+# retention value beyond a week, whereas every other prefix (packages/,
+# certificates/, audits/) is 9.02 material and is never expired — the
+# lifecycle configuration carries no rule for them at all.
+BACKUP_NONCURRENT_DAYS = 7
+
+# Written in the PRIMARY bucket by `app.cli mirror-offsite` after every
+# successful off-site mirror run: the UTC timestamp of that run.
+# `/api/v1/health` reads it as last_offsite_backup_at, so a dead off-site
+# provider is visible to the uptime monitor without ever masking the
+# primary backup's own staleness.
+OFFSITE_STAMP_KEY = "backups/OFFSITE"
+
+# What the off-site mirror copies besides the nightly dumps: the 9.02.2
+# audit bundles and the 9.01 certificates. packages/ is deliberately not
+# here — videos are large and every exported zip also exists on the
+# machine that produced it (video-tool's dist/); recorded as a known gap.
+MIRRORED_PREFIXES = ("certificates/", "audits/")

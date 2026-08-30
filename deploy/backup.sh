@@ -40,4 +40,13 @@ docker compose -f deploy/docker-compose.yml run --rm \
     api python -m app.cli upload-backup "/backups/$STAMP.dump.gz"
 
 rm -f "$FILE"
+
+# After the primary upload: backups/LATEST is already stamped, so a dead
+# off-site provider exits non-zero here (the cron log names this step)
+# without ever making last_backup_at stale and masking the primary as
+# the problem. Unconfigured OFFSITE_* is a no-op, not a failure.
+echo "[$(date -u +%FT%TZ)] mirroring off-site"
+docker compose -f deploy/docker-compose.yml run --rm \
+    api python -m app.cli mirror-offsite "$STAMP"
+
 echo "[$(date -u +%FT%TZ)] done"
