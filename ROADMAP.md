@@ -71,6 +71,16 @@ variable, so it can be flipped without a deploy and the flip is logged:
 - 013 Coming-soon landing page and waiting list table, with CSV export
 - 014 Hidden login and tester accounts; site mode switch in the admin
 
+Phase B backlog from 012's first deploy (2026-08-30):
+
+- Ops, no code: rotate the `doadmin` cluster password and the starter
+  admin password (both were exposed in a chat transcript during setup);
+  apply the droplet's pending OS security updates (109 pending, 90
+  security, as of the deploy).
+- Enable Spaces object versioning with a lifecycle rule expiring
+  noncurrent versions under `backups/` only (see the 2026-08-30
+  correction entry in COMPLIANCE.md for why it is its own feature).
+
 This is the state in which the NASBA Registry application is prepared. The
 application needs a sample course, the credit calculation, the review
 record, the policies, and the certificate — all of which 004–011 produce.

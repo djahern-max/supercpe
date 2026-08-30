@@ -37,8 +37,12 @@ Spaces bucket, and these procedures are how they stay alive.
 - Where the `.env` values came from: `DATABASE_URL` from the managed
   Postgres cluster's connection details panel; `SPACES_KEY`/`SPACES_SECRET`
   from API → Spaces Keys; the rest per `deploy/env.production.example`.
-- Domain registrar for supercpe.com: ____ (fill in).
-- Uptime monitor and its login: ____ (fill in after the first deploy).
+- Domain registrar for supercpe.com: Namecheap, account `djahern`, using
+  Namecheap BasicDNS (`@` and `www` A records → the droplet).
+- Uptime monitor and its login: not yet set up as of 2026-08-30 — fill
+  in when it exists (alert on non-200 at
+  `https://supercpe.com/api/v1/health`, and on `last_backup_at` stale
+  beyond ~26 hours if the monitor can match response text).
 
 ## Layout on the droplet
 
@@ -46,6 +50,35 @@ Spaces bucket, and these procedures are how they stay alive.
     /srv/supercpe/repo         git clone of this repository
     /srv/supercpe/backups      scratch space for nightly dumps (emptied nightly)
     /srv/supercpe/backup.log   backup.sh output, via cron
+
+**Every manual `docker compose ... run` in this runbook starts with**
+
+    cd /srv/supercpe/repo && export GIT_SHA=$(git rev-parse HEAD)
+
+because `deploy/docker-compose.yml` tags images `${GIT_SHA:-dev}` and
+only `deploy.sh` exports `GIT_SHA`. Without the export, a manual command
+builds and runs a `dev`-tagged image from whatever is checked out — not
+the image serving traffic. The commands below carry the prefix; do not
+drop it.
+
+## The PostgreSQL 16 pin
+
+PostgreSQL is pinned to major version 16 in four places that must move
+together:
+
+1. `docker-compose.yml` at the repo root (local dev container);
+2. the `docker run --rm postgres:16 pg_dump` in `deploy/backup.sh`;
+3. the `postgres:16` `pg_restore` in the Restore procedure below;
+4. the managed cluster itself (`supercpe-db-prod`, 16.15 as of
+   2026-08-30).
+
+DigitalOcean now defaults to **18** and preselects it when creating a
+cluster — 16 was a deliberate choice at first deploy to match the
+existing pins. The trap: `pg_dump` aborts when the server's major
+version is newer than the client's, so a cluster upgraded (or recreated
+at the default) without the other three breaks the nightly backup, and
+the only signal is `last_backup_at` going stale in `/health`. A major
+upgrade is its own maintenance task that changes all four in one go.
 
 ## First deploy on a fresh droplet
 
@@ -67,14 +100,28 @@ before DNS resolves).
    `chmod 600 /srv/supercpe/.env`.
 6. In the DigitalOcean control panel: add the droplet as a trusted source
    on the Postgres cluster; confirm the `supercpe` database and user
-   exist.
+   exist — **and that `supercpe` OWNS database `supercpe`** (`\l supercpe`
+   in psql, read the Owner column). The control panel creates the user
+   and database without making the user the owner, and since PostgreSQL
+   15 the `public` schema is owned by `pg_database_owner`, so a non-owner
+   `alembic upgrade head` fails on a permission error that reads like an
+   auth problem. The fix, run as `doadmin` connected to `defaultdb`:
+
+       ALTER DATABASE supercpe OWNER TO supercpe;
 7. `/srv/supercpe/repo/deploy/deploy.sh main` — builds, migrates the
    empty database to head, starts Caddy and the API, waits for
    `https://supercpe.com/api/v1/health` to report the deployed sha.
+   **On the first deploy a non-zero exit at the health poll is
+   expected**: the 60-second window also has to cover Caddy's Let's
+   Encrypt issuance, and health correctly reports `storage: error`
+   until the sentinel is written in step 8. Check `docker compose -f
+   deploy/docker-compose.yml ps` and the health body before treating it
+   as a failure (the 2026-08-30 first deploy exited exactly this way and
+   was healthy after step 8).
 8. Write the storage sentinel the health check reads:
-   `docker compose -f deploy/docker-compose.yml run --rm api python -m app.cli write-sentinel`
+   `cd /srv/supercpe/repo && export GIT_SHA=$(git rev-parse HEAD) && docker compose -f deploy/docker-compose.yml run --rm api python -m app.cli write-sentinel`
 9. Create the first admin (password prompted, never a flag):
-   `docker compose -f deploy/docker-compose.yml run --rm api python -m app.cli create-admin --email <you>`
+   `cd /srv/supercpe/repo && export GIT_SHA=$(git rev-parse HEAD) && docker compose -f deploy/docker-compose.yml run --rm api python -m app.cli create-admin --email <you>`
 10. First backup, by hand, so `last_backup_at` is real:
     `/srv/supercpe/repo/deploy/backup.sh`
 11. Install the cron entry as the deploy user (`crontab -e`):
@@ -119,18 +166,18 @@ Two sources, in order of preference:
    DigitalOcean restores to a **new** cluster; it does not overwrite.
 2. Update `DATABASE_URL` in `/srv/supercpe/.env` to the new cluster
    (keep `sslmode=require`), add the droplet as a trusted source on it.
-3. `docker compose -f deploy/docker-compose.yml up -d --force-recreate api`
+3. `cd /srv/supercpe/repo && export GIT_SHA=$(git rev-parse HEAD) && docker compose -f deploy/docker-compose.yml up -d --force-recreate api`
 4. Check `/api/v1/health` and spot-check `completions` against
    `certificates/` (below).
 
 **From a nightly dump in `backups/`** (into a scratch database first —
 never straight over production):
 
-1. List what exists: `docker compose -f deploy/docker-compose.yml run
-   --rm api python -c "from app.storage import get_storage; from
-   app.services.backups import dump_dates; print(sorted(dump_dates(get_storage())))"`
+1. List what exists (prefix per the GIT_SHA note above):
+   `cd /srv/supercpe/repo && export GIT_SHA=$(git rev-parse HEAD) && docker compose -f deploy/docker-compose.yml run --rm api python -c "from app.storage import get_storage; from app.services.backups import dump_dates; print(sorted(dump_dates(get_storage())))"`
 2. Download the chosen dump to the droplet:
    `docker compose -f deploy/docker-compose.yml run --rm -v /srv/supercpe/backups:/backups api python -c "import shutil; from app.storage import get_storage; s=get_storage(); shutil.copyfileobj(s.open('backups/<DATE>.dump.gz'), open('/backups/restore.dump.gz','wb'))"`
+   (same shell, so `GIT_SHA` is still exported)
 3. Create a scratch database on the cluster (control panel or `createdb`),
    then:
    `gunzip -c /srv/supercpe/backups/restore.dump.gz | docker run --rm -i postgres:16 pg_restore --no-owner -d "<postgresql://...scratch db url>"`
@@ -151,10 +198,11 @@ never straight over production):
 ## Rotate a secret
 
 **Spaces key:** DigitalOcean → API → Spaces Keys → create a new key
-scoped to the bucket; put it in `/srv/supercpe/.env`; `docker compose -f
-deploy/docker-compose.yml up -d --force-recreate api`; confirm `/health`
-storage is `ok`; delete the old key. Presigned URLs signed by the old key
-die with it — an hour's worth of play URLs at most.
+scoped to the bucket; put it in `/srv/supercpe/.env`; `cd
+/srv/supercpe/repo && export GIT_SHA=$(git rev-parse HEAD) && docker
+compose -f deploy/docker-compose.yml up -d --force-recreate api`; confirm
+`/health` storage is `ok`; delete the old key. Presigned URLs signed by
+the old key die with it — an hour's worth of play URLs at most.
 
 **Database password:** control panel → cluster → Users → reset password;
 update `DATABASE_URL` in `/srv/supercpe/.env`; recreate the api container
@@ -162,7 +210,8 @@ as above; confirm `/health` database is `ok`.
 
 **Session secret:** there is none to rotate — sessions are server-side
 random tokens (009). The equivalent gesture is revoking every session:
-`docker compose -f deploy/docker-compose.yml run --rm api python -c
+`cd /srv/supercpe/repo && export GIT_SHA=$(git rev-parse HEAD) && docker
+compose -f deploy/docker-compose.yml run --rm api python -c
 "from app.db import SessionLocal; from sqlalchemy import text;
 db=SessionLocal(); db.execute(text('DELETE FROM sessions')); db.commit()"`
 — everyone is signed out and signs in again.
@@ -190,9 +239,9 @@ The monitor alerts on non-200. Fields, in the order to check:
   `/srv/supercpe/.env`. `docker compose logs api` shows the driver error.
 - `storage: error` — the sentinel HEAD failed: Spaces outage, deleted or
   rotated key, or someone deleted `health/sentinel`. Re-run
-  `python -m app.cli write-sentinel` (inside the api container) after
-  fixing credentials; if the sentinel object itself was the casualty,
-  that command is the whole fix.
+  `python -m app.cli write-sentinel` (inside the api container, with the
+  GIT_SHA prefix from the note above) after fixing credentials; if the
+  sentinel object itself was the casualty, that command is the whole fix.
 - `ffprobe: error` — the image is broken (ffmpeg is installed by the
   Dockerfile); a deploy with a modified Dockerfile is the likely cause.
   Roll back.

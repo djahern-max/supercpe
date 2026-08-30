@@ -19,6 +19,10 @@ FILE="$BACKUP_DIR/$STAMP.dump.gz"
 
 mkdir -p "$BACKUP_DIR"
 cd "$REPO"
+# Without this, compose's ${GIT_SHA:-dev} fallback would build and run a
+# dev-tagged image from the checkout instead of the image serving traffic.
+GIT_SHA=$(git rev-parse HEAD)
+export GIT_SHA
 
 # pg_dump wants a plain postgresql:// URL; .env holds the SQLAlchemy one.
 DATABASE_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | cut -d= -f2-)
