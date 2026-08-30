@@ -191,6 +191,15 @@ never straight over production):
    This works from the droplet even though the cluster only trusts the
    droplet: container traffic NATs through the droplet, which is the
    cluster's trusted source — do not add a Cloud Firewall rule for it.
+   **URL scheme:** `DATABASE_URL` in `.env` is `postgresql+psycopg://…` —
+   a SQLAlchemy dialect URL that `pg_restore` and `psql` reject. Build a
+   plain `postgresql://…` URL for these tools. The plain-scheme URL is
+   for `pg_restore`/`psql` on the command line only and must **never**
+   be written into `.env` (step 7 records what happens if it is).
+   When assembling it from the control panel, use the password field's
+   **copy icon**, not a mouse selection: the `show` link becomes `hide`
+   immediately beside the revealed password, so a selection captures a
+   trailing `hide` and psql fails with a percent-encoded-spaces error.
    Ownership trap, same as first-deploy step 6: a panel-created database
    is owned by `doadmin`, so either restore as `doadmin` or run
    `ALTER DATABASE <scratch> OWNER TO supercpe` first.
@@ -200,17 +209,42 @@ never straight over production):
    (`SELECT certificate_key FROM completions WHERE certificate_key IS NOT NULL`
    against `storage.exists(...)`).
 5. Verify the restore against production directly — these checks are not
-   vacuous even when the database is empty: `alembic_version` in the
-   scratch database matches production's, the table list (`\dt`) matches,
-   and `SELECT count(*) FROM accounts` matches.
-6. Only after those verifications, either point `DATABASE_URL` at the
-   scratch database or `pg_restore` into the real one.
+   vacuous even when the database is empty (an empty match is still a
+   match; record it as such). Run each command twice, once with the
+   scratch URL and once with the production URL (both plain
+   `postgresql://` scheme per step 3), and compare the outputs:
+
+       docker run --rm postgres:16 psql "<url>" -tAc \
+           "SELECT version_num FROM alembic_version"
+       docker run --rm postgres:16 psql "<url>" -tAc \
+           "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"
+       docker run --rm postgres:16 psql "<url>" -tAc \
+           "SELECT count(*) FROM accounts"
+
+6. Cleanup — **a drill ends here**; step 7 belongs to a real recovery
+   only. Delete the downloaded dump
+   (`rm /srv/supercpe/backups/restore.dump.gz`), drop the scratch
+   database (control panel or `dropdb`), and confirm
+   `/srv/supercpe/.env` still contains exactly one `DATABASE_URL`,
+   pointing at database `supercpe`, with the `postgresql+psycopg://`
+   scheme.
+7. **Real recovery only — never part of a drill.** Only after the step
+   4–5 verifications, either point `DATABASE_URL` at the scratch
+   database or `pg_restore` into the real one, then repeat the cleanup
+   in step 6. During the 2026-08-30 drill this step, as previously
+   written, was followed as if it were the next step and left
+   production's `.env` pointing at the scratch database (which the drill
+   then deleted) with a plain `postgresql://` scheme. The site stayed up
+   only because running containers keep the config they started with;
+   the next `deploy.sh` failed at the migration step with
+   `ModuleNotFoundError: No module named 'psycopg2'`, because the plain
+   scheme makes SQLAlchemy default to the psycopg2 driver.
 
 **Restore drill record** (required by 012 before launch; repeat yearly):
 
 | Date | Source | Time taken | Verified by |
 |------|--------|-----------|-------------|
-| 2026-08-30 | `backups/2026-08-30.dump.gz` → scratch db `supercpe_restore_drill` | 18 min | Dane Ahern 
+| 2026-08-30 | `backups/2026-08-30.dump.gz` → scratch db `supercpe_restore_drill` | 18 min | Daniel Ahern |
 
 **Bucket-layer recovery drill record** (013's acceptance 7; record its
 date here when run): overwrite `health/sentinel` by running
