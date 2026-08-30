@@ -30,8 +30,8 @@ BACKUP_KEEP_RECENT = 90
 
 # With bucket versioning on (013), a pruned or re-uploaded dump leaves a
 # noncurrent version behind; the lifecycle rule set by
-# deploy/bucket-setup.py expires those under backups/ after this many
-# days. A nightly dump overwritten by the same day's re-run has no
+# `python -m app.cli bucket-setup` expires those under backups/ after
+# this many days. A nightly dump overwritten by the same day's re-run has no
 # retention value beyond a week, whereas every other prefix (packages/,
 # certificates/, audits/) is 9.02 material and is never expired — the
 # lifecycle configuration carries no rule for them at all.

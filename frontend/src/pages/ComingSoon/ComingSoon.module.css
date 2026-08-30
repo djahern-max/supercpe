@@ -1,0 +1,145 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl) var(--space-md);
+}
+
+.hero {
+  text-align: center;
+}
+
+.wordmark {
+  margin: 0;
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.accent {
+  color: var(--color-accent);
+}
+
+.tagline {
+  margin: var(--space-sm) 0 0;
+  font-size: 1.125rem;
+  color: var(--color-text-muted);
+}
+
+.section {
+  max-width: 40rem;
+}
+
+.sectionTitle {
+  margin: 0 0 var(--space-sm);
+  font-size: 1.25rem;
+}
+
+.body {
+  margin: 0 0 var(--space-md);
+  line-height: 1.6;
+}
+
+.muted {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.card {
+  width: 100%;
+  max-width: 26rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.input {
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  font-family: inherit;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* The honeypot: absent from view and from the tab order, present in the
+   DOM for whatever fills forms blindly. */
+.trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.errorList {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-lg);
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  color: var(--color-error);
+  font-size: 0.875rem;
+}
+
+.button {
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.joined {
+  margin: 0;
+  padding: var(--space-md);
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  color: var(--color-success);
+}
+
+.emailUse {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.footer {
+  margin-top: auto;
+  display: flex;
+  gap: var(--space-md);
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.footerLinks a {
+  color: var(--color-text-muted);
+}

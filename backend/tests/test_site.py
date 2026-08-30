@@ -2,8 +2,14 @@
 
 011 added the launch gate: opening the site is refused while any 8.01
 policy is unpublished, so tests that open it publish the policies first
-(the refusal itself is proven in test_policies.py)."""
+(the refusal itself is proven in test_policies.py). 015 added the
+router-table walk with its intentionally-public list."""
 
+import re
+
+from fastapi.routing import APIRoute
+
+from app.main import app
 from tests.conftest import (
     ADMIN_EMAIL,
     ADMIN_PASSWORD,
@@ -112,3 +118,50 @@ def test_site_and_auth_payloads_never_mention_the_registry(
 def test_site_payload_is_only_mode_and_name(client):
     payload = client.get(SITE_URL).json()
     assert set(payload) == {"site_mode", "sponsor_name"}
+
+
+# Routes that answer an anonymous request while the site is coming_soon,
+# on purpose. Adding a route here is a deliberate act with a feature
+# number beside it, so the walk below never has to be weakened.
+INTENTIONALLY_PUBLIC = {
+    # 009/012: how the frontend learns the mode, how anyone signs in or
+    # out, and what the uptime monitor watches.
+    ("GET", "/api/v1/health"),
+    ("GET", "/api/v1/site"),
+    ("POST", "/api/v1/auth/login"),
+    ("POST", "/api/v1/auth/logout"),
+    # 015: the two coming_soon carve-outs — the landing payload and the
+    # waiting-list signup. Both 404 again once the site opens.
+    ("GET", "/api/v1/landing"),
+    ("POST", "/api/v1/waiting-list"),
+}
+
+
+def test_router_walk_closed_site_hides_everything_not_intentionally_public(
+    client,
+):
+    """Walks the whole router table anonymously while coming_soon: every
+    route must answer 404 (the site gate, or a miss like /media) or 401
+    (a login wall) unless it is in INTENTIONALLY_PUBLIC — so an unguarded
+    new route fails here by name."""
+    routes = [
+        (method, re.sub(r"\{[^}]+\}", "1", route.path))
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        for method in sorted(route.methods - {"HEAD", "OPTIONS"})
+    ]
+    assert len(routes) >= 60
+
+    for method, path in routes:
+        # An empty JSON body, so the auth routes' Content-Type check
+        # (415) does not stand in for the auth answer being asserted.
+        body = {} if method in ("POST", "PUT", "PATCH") else None
+        response = client.request(method, path, json=body)
+        if (method, path) in INTENTIONALLY_PUBLIC:
+            assert response.status_code != 404, (method, path)
+        else:
+            assert response.status_code in (401, 404), (
+                method,
+                path,
+                response.status_code,
+            )

@@ -1,22 +1,18 @@
-"""deploy/bucket-setup.py against moto (acceptance 2 of 013): enables
-versioning, sets exactly one lifecycle rule, is idempotent, and exits
-non-zero when the read-back disagrees. The read-back against the real
-bucket — the proof DigitalOcean honors NoncurrentVersionExpiration with
-a prefix — is the operator's acceptance walkthrough."""
-
-import importlib.util
-from pathlib import Path
+"""`python -m app.cli bucket-setup` against moto (013's script tests,
+ported by 014a when the logic moved into app.cli): enables versioning,
+sets exactly one lifecycle rule, is idempotent, exits non-zero when the
+read-back disagrees, refuses to run without the SETUP_* credentials, and
+names the key-scope cause on AccessDenied. The read-back against the
+real bucket — the proof DigitalOcean honors NoncurrentVersionExpiration
+with a prefix — is the operator's acceptance walkthrough."""
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from moto import mock_aws
 
+from app import cli
 from app.constants.storage import BACKUP_NONCURRENT_DAYS, BACKUPS_PREFIX
-
-SCRIPT = Path(__file__).resolve().parents[2] / "deploy" / "bucket-setup.py"
-spec = importlib.util.spec_from_file_location("bucket_setup", SCRIPT)
-bucket_setup = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(bucket_setup)
 
 BUCKET = "supercpe-test"
 
@@ -30,12 +26,12 @@ def client():
 
 
 def test_setup_enables_versioning_and_the_one_rule(client):
-    assert bucket_setup.setup(client, BUCKET) == 0
+    assert cli.run_bucket_setup(client, BUCKET) == 0
 
     assert client.get_bucket_versioning(Bucket=BUCKET)["Status"] == "Enabled"
     rules = client.get_bucket_lifecycle_configuration(Bucket=BUCKET)["Rules"]
     assert len(rules) == 1
-    assert bucket_setup.rule_prefix(rules[0]) == BACKUPS_PREFIX
+    assert cli.rule_prefix(rules[0]) == BACKUPS_PREFIX
     assert rules[0]["NoncurrentVersionExpiration"]["NoncurrentDays"] == (
         BACKUP_NONCURRENT_DAYS
     )
@@ -45,9 +41,9 @@ def test_setup_enables_versioning_and_the_one_rule(client):
 
 
 def test_setup_is_idempotent(client, capsys):
-    assert bucket_setup.setup(client, BUCKET) == 0
+    assert cli.run_bucket_setup(client, BUCKET) == 0
     first = capsys.readouterr().out
-    assert bucket_setup.setup(client, BUCKET) == 0
+    assert cli.run_bucket_setup(client, BUCKET) == 0
     second = capsys.readouterr().out
     assert first == second
     rules = client.get_bucket_lifecycle_configuration(Bucket=BUCKET)["Rules"]
@@ -69,5 +65,42 @@ class ReadBackLies:
 
 
 def test_setup_exits_nonzero_when_readback_fails(client, capsys):
-    assert bucket_setup.setup(ReadBackLies(client), BUCKET) == 1
+    assert cli.run_bucket_setup(ReadBackLies(client), BUCKET) == 1
     assert "FAILED" in capsys.readouterr().err
+
+
+def test_bucket_setup_refuses_without_credentials(monkeypatch, capsys):
+    monkeypatch.delenv("SETUP_SPACES_KEY", raising=False)
+    monkeypatch.delenv("SETUP_SPACES_SECRET", raising=False)
+    assert cli.bucket_setup() == 2
+    err = capsys.readouterr().err
+    assert "SETUP_SPACES_KEY" in err
+    assert "SETUP_SPACES_SECRET" in err
+
+
+class DeniesBucketConfiguration:
+    """A client answering bucket-configuration calls the way the real
+    endpoint answers a bucket-scoped key: AccessDenied, even though the
+    same key has full object permissions."""
+
+    def __init__(self, client):
+        self._client = client
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    def put_bucket_versioning(self, **kwargs):
+        raise ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "Access Denied"}},
+            "PutBucketVersioning",
+        )
+
+
+def test_access_denied_names_the_key_scope_cause(client, capsys):
+    """The 2026-08-30 failure: 'temporary Full Access key' read as a
+    bucket-scoped key with full object rights, which cannot make
+    bucket-configuration calls. The tool must name the cause."""
+    assert cli.run_bucket_setup(DeniesBucketConfiguration(client), BUCKET) == 1
+    err = capsys.readouterr().err
+    assert "bucket-scoped" in err
+    assert "All Permissions" in err

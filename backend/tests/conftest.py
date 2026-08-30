@@ -55,7 +55,7 @@ def db_session(test_engine):
                 "course_reviews, course_lessons, courses, lesson_packages, "
                 "site_mode_changes, sponsor_profile, "
                 "sponsor_state_registrations, subject_matter_experts, "
-                "sessions, accounts RESTART IDENTITY"
+                "waiting_list, sessions, accounts RESTART IDENTITY"
             )
         )
 

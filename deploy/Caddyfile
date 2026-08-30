@@ -29,6 +29,17 @@ supercpe.com {
 				events 10
 				window 1m
 			}
+			# 015: the waiting-list signup is the only other anonymous
+			# POST; same shape as the login rule.
+			zone waiting_list {
+				match {
+					method POST
+					path /api/v1/waiting-list
+				}
+				key {client_ip}
+				events 10
+				window 1m
+			}
 		}
 		reverse_proxy api:8000
 	}

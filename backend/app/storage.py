@@ -127,9 +127,9 @@ def ensure_bucket_versioning(storage: Storage) -> None:
     if not storage.versioning_enabled():
         raise ConfigurationError(
             f"Refusing to boot: object versioning is not Enabled on "
-            f"bucket '{storage.bucket}'. Run deploy/bucket-setup.py with "
-            "a temporary Full Access key (see docs/OPERATIONS.md, "
-            "'Bucket versioning')."
+            f"bucket '{storage.bucket}'. Run `python -m app.cli "
+            "bucket-setup` with a temporary All Permissions key (see "
+            "docs/OPERATIONS.md, 'Bucket versioning')."
         )
 
 

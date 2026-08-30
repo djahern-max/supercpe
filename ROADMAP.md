@@ -74,6 +74,11 @@ variable, so it can be flipped without a deploy and the flip is logged:
 - 014 ASC842-PCX re-ingest on production with the real second CPA's
   review; production catches up to main (bucket-setup, deploy of 013)
 - 015 Coming-soon landing page and waiting list table, with CSV export
+  (shipped 2026-08-30, **before 014**: 014 is deferred, not cancelled —
+  blocked on narration audio for lessons 2–4, a second licensed CPA to
+  sign the 4.02 review, and a legal entity for the sponsor profile,
+  none of which 015 needs; 015 is what makes the live site do
+  something while they resolve. 014 keeps its number.)
 
 (The pre-renumbering Phase B list had the landing page as 013 and
 "hidden login and tester accounts; site mode switch in the admin" as

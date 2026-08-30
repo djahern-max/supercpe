@@ -11,6 +11,10 @@
 # is never part of rollback. Migrations are written additive enough that
 # the previous app version runs against the newer schema; if one ever is
 # not, the fix is a new forward migration, not a downgrade.
+#
+# Because this execs deploy.sh, the rollback target passes the same
+# preflight gate as a deploy: a target that cannot boot fails before
+# anything running is touched.
 set -euo pipefail
 
 SHA="${1:?usage: rollback.sh <sha>}"

@@ -23,6 +23,13 @@ export GIT_SHA
 echo "Building $GIT_SHA ..."
 $COMPOSE build
 
+echo "Running preflight ..."
+# Every check that would refuse boot in prod (config validations, bucket
+# versioning), run from the newly built image against the production env
+# file. A failure stops here, before migrations, with the old version
+# still serving — a preflight abort is a failed deploy, not an outage.
+$COMPOSE run --rm api python -m app.cli preflight
+
 echo "Running migrations ..."
 # A failed migration stops here, before the old API is touched. Note:
 # rollback.sh does NOT undo migrations — see docs/OPERATIONS.md.

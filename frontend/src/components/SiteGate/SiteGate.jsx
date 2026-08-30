@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { getSite } from "../../api/site";
 import { useSession } from "../../auth/SessionContext.jsx";
-import styles from "./SiteGate.module.css";
+import ComingSoon from "../../pages/ComingSoon/ComingSoon.jsx";
 
 /**
- * Wraps the public pages. While site_mode is coming_soon and nobody is
- * signed in, renders the one-sentence placeholder — deliberately nothing
- * else: no link to /login, and never a word about the Registry (only
- * /api/v1/site's mode and sponsor name are read).
+ * Wraps the public pages, and the catch-all route. While site_mode is
+ * coming_soon and nobody is signed in, every gated path renders the 015
+ * landing page instead of its content — deliberately with no link to
+ * /login and never a word about the Registry (the page reads only
+ * /api/v1/site and /api/v1/landing).
  */
 function SiteGate({ children }) {
   const { account, loading } = useSession();
@@ -26,14 +27,7 @@ function SiteGate({ children }) {
   if (loading || site === null) return null;
   if (site.site_mode === "open" || account) return children;
 
-  return (
-    <main className={styles.page}>
-      <p className={styles.sentence}>
-        {site.sponsor_name ? `${site.sponsor_name} — ` : ""}superCPE is not
-        yet open.
-      </p>
-    </main>
-  );
+  return <ComingSoon />;
 }
 
 export default SiteGate;

@@ -13,6 +13,7 @@ import AdminCourses from "./pages/AdminCourses/AdminCourses.jsx";
 import AdminPackages from "./pages/AdminPackages/AdminPackages.jsx";
 import AdminSmes from "./pages/AdminSmes/AdminSmes.jsx";
 import AdminSponsor from "./pages/AdminSponsor/AdminSponsor.jsx";
+import AdminWaitingList from "./pages/AdminWaitingList/AdminWaitingList.jsx";
 import Catalog from "./pages/Catalog/Catalog.jsx";
 import ChangePassword from "./pages/ChangePassword/ChangePassword.jsx";
 import CoursePage from "./pages/CoursePage/CoursePage.jsx";
@@ -132,7 +133,13 @@ function App() {
         <Route path="/admin/smes" element={admin(<AdminSmes />)} />
         <Route path="/admin/sponsor" element={admin(<AdminSponsor />)} />
         <Route path="/admin/accounts" element={admin(<AdminAccounts />)} />
-        <Route path="*" element={<NotFound />} />
+        <Route
+          path="/admin/waiting-list"
+          element={admin(<AdminWaitingList />)}
+        />
+        {/* Unmatched paths pass the gate too: in coming_soon they serve
+            the landing page, not a 404 (015). */}
+        <Route path="*" element={<SiteGate><NotFound /></SiteGate>} />
       </Routes>
     </SessionProvider>
   );

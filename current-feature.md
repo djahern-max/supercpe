@@ -1,142 +1,212 @@
-# 014 — Production catches up, and ASC842-PCX becomes real
+# Feature 015 — Coming-soon landing page and waiting list
 
-Phase A closed 2026-08-30. Production is live at `62de030` in
-`coming_soon` mode; 013 (durability) is built and its changelog entry
-landed, but its code is **not deployed** — the `prod` boot refusal means
-nothing at or after 013 can run until object versioning is enabled on
-the bucket. The operator decided on 2026-08-30 that the off-site mirror
-stays dormant (no second-provider bucket for now); that decision is
-recorded in COMPLIANCE.md and ROADMAP and is not revisited here.
+## Note on ordering
 
-This feature has almost no code. It is the operator's walkthrough that
-makes production current and puts the first real course on it, with the
-real second CPA's review — the thing the 012 deploy deliberately left
-out when production started empty. Claude Code's part is verification
-and the records.
+ROADMAP lists 014 (ASC842-PCX re-ingest on production with the real second
+CPA's review) before this. 014 is **deferred, not cancelled**: it is blocked
+on three things no code can produce — narration audio for lessons 2–4
+(ElevenLabs spend, then render and export in video-tool), a second licensed
+CPA willing to sign the 4.02 review, and a legal entity to fill the sponsor
+profile. None of those blocks this feature, and this feature is what makes
+the live site do something while they resolve.
 
-## Goal
+Numbers are not being reshuffled again. 014 keeps its number and gets built
+when its prerequisites land. Add one line to ROADMAP's Phase B list recording
+that 015 shipped first and why.
 
-Production runs current `main` with `bucket_versioning: ok`, the
-bucket-layer recovery drill is dated next to the restore drill, and
-ASC842-PCX is published on production with a first-person review by a
-real, licensed second CPA — so the NASBA application packet (audit
-bundle, credit record, review record, certificate sample) can be
-generated from real data, not fixtures.
+Prerequisite: 014a is complete and production is healthy at the 014a sha —
+`/health` all ok including `bucket_versioning`, preflight passing in the
+deploy output.
 
-## In scope
+## Why this feature exists
 
-- Running `deploy/bucket-setup.py` against the real bucket with a
-  temporary Full Access key; recording exactly what DigitalOcean's
-  lifecycle API honored (this closes the open verification in 013's
-  changelog entry); deleting the key.
-- Deploying current `main`; `/health` green including
-  `bucket_versioning: ok` and `last_offsite_backup_at: null`.
-- The bucket-layer recovery drill (013 acceptance 7), dated in
-  `docs/OPERATIONS.md`.
-- Re-ingesting ASC842-PCX from video-tool's four exported zips,
-  assembling and publishing the course.
-- The real second CPA: SME record, reviewer account, first-person
-  review.
-- The closeout records: 014 changelog entry, a COMPLIANCE.md correction
-  row once versioning is verified against the real bucket, drill dates
-  in OPERATIONS.md.
+superCPE.com has been live in `coming_soon` mode since 2026-08-30 and every
+public route answers 404. That was the correct 009 behavior for a site with
+nothing to show, but it is now the only thing standing between the domain and
+its first useful job: collecting the names of CPAs who want the course when it
+opens.
 
-## Out of scope
+The compliance shape of this page is unusual and worth stating up front,
+because the instinct to "put the course details on the landing page" is
+exactly wrong here. Section 8's eleven-item disclosure (8.01) attaches to
+descriptive materials for courses developed for sale, and 8.01.1 names
+websites explicitly as a channel where significant features must be disclosed
+in advance. superCPE cannot satisfy that list yet — there is no published
+credit figure on production, no policies, no sponsor legal name, and item 11
+(the official NASBA sponsor statement) is unavailable because superCPE is not
+a Registry sponsor. **A page that discloses some of the eleven items is worse
+than one that discloses none**, because partial disclosure looks like
+descriptive material and is not. So this page announces that something is
+coming and collects an email. Full 8.01 disclosure is 016's job, and 016 does
+not ship until the facts behind all eleven items exist.
 
-- The sponsor profile / legal entity. It stays blank; certificate
-  issuance stays correctly blocked, which matters to no one until
-  participants exist.
-- Enrollments, testers, participants of any kind.
-- The coming-soon landing page and waiting list (015).
-- The off-site provider (dormant by the 2026-08-30 decision).
-- Deleting the 012 acceptance sample. The ASC606-CON draft course
-  cannot be deleted — `audit_exports.course_id` is FK RESTRICT and its
-  export log row correctly pins it — and that is retention working, not
-  a bug. It stays in draft, invisible to anyone but staff, and
-  `packages/ASC606-CON-01/v1/video.mp4` stays where it is.
-- The Phase B ops backlog (password rotation, OS updates) — still owed,
-  still not part of any feature.
+## Scope
 
-## Locators — read before the review steps
+### 1. `waiting_list` table
 
-- **4.02** — the review must be by a qualified person other than the
-  developer, before first presentation; here that is the real second
-  CPA, recorded in the first person from their own reviewer account.
-- **4.01.1** — the developer of record on the course.
-- **9.02.2(4)** — the reviewer's name, credentials, and license details
-  are retained with the record; the SME row is that record.
-- **9.02** / **9.02.2(7)** — versioning becomes a live control on the
-  bucket that now holds real program materials.
+Migration adds one table. Columns: `id`, `name`, `email`, `state` (state of
+licensure), `firm` (nullable), `created_at`, `removed_at` (nullable),
+`removed_reason` (nullable), `source` (default `'coming_soon'`, so 021 can
+tell an early signup from a later one).
 
-## Operator walkthrough (production)
+Email is stored lowercased and trimmed with a unique index. `state` is a
+two-letter US jurisdiction code validated against a constant list in
+`app/constants/jurisdictions.py` — the same list 020 will need for
+per-jurisdiction credit policy, so put it somewhere 020 can reuse it rather
+than inline in a validator.
 
-Do these in order; paste outputs back for the records.
+**These rows are not CPE records.** Say so in the model's docstring. They are
+not participants, no enrollment exists, and `RETENTION_YEARS` does not apply
+to them. `removed_at` is a soft delete so that a request to be taken off the
+list is honored immediately without deleting a row mid-migration; a removed
+row is excluded from every count, listing, and export. This is deliberately
+different from the 9.02 accounts rule, and the difference should be stated in
+the docstring so nobody later "fixes" it for consistency.
 
-1. **Bucket setup.** Per `docs/OPERATIONS.md` § Bucket versioning:
-   create a temporary Full Access Spaces key, run
-   `deploy/bucket-setup.py` with `SETUP_SPACES_KEY`/`SETUP_SPACES_SECRET`
-   as environment variables, keep the printed read-back (versioning
-   status and the lifecycle configuration exactly as DigitalOcean
-   returned it), then **delete the key** in the control panel. If the
-   script exits non-zero because DigitalOcean did not honor the
-   prefix-filtered `NoncurrentVersionExpiration`, stop and report —
-   the fallback is a code change (013 task 1 documented it), not a
-   retry.
-2. **Deploy `main`** with `deploy.sh` (remember the `GIT_SHA` export
-   rule for any manual compose commands). Verify `/health`: every
-   component ok, `bucket_versioning: ok`, `last_offsite_backup_at:
-   null`, sha = the deployed commit.
-3. **Recovery drill** (013 acceptance 7): run `write-sentinel` twice,
-   list versions of `health/sentinel`, recover the older by `VersionId`
-   per the runbook, and date the drill in `docs/OPERATIONS.md` next to
-   the restore drill.
-4. **Re-ingest** per `docs/OPERATIONS.md` § Re-ingest a course: upload
-   `ASC842-PCX-01.zip` … `-04.zip`, create the draft course, attach in
-   manifest order, confirm the credit panel is fresh and readiness
-   shows only the developer/review blocks.
-5. **The real review.** Create the SME records: the developer of record
-   and the second CPA (name, credentials, license jurisdiction/number,
-   active status — recorded as stated). Create the second CPA a
-   reviewer account; they sign in themselves, change the initial
-   password, and record the approval in the first person at `/review`.
-   The developer and reviewer must be different people; readiness
-   enforces it.
-6. **Publish.** Publish succeeds with no block findings; a logged-out
-   visit to https://supercpe.com still shows only the coming-soon
-   placeholder; signed-in staff see the published course with its
-   provenance line.
+### 2. Public endpoints, carved out of the 009 site gate
 
-## Claude Code tasks
+009's gate answers 404 on public routes while `site_mode` is `coming_soon`.
+Two endpoints become explicit exceptions, allowed **only** in `coming_soon`:
 
-1. Verify what is verifiable from here: `/health` after deploy (public
-   endpoint), and that the repo needed no code for any of the above. If
-   a bug surfaces during the walkthrough, fix it as its own changelog
-   entry, not inside 014's.
-2. When the operator reports 1–6: write the 014 changelog entry
-   recording the DigitalOcean lifecycle read-back verbatim-in-substance
-   (closing 013's "moto only" gap), the drill date, the deployed sha,
-   and the course/review provenance. Append the COMPLIANCE.md
-   correction row: the 9.02 versioning control is now verified against
-   the real bucket. Update the 013-pending memory.
+- `GET /api/v1/landing` — returns what the page needs to render: the sponsor
+  display name if set, `may_claim_registry` (003), and whether the policies
+  pages are published. Nothing else. It must not return course facts, credit
+  figures, objectives, or prices; there is no field on this response for them.
+- `POST /api/v1/waiting-list` — `{name, email, state, firm?}`. Validation
+  errors use the same 422 `{"errors": [...]}` shape as 002/003/004. A repeat
+  email is a 200 with the same body as a first submission (idempotent; the
+  row's `created_at` is not moved). A submission against a `removed_at` row
+  clears the removal and re-adds.
+
+Both routes must appear in 009's router-table walk test, marked as
+intentionally public, so the test that catches an unguarded route does not
+have to be weakened to accommodate them.
+
+Spam controls, in this order of preference: a hidden honeypot field that must
+be empty (rejected silently with a 200 so a bot learns nothing), and a Caddy
+rate limit on `POST /api/v1/waiting-list` mirroring the login rule already in
+`deploy/Caddyfile`. No CAPTCHA, no third-party service.
+
+When `site_mode` is `open`, both routes 404. The waiting list stops accepting
+entries the moment the real site opens; 021 mails the people already on it.
+
+### 3. The landing page
+
+Every unmatched public path in `coming_soon` mode serves this page instead of
+404. `/login` is unchanged: it works, it is not linked from this page, and
+nothing about it appears in the markup.
+
+What the page may say:
+
+- Who superCPE is, in plain language, and that it is self-study CPE for
+  licensed CPAs.
+- That a course on the ASC 842 private-company practical expedients is in
+  preparation. A one-paragraph plain-language description is fine.
+- That full program details — learning objectives, recommended credit and
+  field of study, prerequisites, advance preparation, and the registration,
+  refund, and complaint policies — will be published before registration
+  opens. This sentence is the page's honest substitute for 8.01, and it
+  should be there.
+- The waiting-list form: name, email, state of licensure, firm (optional),
+  and a clear statement of what the email will be used for (one message when
+  the course opens; nothing else).
+
+What the page must not say, enforced in code and in tests:
+
+- Anything from the 8.01 eleven-item list stated as fact — no credit number,
+  no field of study, no knowledge level, no prerequisites, no price.
+- The words "National Registry", any sponsor ID, or the NASBA sponsor
+  statement. The page reads `may_claim_registry` and renders that block only
+  when true; since it is false, the block is absent. Add a test that fetches
+  the rendered landing response and asserts the string "National Registry"
+  does not appear while `may_claim_registry` is false. 003's known gap says
+  every surface that renders sponsor facts must check this — this is the
+  first public one.
+- Anything implying the course can be purchased or registered for now.
+
+Footer links to the 011 policies pages **if** they are published, since 8.01.1
+wants registration, refund, and complaint policies formalized, published, and
+available. On production they are not published yet, so the footer renders
+without them; do not fake them.
+
+Styling uses the existing CSS Modules setup. No new frontend dependency, no UI
+kit, no analytics or third-party script of any kind.
+
+### 4. Admin surface
+
+`/admin/waiting-list`, admin role only: total count, a table (name, email,
+state, firm, signed up), a search box filtering on name and email, and two
+actions — Remove (sets `removed_at` with an optional reason) and
+`GET /api/v1/admin/waiting-list/export.csv`.
+
+The CSV is the deliverable that matters: header row, one row per active
+entry, ISO-8601 timestamps, UTF-8. It is the file that will be handed to
+whatever sends 021's invitations, and it is also the honest answer to "how
+many people actually want this" while the Registry application is in flight.
+It is not written to Spaces and not part of the 9.02 audit bundle — it is a
+download, generated on request.
+
+### 5. Documentation
+
+- `COMPLIANCE.md`: an 8.01 row recording that the coming-soon page carries no
+  descriptive material by design and that 016 owns the eleven-item
+  disclosure; an 8.01.1 row noting the policies-footer behavior; and a row
+  under 003's Registry-claim rule recording this as the first public surface
+  that checks `may_claim_registry`.
+- `docs/OPERATIONS.md`: a short section on the waiting list — where to see
+  the count, how to export, and that flipping `site_mode` to `open` closes
+  submissions permanently.
+- `ROADMAP.md`: the one line about 014 being deferred, and 015 moved ahead.
+
+## Explicitly out of scope
+
+- Sending any email. No SMTP configuration, no provider, no templates. 021
+  owns invitations; 017 owns verification.
+- Self-registration, accounts for waiting-list entries, or any link between a
+  waiting-list row and an `accounts` row. They are strangers until 017.
+- The open-mode landing page, catalog, or course pages (016). This page is
+  deleted or replaced when that ships; do not try to make it dual-purpose.
+- Any change to `ensure_bucket_versioning`, the preflight gate, or anything
+  else 014a settled.
+- The 014 re-ingest, the sponsor profile, the second CPA's review, or
+  publishing anything.
+
+## Standards read before coding
+
+Read these in `docs/2026-Statement-on-Standards-for-CPE-Programs.pdf`, not
+from this summary:
+
+- **8.01** — the eleven items required in advance for courses developed for
+  sale. Read it to understand what this page is deliberately not doing.
+- **8.01.1** — significant features disclosed in advance, websites named as a
+  channel; registration, refund, and complaint policies formalized,
+  published, and available.
 
 ## Acceptance
 
-1. `bucket-setup.py` read-back shows versioning `Enabled` and exactly
-   one lifecycle rule; the temporary key no longer exists.
-2. `/health` on production: all components ok, `bucket_versioning: ok`,
-   `last_offsite_backup_at: null`, version = current `main`.
-3. The bucket-layer recovery drill is dated in `docs/OPERATIONS.md`.
-4. Four ASC842-PCX packages ingested at v1; objects present under
-   `packages/ASC842-PCX-0N/v1/`.
-5. The course is published; readiness had no block findings; the
-   review on record was recorded by the reviewer's own account
-   (`recorded_by` is the second CPA's email, role reviewer), and the
-   reviewer is not the developer.
-6. Logged out, supercpe.com shows only the coming-soon placeholder.
-7. `pytest` still passes with no count change expected; any code change
-   that did prove necessary got its own changelog entry.
+1. Full test suite passes locally; report the count (252 at the 013
+   checkout, plus whatever 014a added).
+2. Locally, with `site_mode = coming_soon`: an unmatched public path serves
+   the landing page; `/login` still works and appears nowhere in the landing
+   markup; a valid submission returns 200 and creates one row; the same email
+   again returns 200 and creates no second row; a bad state code returns 422
+   in the standard shape; the honeypot submission returns 200 and creates
+   nothing.
+3. With `site_mode = open`: both public endpoints 404.
+4. The Registry-claim test passes — "National Registry" absent from the
+   landing response while `may_claim_registry` is false.
+5. Admin page lists entries, search filters, Remove hides the row from the
+   list and from the CSV, and the CSV opens in a spreadsheet with correct
+   headers.
+6. Deployed to production via `deploy.sh` (preflight passes), then, on
+   https://supercpe.com: the landing page renders over TLS, one real
+   submission is made and appears in the admin table, and the CSV downloads.
+   `/health` reports the new sha with all components ok.
+7. Confirm by eye on the deployed page that no credit figure, price,
+   prerequisite, or Registry language appears anywhere.
 
 ## When done
 
-Changelog and COMPLIANCE row per Claude Code task 2. Then stop. 015 is
-the coming-soon landing page and waiting list (see ROADMAP).
+Append the 015 changelog entry in the CLAUDE.md format and stop. List
+anything found but out of scope at the end of the response rather than
+building it.

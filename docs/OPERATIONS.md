@@ -148,6 +148,17 @@ before DNS resolves).
    still be serving — check `docker compose -f deploy/docker-compose.yml
    ps` and `logs api`.
 
+**If the script stops at `Running preflight ...`** (014a): the new
+image ran every check that would refuse boot in prod — the config
+validations and the bucket-versioning guard — and printed `preflight
+FAILED — the app would refuse to boot:` with the violations listed. The
+deploy aborted **before** migrations and before touching the running
+containers, so the old version is still serving. This is not an outage;
+do not treat it as one. Read the listed violations, fix them (config in
+`/srv/supercpe/.env`, or versioning per the Bucket versioning section),
+and redeploy. `rollback.sh` execs `deploy.sh`, so a rollback target
+passes the same gate.
+
 ## Rollback
 
 1. Find the previous sha: `git -C /srv/supercpe/repo log --oneline` or
@@ -259,26 +270,55 @@ date here when run): overwrite `health/sentinel` by running
 
 Object versioning on `supercpe-prod-nyc3` (013) keeps every prior
 version of a retained object, so an accidental overwrite or delete at
-the bucket layer is recoverable. It was enabled once by
-`deploy/bucket-setup.py`, run by hand from the laptop's backend venv
-with a **temporary Full Access** Spaces key (created at API → Spaces
-Keys, deleted immediately after):
+the bucket layer is recoverable. It is enabled once by
+`python -m app.cli bucket-setup` (014a — the logic moved into the api
+image from `deploy/bucket-setup.py`, which proved unrunnable from the
+droplet: no host Python, not in the image, and a bind-mount broke its
+path bootstrap). It runs as a one-off api container, so boto3 and the
+`app` package are simply present and the bucket, region, and endpoint
+come from the mounted `.env` — no mounts beyond the normal one, no host
+Python, no path tricks:
 
-    SETUP_SPACES_KEY=... SETUP_SPACES_SECRET=... \
-        python deploy/bucket-setup.py supercpe-prod-nyc3
+    cd /srv/supercpe/repo && export GIT_SHA=$(git rev-parse HEAD)
+    read -rs SETUP_SPACES_KEY && read -rs SETUP_SPACES_SECRET
+    export SETUP_SPACES_KEY SETUP_SPACES_SECRET
+    docker compose -f deploy/docker-compose.yml run --rm \
+      -e SETUP_SPACES_KEY -e SETUP_SPACES_SECRET \
+      api python -m app.cli bucket-setup
+
+**The key**: DigitalOcean console → Spaces Object Storage → Access
+Keys → Create Access Key → **All Permissions**. Do **not** scope the
+key to the bucket: a bucket-scoped key gets `AccessDenied` on
+`PutBucketVersioning` even with full object rights — only an All
+Permissions (all-buckets) key can make bucket-configuration calls.
+(This distinction cost real debugging time on 2026-08-30, when this
+runbook said only "temporary Full Access key".) `read -rs` keeps the
+secret out of shell history. As soon as both read-backs print: delete
+the key in the console, then
+`unset SETUP_SPACES_KEY SETUP_SPACES_SECRET`.
 
 The same run sets the one lifecycle rule: noncurrent versions under
 `backups/` expire after `BACKUP_NONCURRENT_DAYS` (7) days; no other
 prefix has any rule — `packages/`, `certificates/`, and `audits/`
-versions are never expired. The script reads both back and exits
+versions are never expired. The command reads both back and exits
 non-zero if the bucket does not report them as set.
+
+**Real-run read-back record** (the evidence for whether DigitalOcean
+honors `NoncurrentVersionExpiration` with a prefix filter — 013's open
+question; paste both read-backs, dated, when the command runs against
+the real bucket):
+
+| Date | versioning read-back | lifecycle read-back | Run by |
+|------|----------------------|---------------------|--------|
+| _not yet run_ | | | |
 
 The runtime Limited Access key can *read* the versioning status but
 cannot change versioning or lifecycle — that is the point: in `prod` the
 app refuses to boot while versioning is not `Enabled`, and `/health`
 reports `bucket_versioning: error` (a 503) if it is ever suspended
-afterwards. Run `bucket-setup.py` **before** deploying 013 or later, or
-the new api container will refuse to start.
+afterwards. Until `bucket-setup` has run, `deploy.sh`'s preflight gate
+refuses to deploy 013 or later — the old version keeps serving
+(a preflight abort, not an outage; see Routine deploy above).
 
 **To recover a prior version of an object** (with any key that can read
 the bucket; restoring needs write):
@@ -368,6 +408,29 @@ course) arrives the same way it did in development:
    development's fictitious reviewer never leaves the laptop.
 5. Publish when readiness reports no block findings.
 
+## The waiting list (015)
+
+While `site_mode` is `coming_soon`, the public site is the landing page
+and its waiting-list form. The entries are not CPE records — no
+retention floor applies, and Remove honors an off-the-list request
+immediately (a soft delete; the row leaves every count, listing, and
+export).
+
+- **Count and entries**: sign in as admin, `/admin/waiting-list` —
+  total, searchable table, per-row Remove.
+- **Export**: the "Export CSV" button on that page, or
+  `GET /api/v1/admin/waiting-list/export.csv` with an admin session.
+  UTF-8, header row, ISO-8601 timestamps; active entries only. This
+  file is what 021's invitations will be fed from — it is generated on
+  request, not written to Spaces, and is not part of any audit bundle.
+- **Closing**: flipping `site_mode` to `open` 404s both public routes
+  (`GET /api/v1/landing`, `POST /api/v1/waiting-list`) and closes
+  submissions **permanently** — the list is only ever open before
+  launch. The admin page and export keep working in either mode.
+- Signups are rate limited at the proxy like login: 10
+  `POST /api/v1/waiting-list` per minute per client IP, plus a hidden
+  honeypot field answered with a normal 200 that stores nothing.
+
 ## When /health goes red
 
 The monitor alerts on non-200. Fields, in the order to check:
@@ -388,7 +451,7 @@ The monitor alerts on non-200. Fields, in the order to check:
   bucket, or the versioning read itself failed. Nothing in the runtime
   can have done it (the Limited Access key cannot change versioning);
   check who touched the bucket, then re-enable with
-  `deploy/bucket-setup.py` per the Bucket versioning section.
+  `python -m app.cli bucket-setup` per the Bucket versioning section.
 - `last_backup_at` stale (not a 503 by itself) — the nightly backup
   failed. `tail /srv/supercpe/backup.log`; run
   `/srv/supercpe/repo/deploy/backup.sh` by hand and watch it.

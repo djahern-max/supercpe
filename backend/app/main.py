@@ -13,10 +13,12 @@ from app.routers import (
     admin_packages,
     admin_smes,
     admin_sponsor,
+    admin_waiting_list,
     assessment,
     auth,
     courses,
     health,
+    landing,
     media,
     my,
     player,
@@ -63,9 +65,11 @@ app.include_router(admin_enrollments.router, prefix="/api/v1")
 app.include_router(admin_packages.router, prefix="/api/v1")
 app.include_router(admin_smes.router, prefix="/api/v1")
 app.include_router(admin_sponsor.router, prefix="/api/v1")
+app.include_router(admin_waiting_list.router, prefix="/api/v1")
 app.include_router(assessment.router, prefix="/api/v1")
 app.include_router(assessment.admin_router, prefix="/api/v1")
 app.include_router(courses.router, prefix="/api/v1")
+app.include_router(landing.router, prefix="/api/v1")
 # Under Spaces, video plays from presigned URLs and /media/ must 404;
 # the route simply does not exist.
 if settings.storage_backend == "local":

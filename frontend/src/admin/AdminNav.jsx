@@ -43,6 +43,12 @@ function AdminNav() {
       >
         Accounts
       </NavLink>
+      <NavLink
+        to="/admin/waiting-list"
+        className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
+      >
+        Waiting list
+      </NavLink>
       <span className={styles.spacer} />
       {account && <span className={styles.who}>{account.email}</span>}
       <button className={styles.signOut} type="button" onClick={handleSignOut}>

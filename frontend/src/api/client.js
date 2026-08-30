@@ -1,4 +1,4 @@
-const baseUrl = import.meta.env.VITE_API_URL;
+export const baseUrl = import.meta.env.VITE_API_URL;
 
 // The play payload's video_url is relative when LocalStorage serves the
 // video through the backend's /media/ route, and absolute once Spaces

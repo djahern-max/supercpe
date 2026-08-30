@@ -1323,3 +1323,229 @@ Shipped: 2026-08-30
   `docs/OPERATIONS.md` is empty. Also folded into 014's prerequisites.
 - Restoring *from* the off-site copy is documented but undrilled (a
   Phase C item), and moot while the mirror is dormant.
+
+## 013 correction — the 2026-08-30 boot-refusal outage
+Shipped: 2026-08-30
+
+A statement of fact correcting the deployment record; the 013 entry
+above stands as written.
+
+**What happened**
+- 013's known gaps said it must not deploy before `deploy/bucket-setup.py`
+  had run against the real bucket. On 2026-08-30, `ad00797` (013's code
+  plus the 012/013 changelog docs) was deployed before the script had
+  run. The `prod` boot refusal (`ensure_bucket_versioning`) fired exactly
+  as designed — and took production down: containers up, uvicorn workers
+  dead, Caddy returning 502. `deploy.sh` fails safe on a bad migration,
+  but had no equivalent gate for a boot refusal; the old version was
+  already stopped by the time the guard fired.
+- The documented remedy proved unrunnable from the environment the
+  runbook assumed, for four reasons:
+  1. The droplet host has no `python` and no boto3; the script was
+     written as if it runs on the host.
+  2. It was not in the api image either — the Dockerfile copies only
+     `backend/`, so `docker compose run api python deploy/bucket-setup.py`
+     could not see it.
+  3. Bind-mounting it to `/tmp` broke its `sys.path` bootstrap
+     (`ModuleNotFoundError: No module named 'app'`) — the path insert is
+     computed relative to `__file__` for the repo layout.
+  4. When the operator reached the S3 API by hand, the key produced
+     `AccessDenied` on `PutBucketVersioning`. The runbook said "temporary
+     Full Access key" but never said that a bucket-scoped key, even with
+     full object permissions, cannot call bucket-configuration
+     operations — only an All Permissions (all-buckets) key can.
+- Outage window and recovery path taken (operator records at
+  stabilization, per 014a acceptance step 0 — rollback to `62de030` if
+  still down): ____________________
+
+**Standards touched**
+- 9.02 — the control itself behaved as built; the operability around it
+  failed. No change to what any locator requires.
+
+## 014a — Make the versioning control deployable
+Shipped: 2026-08-30
+
+**What changed**
+- `python -m app.cli bucket-setup`: the logic of `deploy/bucket-setup.py`
+  moved into the api image (`backend/app/cli.py`); the standalone script
+  is deleted — git history retains it, and this entry records the move.
+  Behavior is 013's spec unchanged: endpoint, region, and bucket from
+  the normal settings (the container's mounted `.env`); credentials
+  **only** from `SETUP_SPACES_KEY`/`SETUP_SPACES_SECRET`, non-zero with
+  a clear message if unset; enables versioning, puts the one `backups/`
+  lifecycle rule, prints both read-backs, non-zero if either does not
+  read back as set; idempotent. New: on `AccessDenied` the error says in
+  plain words that a bucket-scoped key cannot perform
+  bucket-configuration calls and that an All Permissions key is
+  required. The documented invocation is one `docker compose run` line
+  with no mounts and no host Python (`docs/OPERATIONS.md`).
+- `python -m app.cli preflight`: runs, without starting the server,
+  every check that would refuse boot — `boot_violations` (the 012
+  validations, same code path, every violation at once),
+  `ensure_bucket_versioning` when `STORAGE_BACKEND=spaces` (an
+  unreachable bucket or failed read is a named failure, not a crash or
+  a pass), and `ensure_ffprobe_available`. Exit 0 when the app would
+  boot; non-zero with the same messages the boot refusal would print.
+- `deploy.sh`: after building and **before** migrations or touching the
+  running containers, runs `preflight` as a one-off container from the
+  newly built image against production's env file; non-zero aborts the
+  deploy with the old version still serving — the same fail-safe shape
+  as the migration step, extended to boot refusals. Preflight runs
+  before migrations on purpose: it validates config and bucket state,
+  which do not depend on schema, so an abort leaves nothing to
+  reconcile. `rollback.sh` execs `deploy.sh` and therefore carries the
+  identical gate (recorded in its header comment).
+- The `ensure_bucket_versioning` refusal message, the
+  `BACKUP_NONCURRENT_DAYS` docstring, and `docs/OPERATIONS.md` now name
+  the CLI subcommand and the **All Permissions** key requirement
+  (console path, `read -rs`, delete-and-unset after the read-backs).
+  OPERATIONS.md also gained the dated read-back record table (evidence
+  for whether DigitalOcean honors `NoncurrentVersionExpiration` with a
+  prefix filter — 013's open question) and the what-a-preflight-abort-
+  looks-like paragraph under the deploy procedure; the bucket-layer
+  recovery-drill record line stays where 013 put it.
+- Tests: 260 pass (was 252). 013's script tests ported to the CLI
+  (versioning + the one rule, idempotency, read-back failure) plus the
+  unset-credentials refusal and the AccessDenied message naming the
+  key-scope cause; preflight exit codes under a bootable prod config
+  (moto), versioning off, an unreachable bucket, config violations
+  listed at once, and the local-storage skip; a grep-level assertion
+  that `deploy.sh` preflights before it migrates.
+
+**Standards touched**
+- 9.02 — no locator's requirement or satisfaction changed: the guard
+  stays, versioning remains the bucket-layer control 013 built. This
+  feature makes the control deployable and makes its failure mode a
+  failed deploy instead of an outage. COMPLIANCE.md gained a correction
+  row pointing the 013 row's `deploy/bucket-setup.py` reference at the
+  CLI subcommand.
+
+**Decisions**
+- Removing or weakening `ensure_bucket_versioning` was considered and
+  rejected (the alternatives disable every prod guard or delete the
+  control 013 exists to enforce). What changed is that a failed guard
+  is caught by the gate before the old version stops.
+- `preflight` also checks ffprobe: the feature named the config
+  validations and the versioning guard, but ffprobe is the third boot
+  refusal in the lifespan, and a gate that skips it would still let a
+  broken image turn into an outage. Same code path, no duplicated rule.
+- `preflight` checks versioning whenever `STORAGE_BACKEND=spaces`, not
+  only when `ENV=prod`, per the feature spec; in production the two
+  coincide (prod requires spaces).
+
+**Known gaps**
+- Acceptance steps 0–4 are the operator's, on the droplet, and had not
+  run at build time: stabilization and the outage window (the 013
+  correction entry above carries its fill-in line), the real
+  `bucket-setup` run and its two read-backs (the OPERATIONS.md table),
+  the sentinel recovery drill (013's empty record line), the 014a
+  deploy with preflight observed passing, and the negative gate test
+  against a nonexistent bucket. Until the real run, versioning and the
+  lifecycle rule remain verified against moto only.
+- The off-site mirror stays dormant (2026-08-30 operator decision);
+  014 proper (ASC842-PCX re-ingest and real review) is unblocked by
+  this feature, not part of it.
+
+## 015 — Coming-soon landing page and waiting list
+Shipped: 2026-08-30
+
+**What changed**
+- `waiting_list` table (migration `e5b7d9a3c1f8`): name, email
+  (lowercased/trimmed, unique), two-letter state of licensure, optional
+  firm, `source` (default `coming_soon`, for 021 to tell early signups
+  apart), and a soft delete (`removed_at`/`removed_reason`). The model
+  docstring says in so many words that these rows are **not CPE
+  records** — no participant, no enrollment, no `RETENTION_YEARS` — and
+  that the soft delete is deliberately different from the 9.02
+  accounts rule. Jurisdiction codes live in
+  `app/constants/jurisdictions.py` (the 55 US boards), placed for 020
+  to reuse.
+- Two public routes carved out of the 009 gate, allowed **only** while
+  `site_mode` is `coming_soon` and 404 once it is `open`
+  (`backend/app/routers/landing.py`): `GET /api/v1/landing` (sponsor
+  display name, `may_claim_registry`, `policies_published` — no field
+  exists for course facts, credit figures, objectives, or prices) and
+  `POST /api/v1/waiting-list` (422 in the standard `{"errors": [...]}`
+  shape; a repeat email is an idempotent 200 with `created_at`
+  unmoved; a signup against a removed row clears the removal and
+  re-adds). Spam controls: a hidden honeypot field answered with the
+  identical 200 that stores nothing, and a Caddy rate limit on the
+  signup POST mirroring the login rule (`deploy/Caddyfile`).
+- 009's router-table walk now exists as
+  `test_router_walk_closed_site_hides_everything_not_intentionally_public`
+  (`backend/tests/test_site.py`): every route anonymously in
+  `coming_soon` must answer 401 or 404 unless listed in
+  `INTENTIONALLY_PUBLIC`, where both 015 routes are marked with their
+  feature number — an unguarded new route now fails a test by name.
+- The landing page (`frontend/src/pages/ComingSoon/`), served by
+  `SiteGate` for **every** public and unmatched path while
+  `coming_soon` (the catch-all route now passes the gate too): who
+  superCPE is, one plain paragraph on the ASC 842 practical-expedients
+  course in preparation, the sentence promising full program details
+  before registration opens (the page's honest substitute for 8.01),
+  and the waiting-list form with a one-message email-use statement.
+  No credit number, field of study, level, prerequisites, or price;
+  no `/login` link; the Registry block renders only behind
+  `may_claim_registry` (false), and the footer links the policies
+  pages only when all three are published (on production they are
+  not). No new dependency, no analytics, no third-party script.
+- Admin surface: `/admin/waiting-list` (count, searchable table,
+  Remove with optional reason) over
+  `GET/POST /api/v1/admin/waiting-list...` and
+  `GET /api/v1/admin/waiting-list/export.csv` — UTF-8, header row,
+  ISO-8601 timestamps, active entries only, generated on request,
+  never written to Spaces and not part of the 9.02 audit bundle
+  (`backend/app/routers/admin_waiting_list.py`). The routes sit under
+  `/admin` and are therefore swept by 009's guarded-route walk
+  automatically.
+- Docs: COMPLIANCE.md gained the 8.01 no-descriptive-material-by-design
+  row, the 8.01.1 policies-footer row, and the 9.01-item-8 row
+  recording the landing page as the first public surface under 003's
+  Registry-claim rule; OPERATIONS.md gained the waiting-list section
+  (count, export, open-closes-permanently); ROADMAP.md records 015
+  shipping before the deferred 014.
+- Tests: 272 pass (260 at the 014a checkout).
+
+**Standards touched**
+- 8.01 — deliberately not satisfied and deliberately not half-satisfied:
+  the page discloses none of the eleven items because partial
+  disclosure reads as descriptive material; the payload has no field to
+  carry a course fact, and a key-set test enforces it. 016 owns the
+  full disclosure.
+- 8.01.1 — websites are a named disclosure channel; the page's answer
+  is the published-before-registration sentence, and the policies
+  footer renders links only when the 011 policies actually have current
+  versions.
+- 9.01 item 8 (003's Registry-claim rule) — first public surface that
+  reads `may_claim_registry`; a test fetches the landing response and
+  asserts "National Registry" is absent while it is false.
+
+**Decisions**
+- The signup response body is one constant message for first, repeat,
+  and honeypot submissions, so the response never reveals whether a row
+  exists or was created.
+- A signup against a removed row refreshes name/state/firm but keeps
+  the original `created_at` — the row records when they first asked.
+- Waiting-list email validation is the same minimal shape check
+  accounts use (auth service), not a deliverability check; the one
+  invitation 021 sends is the real test of the address.
+- The admin remove endpoint returns the refreshed listing (same shape
+  as the site-mode change returning its log), so the page repaints in
+  one round trip.
+
+**Known gaps**
+- Acceptance 6–7 (deploy via `deploy.sh` with preflight passing, a real
+  submission on https://supercpe.com, the by-eye check of the deployed
+  page) are the operator's, on the droplet, and had not run at build
+  time. **The 015 prerequisite is also not yet true**: as of this entry
+  production `/health` reports sha `62de030` (the pre-013 rollback)
+  with no `bucket_versioning` field — 014a's operator steps
+  (`bucket-setup` against the real bucket, then deploying the 014a
+  sha) have to land first, and 015 deploys after them through the same
+  preflight gate.
+- The footer's policies links, when the policies are eventually
+  published while still `coming_soon`, would lead to a `/policies` page
+  that is itself behind the 009 site gate (it renders the landing page
+  again for anonymous visitors). Harmless today — on production the
+  links are absent because nothing is published — and 016 replaces this
+  page entirely; noted so nobody reads the footer code as a gate hole.
