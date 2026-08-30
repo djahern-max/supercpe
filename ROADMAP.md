@@ -51,9 +51,8 @@ Everything runs on the developer's machine. No public surface.
   write-once: nothing in code overwrites or deletes an existing key under
   any of them.
 
-Phase A is code-complete (012 built and tested 2026-08-29); it closes for
-good when 012's first deployment and restore drill are executed and its
-changelog entry lands.
+Phase A closed 2026-08-30: 012's first deployment, rollback exercise, and
+restore drill were all executed and its changelog entry landed.
 
 ## Phase B — Deployed, closed
 superCPE.com is live but the public sees a coming-soon page.
@@ -68,8 +67,20 @@ variable, so it can be flipped without a deploy and the flip is logged:
   Registry (003's `may_claim_registry` stays false).
 - `open`: the real landing page, self-registration, catalog, purchase.
 
-- 013 Coming-soon landing page and waiting list table, with CSV export
-- 014 Hidden login and tester accounts; site mode switch in the admin
+- 013 Durability of retained records: bucket object versioning with one
+  lifecycle rule, boot/health enforcement, off-site mirror (built
+  2026-08-30; the versioning setup run and the bucket-layer drill are
+  014 prerequisites; the mirror is dormant — see the improvement note)
+- 014 ASC842-PCX re-ingest on production with the real second CPA's
+  review; production catches up to main (bucket-setup, deploy of 013)
+- 015 Coming-soon landing page and waiting list table, with CSV export
+
+(The pre-renumbering Phase B list had the landing page as 013 and
+"hidden login and tester accounts; site mode switch in the admin" as
+014. The latter was absorbed before Phase B began: 009 built the
+unlinked `/login` and the admin site-mode switch with its change log,
+and 009/010 give the admin account creation and enrollment-by-email,
+which is all a tester account is.)
 
 Phase B backlog from 012's first deploy (2026-08-30):
 
@@ -90,14 +101,18 @@ The audit bundle from 011 is most of the application packet.
 After NASBA acceptance: set `registry_status = registered` with the sponsor
 ID, flip site mode to `open`.
 
-- 015 Public landing page, catalog, course pages with full 8.01 disclosure
-- 016 Self-registration and email verification
-- 017 Stripe checkout; payment success creates the enrollment (010) and
+- 016 Public landing page, catalog, course pages with full 8.01 disclosure
+- 017 Self-registration and email verification
+- 018 Stripe checkout; payment success creates the enrollment (010) and
   starts the one-year clock; refunds follow the 8.01.1 policy page
-- 018 Certificate delivery by email and a public verification page
-- 019 Per-jurisdiction credit policy: rounding increment (7.01) and
+- 019 Certificate delivery by email and a public verification page
+- 020 Per-jurisdiction credit policy: rounding increment (7.01) and
   non-technical caps, read from a table the admin maintains
-- 020 Waiting-list invitation emails
+- 021 Waiting-list invitation emails
+
+(Phase C shifted by one on 2026-08-30 when Phase B was renumbered;
+feature numbers cited inside past CHANGELOG entries are history and
+refer to the numbering of their day.)
 
 ## Not planned
 - Group or blended learning programs. Self study only until there is a
@@ -140,9 +155,9 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   enrollment" — a cap anchored to the original enrollment, not a clock that
   can be reset — so an extension past that year would put the qualified
   assessment outside the window the Standard fixes. The remedy for a lapsed
-  participant is a new enrollment with its own year (and, once 017 exists, a
-  goodwill re-enrollment at no charge is a sponsor policy, not a Standards
-  question).
+  participant is a new enrollment with its own year (and, once Stripe
+  checkout (018) exists, a goodwill re-enrollment at no charge is a sponsor
+  policy, not a Standards question).
 - Off-provider backup copies: 012 keeps snapshots and nightly dumps at
   DigitalOcean only, so a provider-level failure (account lockout,
   regional loss) could take the originals and every backup together —
@@ -158,3 +173,9 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   that produced it. If video-tool's machine and DigitalOcean were both
   lost, the lesson videos would be too; mirroring `packages/` (or an
   archival copy of video-tool's `dist/`) would close it.
+- 2026-08-30: the 013 mirror is built but dormant — the operator chose
+  not to set up a second-provider bucket at this time, so `OFFSITE_*` is
+  unset and the off-provider exposure two notes up stands until it is.
+  Turning it on is the five `OFFSITE_*` values in the server `.env` plus
+  one `backup.sh` run; no code. (COMPLIANCE.md carries the matching
+  2026-08-30 correction row.)

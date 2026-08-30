@@ -1069,3 +1069,257 @@ Shipped: 2026-08-29
   still local disk; durability is 012 (whose ROADMAP entry now lists all
   three write-once key prefixes: `packages/`, `certificates/`,
   `audits/`).
+
+## 012 — Spaces storage, production config, and deployment to superCPE.com
+Shipped: 2026-08-30
+
+**What changed**
+- `SpacesStorage` in `backend/app/storage.py`: the second implementation
+  of 002's `Storage` protocol, boto3 against the Spaces endpoint, private
+  bucket, `ContentType` set, no public ACL ever. The protocol gained
+  `url_for(key, expires_seconds)`; under `spaces` that is a presigned GET
+  living `VIDEO_URL_SECONDS` (3600, `app/constants/storage.py`), under
+  `local` the existing `/api/v1/media/` path — and the `/media/` route is
+  mounted only when `STORAGE_BACKEND=local`. Certificate and audit
+  downloads keep streaming through the API behind the session check.
+- Production settings: `ENV` (`dev`|`prod`); in `prod` boot refuses, every
+  violation listed at once, unless cookies are Secure, `CORS_ORIGINS` is
+  exactly `https://supercpe.com`, `DATABASE_URL` carries
+  `sslmode=require`, `STORAGE_BACKEND` is `spaces`, and secrets are ≥ 32
+  bytes.
+- `deploy/`: API `Dockerfile` (Python 3.12 slim, ffmpeg, non-root,
+  migrations as a separate entrypoint command), `Dockerfile.web` (Vite
+  build served by Caddy built with xcaddy), `Caddyfile` (automatic TLS,
+  `www` → apex, HSTS, `/api/*` proxied, login rate limit 10/min/IP),
+  `docker-compose.yml` (caddy + api; Postgres is the managed cluster),
+  `deploy.sh` (checkout, build, migrate, restart, poll `/health` for the
+  new sha), `rollback.sh`, `backup.sh` (nightly `pg_dump` custom format,
+  gzip, upload to `backups/<date>.dump.gz`, keep 90 days + one per month,
+  stamp `backups/LATEST`), `env.production.example`.
+- `GET /api/v1/health` returns `{version, env, database, storage,
+  ffprobe, last_backup_at}`, 503 if any component errors; `version` is
+  the git sha baked at build, storage is a HEAD on `health/sentinel`,
+  `last_backup_at` reads `backups/LATEST`.
+- `docs/OPERATIONS.md`: security posture in one place, then first deploy,
+  routine deploy, rollback, restore (snapshot path and dump path), secret
+  rotation, course re-ingest, and per-field `/health` triage — each
+  executed at least once during this feature.
+- Tests: 28 new against `moto`'s in-process S3 mock (storage round-trip,
+  presigning, no-ACL, prod config refusals, 503 with the failing
+  component named, `/media/` absent under `spaces`). 227 at the 012
+  build; 252 at today's checkout with 013's, all passing.
+- **First deployment, 2026-08-30**: live at https://supercpe.com in
+  `coming_soon` mode over TLS, empty database, all ten migrations clean,
+  every `/health` component ok — sha `bd7a4e83` (build), then `62de030`
+  (post-deploy runbook fixes). Infrastructure as built is recorded in the
+  operator's handoff outside the repo: NYC3 droplet (4 GB), managed
+  PostgreSQL 16, bucket `supercpe-prod-nyc3` with a bucket-scoped
+  Limited Access key, ufw 22/80/443, secrets in `/srv/supercpe/.env`
+  mode 600, backup cron 03:15 UTC.
+- **Rollback exercised**: `62de030` → `bd7a4e8` → `62de030`; all four
+  health components ok at every step, the health poll matched the
+  expected sha in both directions, no migration between the shas.
+  Incidental finding worth keeping: when `.env` was mis-set during the
+  drill, `deploy.sh` failed safe — it stopped at the migration step and
+  never touched the running API, exactly as the runbook claims. First
+  real test of that behavior.
+- **Restore drill, 2026-08-30, 14:46–15:04 UTC, 18 minutes**:
+  `backups/2026-08-30.dump.gz` → scratch db `supercpe_restore_drill`;
+  `alembic_version` `c8a15d20e9b4` both sides, 24 tables both sides, 1
+  account both sides; the completions/`certificates/` cross-check was
+  vacuous on the empty database and is recorded as such. Dated in
+  `docs/OPERATIONS.md`. The drill surfaced runbook errors — notably a
+  step that sent the operator to repoint production's `.env` at the
+  scratch database, plus the `postgresql+psycopg` vs plain `postgresql`
+  scheme, the control panel's show/hide link contaminating a copied
+  password, a step with no commands, and no cleanup step — all fixed in
+  `263a6b7`.
+- **Acceptance walkthrough**: package upload `ASC606-CON-01` v1 → object
+  at `packages/ASC606-CON-01/v1/video.mp4`, preview played (206 Partial
+  Content, video/mp4) via a presigned URL (AWS4-HMAC-SHA256,
+  `X-Amz-Expires=3600`) that re-curled 403 after expiry; audit bundle
+  generated from the draft course →
+  `audits/ASC606-CON/20260830T155309757977Z.zip`, 12,165 bytes, in
+  history and downloadable; secrets grep clean (credential values appear
+  nowhere; only variable names and the example file).
+
+**Standards touched**
+- 9.02 — retained records now live in one managed database (daily
+  snapshots) and one private bucket (write-once prefixes `packages/`,
+  `certificates/`, `audits/`), with a nightly logical dump and an
+  executed, dated restore drill
+- 4.05.2 — `/api/v1/health` is the monitoring; the external uptime
+  monitor on it is still to be set up (gap below)
+- 9.01 — certificates persist in `certificates/` under the backup policy
+  and stay retrievable through the API
+- 9.02.2(7) — program materials under `packages/` on the same footing
+- COMPLIANCE.md gained the three 012 rows at build time, and the
+  2026-08-30 correction row: the original gap said Spaces has no object
+  versioning; Spaces does (API-only enable) — it was merely not enabled,
+  which became 013's opening task.
+
+**Decisions**
+- Managed Postgres over a container: backups are a 9.02 control, and a
+  managed cluster's daily snapshots plus point-in-time recovery beat
+  anything hand-rolled on the droplet.
+- Caddy over nginx: automatic Let's Encrypt TLS in four lines. The login
+  rate limit is the mholt/caddy-ratelimit plugin compiled in with
+  xcaddy — a documented, justified build step rather than a switch to
+  nginx for one directive.
+- `boto3` because Spaces is S3-compatible and boto3 is the reference
+  client; hand-rolling SigV4 presigning would be more code and less
+  trustworthy. `moto[s3]` test-only: exercises `SpacesStorage`,
+  presigning, and backup pruning through real boto3 calls with no
+  network and no bucket. (Both justified in `backend/requirements.txt`.)
+- Presigned video URLs live one hour (`VIDEO_URL_SECONDS = 3600`): long
+  enough for any lesson, short enough that a shared link dies the same
+  afternoon.
+- There is no application `SECRET_KEY`: sessions are database rows keyed
+  by token hash (009), so rotation is `DELETE FROM sessions`, not a key
+  ceremony.
+- Production started from an empty database by design. The dev
+  database's fictitious reviewer, test participant, and test policies
+  never left the laptop; ASC842-PCX is re-ingested and reviewed for real
+  in 014.
+- PostgreSQL 16 was a deliberate pin, not the default (DigitalOcean
+  preselects 18): 16 already lives in `docker-compose.yml`,
+  `deploy/backup.sh`'s `postgres:16 pg_dump`, and the restore
+  procedure's `postgres:16 pg_restore`, and `pg_dump` aborts on a newer
+  server major — drift would break the nightly backup silently, with
+  `last_backup_at` going stale as the only signal. Cluster reports
+  16.15.
+- The droplet is 4 GB, not the spec's 2 GB: `docker compose build` runs
+  on the box and is the memory-hungry step (xcaddy alone took 269 of the
+  first build's 294 seconds).
+- Acceptance item 3 was run with the sample package `ASC606-CON-01`, not
+  `ASC842-PCX-01`, keeping production's `packages/` clean for 014's real
+  re-ingest.
+- Acceptance item 3's `/media/` wording was unfalsifiable as written:
+  `/media/anything` returns the SPA shell, as does every unmatched path.
+  The real check is `/api/v1/media/anything` → 404, which is how
+  OPERATIONS.md words it.
+
+**Known gaps**
+- The external uptime monitor (4.05.2) is not yet set up; its login line
+  in OPERATIONS.md "Who and where" is empty until it is.
+- Two findings from the first deploy are fixed in the runbook
+  (`62de030`) but worth knowing: a panel-created database is owned by
+  `doadmin`, not the panel-created user, so `alembic upgrade head` fails
+  on a permission error until `ALTER DATABASE supercpe OWNER TO
+  supercpe`; and `GIT_SHA` falls back to `dev` on manual compose
+  commands, so every runbook command is prefixed with an export.
+- `deploy.sh`'s health poll can exit non-zero on a *correct* first
+  deploy (the sentinel is written after), documented in the runbook.
+- Object versioning was not enabled by this feature (the corrected
+  COMPLIANCE row explains why it is its own feature); 013 built it.
+- The sponsor profile is deliberately blank — no legal entity exists
+  yet — so certificate issuance is correctly blocked by
+  `missing_fields`; no error on the blank profile.
+- The session cookie's Secure/HttpOnly flags are enforced by config and
+  asserted in tests but were not re-inspected in the browser during
+  acceptance; the `www` redirect was likewise not explicitly verified.
+- Ops debt recorded in ROADMAP's Phase B backlog: rotate the `doadmin`
+  and starter-admin passwords (exposed in a chat transcript during
+  setup) and apply the droplet's pending OS security updates.
+
+## 013 — Durability of retained records
+Shipped: 2026-08-30
+
+**What changed**
+- `deploy/bucket-setup.py`: run once, by hand, with a temporary Full
+  Access Spaces key passed only as `SETUP_SPACES_KEY`/`SETUP_SPACES_SECRET`
+  environment variables (never read from `.env`). Enables object
+  versioning on the bucket, puts a lifecycle configuration with exactly
+  one rule — expire noncurrent versions under `backups/` after
+  `BACKUP_NONCURRENT_DAYS` (7, `app/constants/storage.py`, docstring
+  explaining why that prefix alone) — prints both read-backs, exits
+  non-zero if either does not read back as set. Idempotent.
+- Versioning as an enforced control, not a setting:
+  `SpacesStorage.versioning_enabled()` (GetBucketVersioning with the
+  runtime Limited Access key, which can read but not change it); in
+  `prod` the app refuses to boot while versioning is not `Enabled`
+  (`ensure_bucket_versioning`, called from `app/main.py`); `/health`
+  gains `bucket_versioning`, contributing to the 503 rule.
+  `LocalStorage` reports ok — there is nothing to version.
+- Off-site mirror: `OFFSITE_ENDPOINT/REGION/BUCKET/KEY/SECRET` config
+  (all-or-nothing; secret ≥ 32 bytes; in `prod` the endpoint must not be
+  DigitalOcean — that would be a second bucket, not a second provider);
+  `app/services/offsite.py` with `mirror_backup(date)` (copies the
+  night's dump, stamps `backups/LATEST` off-site and `backups/OFFSITE`
+  in the primary) and `mirror_prefix` (copies every `certificates/` and
+  `audits/` object absent or ETag-changed off-site, never deletes);
+  `python -m app.cli mirror-offsite` called by `backup.sh` only after
+  the primary upload is stamped, so a dead off-site provider exits
+  non-zero and is logged but can never make `last_backup_at` stale and
+  mask the primary as the problem (verified by acceptance test).
+  `/health` gains `last_offsite_backup_at` — `null` when unconfigured or
+  never run, and never part of the 503 rule; staleness past ~26 hours is
+  the uptime monitor's alarm, like `last_backup_at`.
+- Prune under versioning: `backups.py` pruning still removes dumps from
+  the current listing; a moto test with versioning enabled asserts
+  pruned dumps are gone from the current listing and present as
+  noncurrent versions (which the lifecycle rule then reclaims).
+- `docs/OPERATIONS.md`: new "Bucket versioning" section (recovering a
+  prior object version by `VersionId`; the runtime key cannot change
+  versioning or lifecycle) and "Off-site copy" section (what is
+  mirrored, restore path); `deploy/env.production.example` gains the
+  five `OFFSITE_*` lines marked optional with the different-provider
+  rule. The 012 runbook corrections folded in: why the `pg_restore`
+  container reaches the VPC host (NAT through the droplet, the trusted
+  source); the scratch-database ownership trap and its `ALTER DATABASE`;
+  `--user $(id -u)` on the restore's compose run; the drill-record
+  wording ("into a scratch database", never production) with
+  non-vacuous verifications for an empty database.
+- Tests: 252 pass (was 227), covering the boot refusal, the `OFFSITE_*`
+  all-or-nothing and same-provider rules, mirror copy/never-delete
+  semantics, both stamps, the two `/health` fields, `bucket-setup.py`
+  idempotency and read-back failure, and prune-under-versioning.
+
+**Standards touched**
+- 9.02 — the bucket itself now keeps every prior version of every
+  retained object (once enabled — see gaps), and the off-site copy
+  exists in code for the day a provider is chosen
+- 9.02.2(1)–(7) — the audit bundles under `audits/` are the first
+  mirrored prefix; `packages/` deliberately is not
+- 9.01 item 2 — certificates under `certificates/` are the second
+  mirrored prefix
+- COMPLIANCE.md gained the four 013 rows at build, and today a
+  correction row recording that the mirror is built but dormant.
+
+**Decisions**
+- Boot refuses on versioning-off but only reports on offsite-missing.
+  Versioning is a control someone can switch off in a control panel
+  while the application keeps running normally — exactly the control
+  that gets found off during an audit, so the application will not run
+  without it. A missing off-site provider is a state the design
+  explicitly allows while one is chosen or replaced, and it must never
+  take the site down.
+- `packages/` is not mirrored: videos are large, and every exported zip
+  also exists in video-tool's `dist/` on the machine that produced it.
+  Recorded as a ROADMAP improvement note, not built.
+- One lifecycle rule, `backups/` only: a nightly dump superseded by the
+  next night's has no retention value beyond a week, while every other
+  prefix is 9.02 material whose noncurrent versions are never expired.
+- **Operator decision, 2026-08-30: no second-provider bucket for now.**
+  The mirror ships dormant — `OFFSITE_*` unset,
+  `last_offsite_backup_at: null` by design. This entry therefore cannot
+  record which provider was chosen or what a real second provider
+  honored, because none was; the standing exposure (originals,
+  snapshots, and dumps all at DigitalOcean) is recorded in the
+  COMPLIANCE correction row and the ROADMAP note. Turning the control
+  on later is five `.env` values and one `backup.sh` run, no code.
+
+**Known gaps**
+- The off-site copy is not running (above); provider-level failure
+  still takes the originals and every backup together.
+- `bucket-setup.py` has not yet run against the real bucket, so
+  versioning is verified against moto only and whether DigitalOcean
+  honors `NoncurrentVersionExpiration` with a prefix filter on the real
+  API is unverified. Until it runs, 013 must not deploy — the `prod`
+  boot refusal would stop the API — so production still runs `62de030`.
+  Running it (and recording the read-back) is 014's first prerequisite.
+- The bucket-layer recovery drill (write `health/sentinel` twice,
+  recover the older by `VersionId`) has not run; its record line in
+  `docs/OPERATIONS.md` is empty. Also folded into 014's prerequisites.
+- Restoring *from* the off-site copy is documented but undrilled (a
+  Phase C item), and moot while the mirror is dormant.

@@ -32,7 +32,7 @@ Spaces bucket, and these procedures are how they stay alive.
 
 ## Who and where (fill these in — they otherwise live in one head)
 
-- DigitalOcean account owner: Daniel Ahern (danielaherniv@gmail.com) —
+- DigitalOcean account owner: Dane Ahern (danielaherniv@gmail.com) —
   confirm/correct.
 - Where the `.env` values came from: `DATABASE_URL` from the managed
   Postgres cluster's connection details panel; `SPACES_KEY`/`SPACES_SECRET`
@@ -244,7 +244,7 @@ never straight over production):
 
 | Date | Source | Time taken | Verified by |
 |------|--------|-----------|-------------|
-| 2026-08-30 | `backups/2026-08-30.dump.gz` → scratch db `supercpe_restore_drill` | 18 min | Daniel Ahern |
+| 2026-08-30 | `backups/2026-08-30.dump.gz` → scratch db `supercpe_restore_drill` | 18 min | Dane Ahern |
 
 **Bucket-layer recovery drill record** (013's acceptance 7; record its
 date here when run): overwrite `health/sentinel` by running
