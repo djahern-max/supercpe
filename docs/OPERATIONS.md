@@ -210,7 +210,7 @@ never straight over production):
 
 | Date | Source | Time taken | Verified by |
 |------|--------|-----------|-------------|
-| _not yet performed — run the dump-restore drill from the most recent dump into a scratch database and record it here_ | | | |
+| 2026-08-30 | `backups/2026-08-30.dump.gz` → scratch db `supercpe_restore_drill` | 18 min | Dane Ahern 
 
 **Bucket-layer recovery drill record** (013's acceptance 7; record its
 date here when run): overwrite `health/sentinel` by running
