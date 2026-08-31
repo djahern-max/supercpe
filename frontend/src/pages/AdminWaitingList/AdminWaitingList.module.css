@@ -58,6 +58,35 @@
   text-decoration: none;
 }
 
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.subheading {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.summary {
+  margin: 0;
+  font-weight: 600;
+}
+
+.failed {
+  color: var(--color-error);
+  font-weight: 600;
+}
+
+.smallButton {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
 .smallButtonDanger {
   padding: var(--space-xs) var(--space-sm);
   border: 1px solid var(--color-error);

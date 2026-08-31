@@ -42,12 +42,30 @@ class WaitingListEntryOut(BaseModel):
     firm: str | None
     created_at: datetime
     source: str
+    # 021: the one promised invitation — null until attempted, then
+    # sent/failed with the attempt time.
+    invited_at: datetime | None
+    invitation_status: str | None
 
 
 class WaitingListAdminOut(BaseModel):
     total: int
     entries: list[WaitingListEntryOut]
+    # 021: the Invitations panel's counts, over active entries only.
+    invited: int
+    failed: int
+    invitable: int
 
 
 class WaitingListRemoveRequest(BaseModel):
     reason: str = ""
+
+
+class InvitationRunOut(BaseModel):
+    """One Send run's summary. attempted = sent + failed; skipped rows
+    were already successfully invited and are never attempted again."""
+
+    attempted: int
+    sent: int
+    failed: int
+    skipped_already_invited: int

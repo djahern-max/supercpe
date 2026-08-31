@@ -1,143 +1,133 @@
 # Current Feature
 
-## Feature 020, Per-jurisdiction credit policy
+## Feature 021, Waiting-list invitations
 
 ## Goal
-A participant who has told superCPE their state of licensure sees, beside
-a course, what their board's rules mean for the recommended credit — the
-accepted rounding increment (7.01) and any non-technical cap that applies
-to the course's field of study. Every displayed fact is one the admin
-verified against a source on a date; the table **ships empty** and stays
-empty until Dane fills rows he has checked. The Standard puts the final
-check on the CPA ("should refer to the respective state board
-requirements", 7.01); this feature is superCPE doing part of that lookup
-for them, never speaking for a board.
+Everyone who signed the coming-soon waiting list gets the one email they
+were promised: the site is open, here is where to register. One
+invitation per entry, ever; sent by an explicit admin action that only
+exists once the site is `open`; recorded per row with 019's
+flag-plus-human-button pattern and no retry machinery. This is the last
+Phase C code feature — it also writes the opening-day runbook that
+sequences everything the flip needs.
 
 ## Read before building
-- 7.01/7.01.1 from the 2026 Standards (increments, rounding down) — cite
-  the Standard in code comments, not this spec.
-- The 2024 Fields of Study document (also in the repo's PDFs) for the
-  technical / non-technical classification of each field — the mapping
-  in scope below is transcribed from that document, not from memory.
-- 015's `US_JURISDICTIONS` (this is the reuse it was placed for), 017's
-  optional `accounts.state`, 005's stored credit, and 016's course
-  payload with its key-set test — which this feature deliberately does
-  **not** touch (see routes).
+015's waiting list (the soft delete, the `source` column, the
+one-message email-use statement shown on the signup form — the exact
+promise this feature is keeping), 017's email service, and 019's
+delivery-status pattern. Reuse all three shapes; invent none.
 
 ## In scope
 
-### 1. Fields of study classification
-`constants/fields_of_study.py`: the NASBA fields with a
-technical/non-technical flag per the 2024 document, transcribed with a
-comment naming the document. Then look at how courses store
-`field_of_study` today: if it is free text, validate it against this
-list on course create/edit (existing courses with a non-matching value
-are flagged in admin readiness, not broken); if 004/005 already
-constrain it, just wire the lookup. A course whose field is unknown to
-the list gets no classification and no jurisdiction hint.
+### 1. Invitation state on the waiting list
+- `invited_at` (nullable) and `invitation_status`
+  (`sent`/`failed`, nullable) on `waiting_list`. An entry is
+  **invitable** when active (not removed) and never successfully
+  invited. Migration; docstring unchanged — still not CPE records.
 
-### 2. Jurisdiction policy table
-One row per jurisdiction code (unique, validated against
-`US_JURISDICTIONS`), admin-maintained:
-- `credit_increment`: enum `one_fifth` / `one_half` / `whole` /
-  `unknown` (default)
-- `non_technical_cap_note`: nullable free text — caps are per reporting
-  period and cannot be computed, only quoted (e.g. "no more than half
-  of total hours may be non-technical")
-- `source`: free text/URL naming where the rule was read — required to
-  display
-- `verified_on`: date — required to display
-- `notes`: nullable, admin-only
-A row is **displayable** only when `credit_increment` is not `unknown`,
-and `source` and `verified_on` are set. No seed data beyond the 55 empty
-codes (or create-on-edit; whichever is simpler — but never shipped
-increments). Docstring: reference data, not CPE records.
+### 2. The send
+- `POST /api/v1/admin/waiting-list/invitations` — guarded, logged.
+  **Refuses while `site_mode` is `coming_soon`** with a message saying
+  why: inviting people to a gated site would 404 in their faces, and
+  keeping the action impossible until open means the flip can be
+  rehearsed without a mass email riding on it. The flip itself never
+  triggers sends — this button is deliberately separate.
+- Sends sequentially to every invitable entry through the 017 service
+  (kind `invitation`), writing `sent`/`failed` + `invited_at` per row
+  as it goes; one failure doesn't stop the run. Returns a summary
+  (attempted / sent / failed / skipped-already-invited).
+- **Idempotent by construction**: re-running skips every `sent` row, so
+  the button is safe to press after a partial failure — it becomes the
+  retry for `failed` rows only. A per-row Resend also exists for
+  symmetry with 019, but the batch button re-run is the expected path.
+- Removed entries are never invited, including entries removed after a
+  failed attempt.
 
-### 3. Participant state
-- Participants may set or change their own `state` from their account
-  page (the 017 column; dropdown from `US_JURISDICTIONS`, clearable).
-  It is their claim about themselves, not a credential — no verification
-  step. Admin-side state edit, if 009's account admin has one, is
-  untouched.
+### 3. The email
+- One short message: superCPE is open, one plain sentence naming the
+  ASC 842 practical-expedients course, a link to the register page and
+  a link to the course page — **no credit figure, no field of study,
+  no level, no price, no claims**: the course page carries the full
+  8.01 disclosure; the email carries a link to it. Same restraint as
+  the 015 landing page, same reasoning.
+- A closing line keeping the 015 promise explicit: they asked to be
+  told once, this is that one email, superCPE will not email them
+  again (registering makes them a participant, which is a different
+  relationship with its own transactional email).
+- No mention of the National Registry in the template at all,
+  claimable or not — the site says what may be said; the email needs
+  no conditional. A test pins "National Registry" absent from the
+  rendered invitation.
+- No unsubscribe machinery: there is no subscription — the never-again
+  line is the truth that makes that so, and removal before the send
+  remains the existing admin action.
 
-### 4. The hint
-- `GET /api/v1/courses/{code}/jurisdiction-note` — authed participant
-  only; 404 when the participant has no state, the jurisdiction row
-  isn't displayable, or the course isn't publicly renderable. **A
-  separate endpoint on purpose**: the 016 public payload and its
-  key-set test stay byte-for-byte untouched, and the hint is inherently
-  per-viewer, which a public cached payload should never be.
-- Response: the jurisdiction, the increment; when the increment is
-  coarser than one-fifth, the recommended credit rounded **down** to
-  that increment (7.01.1's arithmetic — e.g. 1.4 under one-half → 1.0),
-  labeled as computed; the cap note **only when the course's field is
-  non-technical**; `verified_on`; and a fixed sentence that boards of
-  accountancy have final authority on acceptance of CPE credits.
-- Frontend: a small "For your board (NH)" panel on the course page,
-  rendered only when the endpoint answers, showing exactly the
-  response; the final-authority sentence is not truncatable. Nothing
-  for anonymous visitors, participants without a state, or unverified
-  jurisdictions — absence, not a stub asking them to check back.
-- **Never on the certificate.** The certificate's credit and 50-minute
-  statement (9.01 item 10) are untouched; a test pins the certificate
-  render free of jurisdiction content.
+### 4. Admin surface
+- `/admin/waiting-list` gains an Invitations panel: counts (active /
+  invited / failed / invitable), the Send button behind a confirm
+  dialog that repeats the refusal rule and the count about to be
+  emailed, an invitation-status column on the table, and per-row
+  Resend on `failed`. CSV export gains the two new columns.
 
-### 5. Admin
-- `/admin/jurisdictions`: the 55 rows, inline edit of the five fields,
-  a Displayable column derived live, and a staleness nudge (admin-only)
-  on rows whose `verified_on` is older than 12 months. Routes under
-  `/admin`, swept by 009's walk automatically.
-- OPERATIONS.md: a short "Jurisdiction policies (020)" section — the
-  displayability rule, that rows are Dane's research responsibility
-  with sources, and the annual re-verification nudge.
+### 5. Opening-day runbook
+- OPERATIONS.md "Opening day (021)": the ordered checklist —
+  1) 014 complete: course ingested on production, real reviewer
+     sign-off recorded, published (priced, fully disclosing);
+  2) policies published (011);
+  3) SMTP configured and proven by the admin test-send (017), DNS
+     SPF/DKIM in place;
+  4) Stripe configured, webhook registered, test-mode walkthrough done
+     (018);
+  5) jurisdiction rows verified as far as intended (020, optional);
+  6) `launch_findings` empty — the gate agrees;
+  7) the flip (open closes permanently);
+  8) smoke test: register a real account, buy the course in live mode,
+     confirm the enrollment, refund yourself per the refund runbook if
+     desired;
+  9) **then** press Send invitations;
+  10) watch the failed column; per-row resend as needed.
+  Cross-reference each step to its feature's OPERATIONS section rather
+  than restating procedures.
 
 ### 6. Tests and docs
-- Displayability matrix (unknown increment / missing source / missing
-  date → 404 on the hint; complete row → 200).
-- Rounding: one-fifth board shows the stored credit unchanged;
-  one-half and whole boards show the computed round-down; the
-  computation never alters 005's stored value (assert the course row
-  is unread-only… i.e. unchanged).
-- Cap note appears only for non-technical fields; ASC842-PCX
-  (Accounting, technical) never shows one.
-- No-state participant, anonymous, and coming_soon all 404; the 016
-  key-set test and 015 router walk pass untouched.
-- Certificate render pinned jurisdiction-free.
-- COMPLIANCE.md: a 7.01 row — superCPE awards in one-fifth increments
-  (005 unchanged) and surfaces verified board increment differences to
-  the claiming CPA, who retains the Standard's own duty to check;
-  final authority stays with boards.
+- Refusal in `coming_soon`; full run at `open` (test env) writes one
+  `sent` per active entry with one outbound `invitation` email each;
+  re-run attempts zero; a forced per-row failure marks `failed`
+  without stopping the run, and both the re-run and the per-row Resend
+  recover it; removed entries untouched; the Registry-absence pin;
+  router walks green, allowlists untouched.
+- COMPLIANCE.md: extend the 8.01 no-descriptive-material row — the
+  invitation follows the landing page's rule (link, don't restate) now
+  that full disclosure exists to link to.
+- Changelog entry notes Phase C code complete: what remains is 014,
+  the Registry application, the ops checklist, and the flip.
 
 ## Out of scope
-- Tracking a participant's reporting-period totals or whether they are
-  near a cap — superCPE cannot know their other CPE and must not
-  pretend to.
-- Auto-populating or scraping board rules; any shipped increment
-  values.
-- Changing 005's calculation, the 0.2 minimum, or certificate content.
-- State-specific certificate statements or registration numbers (9.01
-  items 9/11) — nothing today requires them; if a board someday does,
-  that is its own feature.
-- Waiting-list invitations (021).
+- Any second email, newsletter, campaign, or unsubscribe
+  infrastructure — the never-again line is load-bearing.
+- Discounts or early-signup perks (`source` stays an analytics
+  distinction; coupons stayed out of 018).
+- Automatic sending on the flip (deliberate, see above).
+- Retry daemons — the idempotent re-run is the retry.
 
 ## Acceptance
-1. Fresh database: no jurisdiction hint appears anywhere for anyone.
-2. Admin fills NH with one-fifth increment + source + date: a NH
-   participant sees the panel with the stored credit and the
-   final-authority sentence; a participant with no state, and an
-   anonymous visitor, see nothing.
-3. Admin sets a test row to one-half: the panel shows the computed
-   round-down labeled as computed; 005's stored value is unchanged
-   everywhere else.
-4. Cap note renders only when the course's field is non-technical per
-   the transcribed mapping.
-5. The 016 key-set test, the 015 router walk, and the certificate
-   render test all pass untouched.
-6. Full suite green; changelog entry written; the fields-of-study
-   mapping's changelog line names the 2024 document as its source.
+1. In `coming_soon`, the send endpoint refuses and the admin button
+   explains; nothing is emailed.
+2. Flipped open in the test env: one run sends exactly one invitation
+   per active entry, the summary adds up, and the console backend log
+   matches row statuses.
+3. A second run attempts zero; after a forced failure, the re-run (or
+   row Resend) sends only to the failed row.
+4. The rendered email contains the two links, no course facts beyond
+   the naming sentence, no "National Registry", and the never-again
+   line.
+5. Removed entries — before the run or after a failure — are never
+   emailed; the CSV carries the new columns.
+6. Full suite green; changelog entry written, closing Phase C code.
 
 ## Notes for Claude Code
-- The rounding helper is three lines and must round down, never
-  half-up; property-test it across increments if quick.
-- ROADMAP: mark 020 built ahead of ship. After this, Phase C code is
-  021 plus the flip.
+- Sequential send with a per-row commit (or savepoint) so a crash
+  mid-run loses nothing already recorded — the re-run picks up where
+  it died.
+- ROADMAP: mark 021 built ahead of ship and Phase C code complete;
+  the remaining lines are 014, the Registry application, and the flip.

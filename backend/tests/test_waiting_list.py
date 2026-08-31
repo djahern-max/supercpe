@@ -167,6 +167,7 @@ def test_admin_listing_counts_and_excludes_removed(client, db_session, admin_hea
     ricky = next(e for e in listing["entries"] if e["email"] == "ricky@example.test")
     assert set(ricky) == {
         "id", "name", "email", "state", "firm", "created_at", "source",
+        "invited_at", "invitation_status",  # 021
     }
 
     after = client.post(f"{ADMIN_URL}/{ricky['id']}/remove", json={}).json()
@@ -198,12 +199,20 @@ def test_csv_export_is_the_active_list_with_iso_timestamps(
     assert "attachment" in response.headers["content-disposition"]
 
     header, *rows = response.content.decode("utf-8").strip().splitlines()
-    assert header == "name,email,state,firm,signed_up_at,source"
+    assert header == (
+        "name,email,state,firm,signed_up_at,source,"
+        "invited_at,invitation_status"  # 021's two columns
+    )
     [pat] = rows
-    name, email, state, firm, signed_up_at, source = pat.split(",")
+    (
+        name, email, state, firm, signed_up_at, source,
+        invited_at, invitation_status,
+    ) = pat.split(",")
     assert (name, email, state, firm, source) == (
         "Pat Example", "pat@example.test", "NH", "", "coming_soon",
     )
+    # Never invited: both 021 columns are empty, not a fake status.
+    assert (invited_at, invitation_status) == ("", "")
     # ISO-8601 with timezone, e.g. 2026-08-30T12:34:56.789012+00:00
     assert signed_up_at.count("-") >= 2 and "T" in signed_up_at
     assert signed_up_at.endswith("+00:00")

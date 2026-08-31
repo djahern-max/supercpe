@@ -42,6 +42,14 @@ class WaitingListEntry(Base):
     source: Mapped[str] = mapped_column(
         String, nullable=False, default="coming_soon", server_default="coming_soon"
     )
+    # 021: the one promised invitation. NULL until an attempt is made;
+    # then `sent` or `failed` with `invited_at` saying when. An entry is
+    # invitable while active and never successfully invited — `failed`
+    # rows stay invitable, `sent` rows never are again.
+    invited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    invitation_status: Mapped[str | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (
         CheckConstraint("state ~ '^[A-Z]{2}$'", name="ck_waiting_list_state_code"),
@@ -50,5 +58,15 @@ class WaitingListEntry(Base):
         CheckConstraint(
             "removed_reason IS NULL OR removed_at IS NOT NULL",
             name="ck_waiting_list_reason_requires_removal",
+        ),
+        # NULL passes an IN check, so the pair below carries the
+        # both-or-neither rule.
+        CheckConstraint(
+            "invitation_status IN ('sent', 'failed')",
+            name="ck_waiting_list_invitation_status",
+        ),
+        CheckConstraint(
+            "(invitation_status IS NULL) = (invited_at IS NULL)",
+            name="ck_waiting_list_invitation_pair",
         ),
     )

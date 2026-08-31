@@ -132,6 +132,14 @@ ID, flip site mode to `open`.
   nothing shows anywhere until Dane verifies rows — OPERATIONS.md
   "Jurisdiction policies (020)")
 - 021 Waiting-list invitation emails
+  (built 2026-08-31, ahead of ship like 016–020: the send action refuses
+  while `coming_soon`, so nothing can be emailed before the flip; it is
+  step 9 of OPERATIONS.md "Opening day (021)", after the smoke test)
+
+**Phase C code is complete.** What remains is not code: 014 (the course
+ingested on production with the real reviewer's sign-off), the NASBA
+Registry application, and the flip itself — sequenced in OPERATIONS.md
+"Opening day (021)".
 
 (Phase C shifted by one on 2026-08-30 when Phase B was renumbered;
 feature numbers cited inside past CHANGELOG entries are history and

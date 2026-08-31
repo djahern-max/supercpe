@@ -2057,3 +2057,79 @@ Shipped: 2026-08-31
   superCPE cannot know a participant's other CPE.
 - Deploy is the operator's: run the migration, reload; no new env
   vars, no Caddy change.
+
+## 021 — Waiting-list invitations
+Shipped: 2026-08-31
+
+**What changed**
+- `invited_at` and `invitation_status` (`sent`/`failed`, both nullable,
+  CHECK-paired) on `waiting_list`, with migration `e2c94b6a1d73`. An
+  entry is invitable while active and never successfully invited; the
+  rows remain not CPE records (docstring unchanged).
+- `app/services/invitations.py`: the one promised email per entry.
+  `send_all` refuses while `site_mode` is `coming_soon` (the links
+  would 404; the flip stays rehearsable with no mass email riding on
+  it), then sends sequentially through the 017 service (kind
+  `invitation`) with a per-row commit — the message row and the `sent`
+  flag land in one commit, a refused send is recorded as `failed` and
+  never stops the run. Re-running skips every `sent` row, so the batch
+  button is its own retry; `resend` is the per-row recovery, 019-style.
+  The flip itself never sends — the button is deliberately separate.
+- `POST /api/v1/admin/waiting-list/invitations` (run + summary:
+  attempted/sent/failed/skipped) and
+  `POST /api/v1/admin/waiting-list/{id}/resend`; the admin listing
+  gained invitation counts and per-row status; the CSV export gained
+  `invited_at` and `invitation_status`.
+- The email: superCPE is open, one sentence naming the course, a link
+  to the course page (where the full 8.01 disclosure lives) and to
+  /register, and the closing line keeping 015's promise — told once,
+  never emailed again. No credit figure, field of study, level, price,
+  or "National Registry" (pinned absent by test). No unsubscribe
+  machinery: there is no subscription.
+- `/admin/waiting-list` gained the Invitations panel: counts (active /
+  invited / failed / invitable), Send behind a confirm dialog repeating
+  the refusal rule and the count, an invitation column, per-row Resend
+  on failed rows.
+- OPERATIONS.md gained "Waiting-list invitations (021)" and the
+  "Opening day (021)" ordered checklist (014 → policies → email →
+  Stripe → jurisdictions → gate → flip → smoke test → **then** Send
+  invitations → watch the failed column), cross-referencing each
+  feature's own section.
+- ROADMAP marks 021 built ahead of ship and **Phase C code complete**:
+  what remains is 014 on production, the Registry application, and the
+  flip.
+- 371 tests (7 new).
+
+**Standards touched**
+- 8.01 — COMPLIANCE.md gained an update row on the 015/016 8.01 row:
+  the invitation follows the landing page's rule (link, don't restate)
+  now that full disclosure exists to link to; it carries no descriptive
+  material and no Registry words.
+
+**Decisions**
+- Idempotence is structural, not machinery: `sent` rows are skipped by
+  every later run, so partial-failure recovery is pressing the same
+  button again; no retry daemon exists.
+- The row status is staged before the send so 017's own commit records
+  the `email_message` row and the `sent` flag atomically — a crash
+  between send and record cannot leave a delivered email unrecorded.
+- The send also refuses (beyond the coming_soon rule) if no course is
+  published — there would be no course page to link. The open gate makes
+  this unreachable in practice; the refusal keeps the email honest if
+  everything were unpublished after the flip.
+- The named course is the published catalog's first (production has
+  exactly one); the sentence uses the stored title, no other fact.
+- Per-row Resend refuses a `sent` row ("one email, ever") and a removed
+  row; it exists for symmetry with 019, but the batch re-run is the
+  expected path.
+- The 015 CSV and listing key-set tests were extended for the two new
+  columns rather than frozen — the 015 promise they protect (removed
+  rows leave every export) is unchanged and still asserted.
+
+**Known gaps**
+- Deploy is the operator's: run the migration, reload; no new env vars,
+  no Caddy change. The feature is invisible until opening day — the
+  send refuses in `coming_soon`, which production is in.
+- Phase C code is complete, but launch still waits on 014 (production
+  ingest + real reviewer sign-off), the Registry application, and the
+  flip itself, per "Opening day (021)".

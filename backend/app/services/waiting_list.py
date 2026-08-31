@@ -103,11 +103,23 @@ def remove(
 
 
 def export_csv(db: Session) -> bytes:
-    """The active list as UTF-8 CSV with ISO-8601 timestamps — the file
-    021's invitations will be fed from."""
+    """The active list as UTF-8 CSV with ISO-8601 timestamps. 021's
+    invitations read the table directly; this export is the operator's
+    off-platform copy, invitation columns included."""
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["name", "email", "state", "firm", "signed_up_at", "source"])
+    writer.writerow(
+        [
+            "name",
+            "email",
+            "state",
+            "firm",
+            "signed_up_at",
+            "source",
+            "invited_at",
+            "invitation_status",
+        ]
+    )
     for entry in active_entries(db):
         writer.writerow(
             [
@@ -117,6 +129,8 @@ def export_csv(db: Session) -> bytes:
                 entry.firm or "",
                 entry.created_at.isoformat(),
                 entry.source,
+                entry.invited_at.isoformat() if entry.invited_at else "",
+                entry.invitation_status or "",
             ]
         )
     return out.getvalue().encode("utf-8")

@@ -577,6 +577,62 @@ on acceptance of CPE credits; the panel says so in a fixed sentence and
 these rows must never be written as if superCPE were speaking for a
 board.
 
+## Waiting-list invitations (021)
+
+Everyone on the waiting list was promised exactly one email: the site is
+open, here is where to register. `/admin/waiting-list` has the
+Invitations panel that keeps it — counts (active / invited / failed /
+invitable), the **Send invitations** button, an invitation column on the
+table, and per-row **Resend** on failed rows. The CSV export carries the
+`invited_at` / `invitation_status` columns.
+
+- The send **refuses while the site is coming_soon** — the invitation
+  links people to the register and course pages, which 404 until open.
+  The flip itself never sends; pressing this button is a deliberate,
+  separate step (step 9 of Opening day below).
+- The run is sequential with a per-row status commit, so a crash loses
+  nothing already recorded, and **re-running is the retry**: sent rows
+  are always skipped, so a second press after a partial failure reaches
+  only the failed rows. There is no automatic retry, as with 019.
+- Removed entries are never invited, including entries removed after a
+  failed attempt. Each send is logged in `email_message` (kind
+  `invitation`); the run summary goes to the app log.
+- The email names the course and links its page; it carries no course
+  facts, no Registry mention, and closes by saying superCPE will not
+  email them again. That closing line is load-bearing: there is no
+  second email, ever, and no unsubscribe machinery because there is no
+  subscription.
+
+## Opening day (021)
+
+The ordered checklist for the flip. Each step's full procedure lives in
+its own section; this list only sequences them.
+
+1. **014 complete**: the course ingested on production, the real
+   reviewer's sign-off recorded, and the course published — priced,
+   fully disclosing (see Re-ingest a course, and the admin course page's
+   readiness panel).
+2. **Policies published (011)**: registration, refund, and complaint
+   policies each have a current version.
+3. **Email proven (017)**: SMTP configured, SPF/DKIM in place, and the
+   admin test-send delivered — see Outbound email (017).
+4. **Stripe configured (018)**: restricted key, webhook registered with
+   its signing secret, test-mode walkthrough done — see Payments (018).
+5. **Jurisdiction rows verified (020, optional)**: as far as intended —
+   see Jurisdiction policies (020); the table showing nothing is a valid
+   launch state.
+6. **`launch_findings` empty**: the gate on `/admin/sponsor` agrees the
+   site can open — no block-level findings.
+7. **The flip**: set site mode to `open` (logged, with a note). This
+   closes the waiting list permanently.
+8. **Smoke test**: register a real account, buy the course in live mode,
+   confirm the enrollment appears; refund yourself per the refund
+   runbook in Payments (018) if desired.
+9. **Then** press **Send invitations** on `/admin/waiting-list` — only
+   after the smoke test proved the pages the email links to.
+10. **Watch the failed column**: per-row Resend (or a second press of
+    the batch button) as needed — see Waiting-list invitations (021).
+
 ## When /health goes red
 
 The monitor alerts on non-200. Fields, in the order to check:
