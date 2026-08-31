@@ -54,6 +54,37 @@
   font-weight: 600;
 }
 
+.verification {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-success);
+  font-size: 0.875rem;
+}
+
+.verificationLabel {
+  font-weight: 600;
+}
+
+.verificationCode {
+  word-break: break-all;
+  font-size: 0.8125rem;
+}
+
+.copyButton {
+  border: 1px solid var(--color-success);
+  background: transparent;
+  color: inherit;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-xs);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  opacity: 0.8;
+}
+
 .facts {
   margin: var(--space-lg) 0 0;
   line-height: 1.6;

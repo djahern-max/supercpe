@@ -18,6 +18,25 @@ function formatDate(iso) {
   });
 }
 
+/** A button that copies `text` and briefly confirms it did. */
+function CopyButton({ text, label }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {});
+  };
+  return (
+    <button type="button" className={styles.copyButton} onClick={handleCopy}>
+      {copied ? "Copied" : label}
+    </button>
+  );
+}
+
 /**
  * One enrollment: the 004 course facts the participant enrolled on, the
  * lesson list with progress (each mounting the 006 player through the
@@ -94,6 +113,25 @@ function MyCourse() {
           ) : (
             "Your certificate will be issued shortly."
           )}
+          {/* 019: the code printed on the certificate and its shareable
+              verification link — a board or employer can be handed the
+              link instead of the PDF. */}
+          <div className={styles.verification}>
+            <span className={styles.verificationLabel}>
+              Verification code:
+            </span>{" "}
+            <code className={styles.verificationCode}>
+              {completion.verification_code}
+            </code>{" "}
+            <CopyButton text={completion.verification_code} label="Copy code" />{" "}
+            <CopyButton
+              text={`${window.location.origin}/certificates/verify/${completion.verification_code}`}
+              label="Copy verification link"
+            />{" "}
+            <Link to={`/certificates/verify/${completion.verification_code}`}>
+              Verification page
+            </Link>
+          </div>
         </div>
       ) : (
         <p className={styles.deadline}>

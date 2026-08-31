@@ -156,8 +156,10 @@ class Completion(Base):
     sponsor, or the account can change what the participant earned.
 
     Immutable: no update path except `certificate_key` and
-    `certificate_rendered_at` being set once at the first render; no delete
-    path, ever."""
+    `certificate_rendered_at` being set once at the first render, and the
+    019 delivery fields (`delivery_status`, `delivered_at`) — which record
+    how the courtesy email fared and touch nothing the certificate says;
+    no delete path, ever."""
 
     __tablename__ = "completions"
 
@@ -182,7 +184,9 @@ class Completion(Base):
     certificate_number: Mapped[str] = mapped_column(
         String, nullable=False, unique=True
     )
-    # 32 random bytes as hex; 018's public verification page looks it up.
+    # 32 random bytes as hex — the verification code 019's public page
+    # (/certificates/verify) resolves. An identifier, not a secret
+    # credential: stored plainly, unique-indexed, printed on the PDF.
     verification_token: Mapped[str] = mapped_column(
         String, nullable=False, unique=True
     )
@@ -192,9 +196,30 @@ class Completion(Base):
     certificate_rendered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 019: how the courtesy email fared — pending until a send is
+    # attempted, then sent or failed. Never gates anything: the
+    # participant's own download satisfies 9.01 regardless.
+    delivery_status: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="pending"
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     enrollment: Mapped[Enrollment] = relationship(back_populates="completion")
     attempt = relationship("Attempt")
+
+    __table_args__ = (
+        CheckConstraint(
+            "delivery_status IN ('pending', 'sent', 'failed')",
+            name="ck_completions_delivery_status",
+        ),
+        # A sent certificate always says when; nothing else may.
+        CheckConstraint(
+            "(delivery_status = 'sent') = (delivered_at IS NOT NULL)",
+            name="ck_completions_sent_has_timestamp",
+        ),
+    )
 
 
 class CertificateSequence(Base):

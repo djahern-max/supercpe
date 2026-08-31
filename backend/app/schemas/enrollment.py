@@ -26,6 +26,9 @@ class MyCompletionOut(BaseModel):
     field_of_study: str
     certificate_number: str
     certificate_ready: bool
+    # 019: the code printed on the certificate, so the participant can
+    # hand a board the /certificates/verify link instead of the PDF.
+    verification_code: str
     # 4.04.1: whether the evaluation prompt should still be shown —
     # solicited, never required; false once submitted or after
     # SOLICIT_UNTIL_DAYS.
@@ -124,5 +127,9 @@ class AdminCompletionOut(BaseModel):
     certificate_rendered_at: datetime | None
     certificate_ready: bool
     overdue: bool
+    # 019: pending | sent | failed — failed is the loud flag the Resend
+    # button answers.
+    delivery_status: str
+    delivered_at: datetime | None
     # 9.02: completed_at + RETENTION_YEARS, derived, never stored.
     retain_until: datetime

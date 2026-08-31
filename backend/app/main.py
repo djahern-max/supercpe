@@ -17,6 +17,7 @@ from app.routers import (
     admin_waiting_list,
     assessment,
     auth,
+    certificates,
     checkout,
     courses,
     health,
@@ -73,6 +74,7 @@ app.include_router(admin_sponsor.router, prefix="/api/v1")
 app.include_router(admin_waiting_list.router, prefix="/api/v1")
 app.include_router(assessment.router, prefix="/api/v1")
 app.include_router(assessment.admin_router, prefix="/api/v1")
+app.include_router(certificates.router, prefix="/api/v1")
 app.include_router(checkout.router, prefix="/api/v1")
 app.include_router(courses.router, prefix="/api/v1")
 app.include_router(landing.router, prefix="/api/v1")

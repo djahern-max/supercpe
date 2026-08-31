@@ -51,6 +51,18 @@ supercpe.com {
 				events 10
 				window 1m
 			}
+			# 019: the public certificate verification lookup — an
+			# anonymous unauthenticated GET once the site is open, same
+			# shape as the signup rule.
+			zone certificate_verification {
+				match {
+					method GET
+					path /api/v1/certificates/verify/*
+				}
+				key {client_ip}
+				events 10
+				window 1m
+			}
 		}
 		reverse_proxy api:8000
 	}

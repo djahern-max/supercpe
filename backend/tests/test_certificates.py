@@ -50,7 +50,11 @@ def test_certificate_text_carries_every_item(db_session):
     assert "Retain this certificate." in text  # item 11
     assert "Dev CPA" in text and "Rev CPA" in text
     assert snapshot["certificate_number"] in text
+    # 019: the printed verification line — the code, and the public page's
+    # path (which deliberately avoids 017's /verify).
     assert snapshot["verification_token"] in text
+    assert "supercpe.com/certificates/verify" in text
+    assert "Verify this certificate" in text
     assert "Certificate of Completion" in text
 
 

@@ -29,6 +29,7 @@ import ResendVerification from "./pages/ResendVerification/ResendVerification.js
 import ReviewCourse from "./pages/ReviewCourse/ReviewCourse.jsx";
 import ReviewHome from "./pages/ReviewHome/ReviewHome.jsx";
 import Verify from "./pages/Verify/Verify.jsx";
+import VerifyCertificate from "./pages/VerifyCertificate/VerifyCertificate.jsx";
 import styles from "./App.module.css";
 
 function NotFound() {
@@ -73,6 +74,17 @@ function App() {
         <Route
           path="/resend-verification"
           element={<SiteGate><ResendVerification /></SiteGate>}
+        />
+        {/* 019: public certificate verification. The namespace
+            deliberately avoids 017's /verify (email verification, just
+            above); both resolve to their own pages. */}
+        <Route
+          path="/certificates/verify"
+          element={<SiteGate><VerifyCertificate /></SiteGate>}
+        />
+        <Route
+          path="/certificates/verify/:code"
+          element={<SiteGate><VerifyCertificate /></SiteGate>}
         />
         {/* Reachable but unlinked; staff and testers know the address. */}
         <Route path="/login" element={<Login />} />

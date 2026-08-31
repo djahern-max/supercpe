@@ -122,6 +122,9 @@ ID, flip site mode to `open`.
   three STRIPE_* settings are complete; the operator's Stripe-account
   setup and test-mode walkthrough are in OPERATIONS.md "Payments (018)")
 - 019 Certificate delivery by email and a public verification page
+  (built 2026-08-31, ahead of ship like 016–018: the verification route
+  404s anonymously in `coming_soon` and delivery flows through 017's
+  email backend, so both go live with the flip and need no new gate)
 - 020 Per-jurisdiction credit policy: rounding increment (7.01) and
   non-technical caps, read from a table the admin maintains
 - 021 Waiting-list invitation emails

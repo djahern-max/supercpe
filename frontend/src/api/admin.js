@@ -208,6 +208,13 @@ export function renderCertificate(completionId) {
   });
 }
 
+// 019: the human button behind a failed (or pending) delivery.
+export function resendCertificate(completionId) {
+  return request(`/api/v1/admin/completions/${completionId}/resend`, {
+    method: "POST",
+  });
+}
+
 export function adminCertificateUrl(completionId) {
   const baseUrl = import.meta.env.VITE_API_URL;
   return `${baseUrl}/api/v1/admin/completions/${completionId}/certificate.pdf`;

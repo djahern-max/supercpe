@@ -1897,3 +1897,88 @@ Shipped: 2026-08-31
 - The 015 browser-check date correction was conditional on Dane
   reporting one when feeding this spec; none was reported, so no
   correction entry.
+
+## 019 — Certificate delivery and public verification
+Shipped: 2026-08-31
+
+**What changed**
+- On completion, the participant now receives one email (kind
+  `certificate`) with the certificate PDF attached, a sentence naming
+  the course, credit, and completion date, and a link to their
+  certificates page — sent strictly after the completion transaction
+  commits (`app/services/delivery.py`, hooked into the passing submit
+  route). Delivery failure cannot fail completion: the outcome lands in
+  `delivery_status` (`pending`/`sent`/`failed`) and `delivered_at` on
+  `completions` (migration `b6e2d94c8a17`, CHECKs hand-written).
+- 017's email service gained its one planned extension: an optional
+  attachment on `send`, carried by both backends;
+  `email_message.attachment_filename` logs the filename, never the
+  bytes or the body.
+- Admin: `POST /api/v1/admin/completions/{id}/resend` (guarded, logged
+  like every send, updates delivery status; renders first if needed),
+  a Delivery column with a loud `delivery failed` badge and a Resend
+  button on the course page's Completions table. No retry machinery.
+- Public verification: `GET /api/v1/certificates/verify/{code}` answers
+  from the certificate snapshot only — participant, course, field of
+  study, credit, completion date, sponsor, "Self study" — so later
+  course edits can never move it. Unknown and malformed codes answer
+  one identical 404 (the site gate's own shape); the route is public at
+  `open`, 404 anonymously in `coming_soon`, and the 015 router walk's
+  allowlist is unchanged. Caddy rate-limits the lookup like the signup
+  routes (asserted by test).
+- Frontend: `/certificates/verify` (code-entry box) and
+  `/certificates/verify/{code}` (shareable result card) — the namespace
+  deliberately avoids 017's `/verify`, and a test pins both API
+  namespaces resolving independently. The participant's completion
+  panel now shows the verification code with copy-code / copy-link
+  affordances.
+- The rendered PDF's verify line now reads "Verify this certificate at
+  supercpe.com/certificates/verify — code: …" (it previously pointed
+  at `/verify/{token}`, a URL inside 017's email-verification
+  namespace that never had a resolver).
+- No verification-code backfill was needed: `verification_token`
+  (256-bit, unique, indexed) has been on every completion since 010 and
+  is the printed code. Existing dev-only certificates verify by their
+  codes with their PDFs untouched — snapshots and stored PDFs are
+  immutable, and production starts empty, so no real certificate will
+  ever lack the printed line.
+- COMPLIANCE.md: 9.01 row added (documentation delivered immediately by
+  email and on demand, well inside 60 days) and 9.01.1 row added (the
+  verification page as the sponsor's channel for standing behind the
+  documentation it issues). ROADMAP marks 019 built ahead of ship;
+  OPERATIONS.md gained "Certificate delivery (019)".
+
+**Standards touched**
+- 9.01 — the ≤60-day timeliness expectation is now met without being
+  asked: email at completion, download on demand unchanged.
+- 9.01.1 — the sponsor issuing and standing behind the certificate
+  gains a public confirmation channel serving the frozen snapshot.
+
+**Decisions**
+- The existing `verification_token` is the verification code — it
+  already met every requirement (≥128 bits, URL-safe, unique, plain,
+  indexed, minted at issuance), so no new column and no backfill.
+- The send is synchronous in the submit route after
+  `assessment.submit`'s own commit, not a FastAPI background task:
+  yield-dependency teardown runs before background tasks (the session
+  would be gone), and a caught exception plus a status write is the
+  whole requirement.
+- A render blocked by sponsor issuance fields leaves delivery
+  `pending`, not `failed` — nothing failed; there is nothing to send
+  yet. Resend renders-then-sends once the fields are filled.
+- The verification response mirrors the certificate's own participant
+  line (display name, or email when blank) — the page confirms what
+  the paper says, nothing more.
+- Resend works from any status (it is also the "send now" for pending
+  completions rendered late).
+
+**Known gaps**
+- Dev-era certificate PDFs print the old `/verify/{token}` URL, which
+  resolves to 017's email-verification page, not the certificate page;
+  their codes verify at `/certificates/verify` regardless. Accepted:
+  re-rendering would violate snapshot immutability, and production
+  starts empty.
+- No automatic delivery retries, per spec — flag plus human button;
+  retries become a follow-up only if reality demands them.
+- Revocation remains deliberately unbuilt; every code that ever
+  verified keeps verifying.

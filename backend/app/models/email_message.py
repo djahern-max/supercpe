@@ -26,6 +26,12 @@ class EmailMessage(Base):
     recipient: Mapped[str] = mapped_column(String, nullable=False)
     subject: Mapped[str] = mapped_column(String, nullable=False)
     backend: Mapped[str] = mapped_column(String, nullable=False)
+    # 019: the attached file's name, when the message carried one — the
+    # log records what was attached, never the bytes (the certificate's
+    # authoritative copy lives under certificates/ with bucket versioning).
+    attachment_filename: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

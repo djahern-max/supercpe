@@ -26,6 +26,7 @@ import {
   recordCourseReview,
   recordEvaluationReview,
   renderCertificate,
+  resendCertificate,
   setCourseDeveloper,
   setCoursePrice,
   setCourseReviewCycle,
@@ -333,6 +334,20 @@ function AdminCourseDetail() {
         setCertificateErrors(err.data.errors);
       } else {
         setCertificateErrors(["The render failed. Try again."]);
+      }
+    }
+  };
+
+  const handleResendCertificate = async (completionId) => {
+    setCertificateErrors(null);
+    try {
+      await resendCertificate(completionId);
+      listCompletions(code).then(setCompletions).catch(() => {});
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422 && err.data?.errors) {
+        setCertificateErrors(err.data.errors);
+      } else {
+        setCertificateErrors(["The resend failed. Try again."]);
       }
     }
   };
@@ -1085,6 +1100,7 @@ function AdminCourseDetail() {
                 <th>Completed</th>
                 <th>Credit</th>
                 <th>Certificate</th>
+                <th>Delivery</th>
                 <th></th>
               </tr>
             </thead>
@@ -1108,6 +1124,21 @@ function AdminCourseDetail() {
                     {completion.certificate_rendered_at === null &&
                       " (not rendered)"}
                   </td>
+                  <td>
+                    {/* 019: failed is the loud flag; Resend below is the
+                        whole recovery path (no automatic retries). */}
+                    {completion.delivery_status === "failed" ? (
+                      <span className={styles.twoChoiceBadge}>
+                        delivery failed
+                      </span>
+                    ) : completion.delivery_status === "sent" ? (
+                      `sent ${new Date(
+                        completion.delivered_at
+                      ).toLocaleDateString()}`
+                    ) : (
+                      "pending"
+                    )}
+                  </td>
                   <td className={styles.actions}>
                     {completion.certificate_rendered_at === null && (
                       <button
@@ -1128,6 +1159,13 @@ function AdminCourseDetail() {
                         Download
                       </a>
                     )}
+                    <button
+                      className={styles.smallButton}
+                      type="button"
+                      onClick={() => handleResendCertificate(completion.id)}
+                    >
+                      Resend email
+                    </button>
                   </td>
                 </tr>
               ))}

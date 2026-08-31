@@ -523,6 +523,36 @@ completion is an immutable 9.02 record.
 Payments rows are financial records: never deleted, not subject to the
 five-year CPE retention floor — they outlive it.
 
+## Certificate delivery (019)
+
+On completion the participant gets one email (kind `certificate`) with
+their certificate PDF attached, through the same 017 email backend as
+everything else. The email is a courtesy layered on the record: the
+participant can always download from their account, and nothing about
+delivery can touch the completion or the certificate.
+
+`delivery_status` on each completion (the Delivery column of the admin
+course page's Completions table):
+
+- **sent** — the backend accepted the message; `delivered_at` says when.
+- **pending** — no send has been attempted: the completion predates 019,
+  or the sponsor's issuance fields still block the render (fix those on
+  `/admin/sponsor`, then Resend).
+- **failed** — the send was refused. Nothing retries automatically, by
+  design: the table flags it and **Resend email** is the recovery. Resend
+  renders the PDF first if needed, sends again, and updates the status.
+  If it keeps failing, the email backend is the problem — see Outbound
+  email (017); the admin test email is the quick check.
+
+Verification is public by design. Every certificate prints a code and
+anyone holding it — a state board, an employer — can confirm the
+certificate at supercpe.com/certificates/verify. The page serves only
+what the certificate itself says, frozen at completion; unknown and
+malformed codes get one identical not-found answer, and the lookup is
+rate limited in Caddy like the other anonymous routes. Do not treat a
+verification code as a secret — it identifies one certificate, grants
+nothing, and is meant to be handed out.
+
 ## When /health goes red
 
 The monitor alerts on non-200. Fields, in the order to check:

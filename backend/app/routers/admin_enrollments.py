@@ -1,6 +1,6 @@
 """Admin enrollment and completion views: enroll a participant by email,
 list a course's enrollments and completions, render and download
-certificates."""
+certificates, and resend a certificate email (019)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
@@ -17,7 +17,7 @@ from app.schemas.enrollment import (
     EnrollRequest,
 )
 from app.schemas.package import ValidationErrors
-from app.services import completions, enrollments, retention
+from app.services import completions, delivery, enrollments, retention
 from app.services import auth as auth_service
 from app.services import courses
 from app.services.completions import IssuanceBlocked
@@ -73,6 +73,8 @@ def _completion_out(db: Session, completion: Completion) -> AdminCompletionOut:
         certificate_rendered_at=completion.certificate_rendered_at,
         certificate_ready=completions.certificate_ready(db, completion),
         overdue=completion in completions.overdue(db),
+        delivery_status=completion.delivery_status,
+        delivered_at=completion.delivered_at,
         retain_until=retention.retain_until(completion.completed_at),
     )
 
@@ -159,6 +161,28 @@ def render_certificate(
     completion = _get_completion_or_404(db, completion_id)
     try:
         completions.ensure_rendered(db, storage, completion)
+    except IssuanceBlocked as blocked:
+        return JSONResponse(status_code=422, content={"errors": blocked.errors})
+    return _completion_out(db, completion)
+
+
+@router.post(
+    "/completions/{completion_id}/resend",
+    response_model=AdminCompletionOut,
+    responses={422: {"model": ValidationErrors}},
+)
+def resend_certificate(
+    completion_id: int,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+):
+    """019: the human button behind a failed (or pending) delivery.
+    Renders first if needed, sends the certificate email again, and
+    updates the delivery status; the send itself is logged as every send
+    is (`email_message`). No automatic retries anywhere — this is it."""
+    completion = _get_completion_or_404(db, completion_id)
+    try:
+        delivery.send_certificate(db, storage, completion)
     except IssuanceBlocked as blocked:
         return JSONResponse(status_code=422, content={"errors": blocked.errors})
     return _completion_out(db, completion)

@@ -54,7 +54,7 @@ from app.schemas.player import (
     ReviewAnswer,
     ReviewResult,
 )
-from app.services import assessment, completions, enrollments, evaluations
+from app.services import assessment, completions, delivery, enrollments, evaluations
 from app.services import questions as questions_service
 from app.services.assessment import AssessmentRuleViolation
 from app.services.completions import CreditStale, IssuanceBlocked
@@ -115,6 +115,7 @@ def _completion_out(db: Session, enrollment: Enrollment) -> MyCompletionOut | No
         field_of_study=completion.field_of_study,
         certificate_number=completion.certificate_number,
         certificate_ready=completions.certificate_ready(db, completion),
+        verification_code=completion.verification_token,
         evaluation_requested=evaluations.solicit(db, completion),
     )
 
@@ -436,6 +437,7 @@ def submit_attempt(
     payload: AnswersRequest,
     db: Session = Depends(get_db),
     account: Account = Depends(participant),
+    storage: Storage = Depends(get_storage),
 ):
     enrollment = _get_enrollment_or_404(db, account, enrollment_id)
     attempt = _get_attempt_or_404(db, enrollment, attempt_id)
@@ -445,6 +447,12 @@ def submit_attempt(
         return JSONResponse(status_code=409, content={"errors": stale.errors})
     except AssessmentRuleViolation as violation:
         return _violation_response(violation)
+    if attempt.status == "passed" and enrollment.completion is not None:
+        # 019: the courtesy email, strictly after the completion's
+        # transaction committed (assessment.submit owns it). Nothing in
+        # delivery may fail the completion — failures are recorded on the
+        # row, and the participant's download works regardless.
+        delivery.deliver_after_completion(db, storage, enrollment.completion)
     return assessment.result(attempt)
 
 

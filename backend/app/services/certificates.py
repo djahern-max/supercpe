@@ -119,9 +119,14 @@ def render(snapshot: dict) -> bytes:
     pdf.spacer(8)
 
     pdf.line_out(f"Certificate number: {snapshot['certificate_number']}", size=10)
-    # 018's public verification page will resolve this URL.
+    # 019's public verification page resolves this code. The path
+    # deliberately avoids 017's /verify (email verification). Applies to
+    # certificates rendered from now on: stored PDFs are immutable, so
+    # dev-era certificates keep their old line while their codes still
+    # verify; production starts empty.
     pdf.line_out(
-        f"Verify at supercpe.com/verify/{snapshot['verification_token']}",
+        "Verify this certificate at supercpe.com/certificates/verify — "
+        f"code: {snapshot['verification_token']}",
         size=8,
     )
 
