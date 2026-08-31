@@ -21,6 +21,7 @@ from app.schemas.course import (
     CourseUpdate,
     CreditLessonRowOut,
     DeveloperRequest,
+    DisclosureItemOut,
     MoveRequest,
     ObjectiveGroup,
     QuestionGroup,
@@ -31,7 +32,7 @@ from app.schemas.course import (
     UpdateVersionRequest,
 )
 from app.schemas.package import ValidationErrors
-from app.services import courses, credit, development, readiness
+from app.services import courses, credit, development, disclosure, readiness
 from app.services import enrollments as enrollments_service
 from app.services import questions as questions_service
 from app.services.courses import CourseRuleViolation
@@ -196,6 +197,10 @@ def _detail(db: Session, course: Course) -> CourseDetailAdmin:
         readiness=[
             ReadinessFinding(**vars(finding))
             for finding in readiness.check(db, course)
+        ],
+        disclosure_missing=[
+            DisclosureItemOut(**vars(item))
+            for item in disclosure.missing_items(db, course)
         ],
         review_counts=ReviewCountsOut(
             **vars(readiness.review_counts(db, course))

@@ -3,9 +3,20 @@
 import re
 from datetime import date, timedelta, timezone
 
+import pytest
+
 from app.models.review import CourseReview
 from app.models.sme import SubjectMatterExpert
 from app.services import development, readiness
+from tests.conftest import publish_test_policies
+
+
+@pytest.fixture(autouse=True)
+def published_policies(db_session, admin_account):
+    """016 made the 8.01 item 8-10 policies a publish requirement. Every
+    test here is about the development findings, so the policy items are
+    satisfied up front."""
+    publish_test_policies(db_session, admin_account)
 from tests.test_courses import (
     COURSES_URL,
     PUBLIC_URL,
@@ -20,6 +31,10 @@ SMES_URL = "/api/v1/admin/smes"
 
 # A review question plus assessment questions covering both factory
 # objectives, so the 6.01.2 coverage check passes and nothing duplicates.
+# Six questions in all: with the 2-second factory video, the question term
+# (6 x 1.85 = 11.10 minutes) is what lifts the credit to 0.2, the minimum
+# awardable — since 016 a course whose award is 0.0 fails 8.01 item 3 and
+# cannot publish.
 PUBLISHABLE_QUESTIONS = [
     {
         "id": "q-01",
@@ -59,6 +74,45 @@ PUBLISHABLE_QUESTIONS = [
         ],
         "correct": "b",
         "feedback": "Output measures depict value transferred.",
+        "objective_ids": ["lo-2"],
+    },
+    {
+        "id": "q-04",
+        "kind": "assessment",
+        "stem": "What kind of measure is costs incurred to date?",
+        "choices": [
+            {"id": "a", "text": "An input measure"},
+            {"id": "b", "text": "An output measure"},
+            {"id": "c", "text": "Not a measure"},
+        ],
+        "correct": "a",
+        "feedback": "Costs incurred are an input measure.",
+        "objective_ids": ["lo-1"],
+    },
+    {
+        "id": "q-05",
+        "kind": "assessment",
+        "stem": "When is an output measure preferable?",
+        "choices": [
+            {"id": "a", "text": "Never"},
+            {"id": "b", "text": "When it faithfully depicts control transferred"},
+            {"id": "c", "text": "Whenever costs are hard to track"},
+        ],
+        "correct": "b",
+        "feedback": "Faithful depiction decides the measure.",
+        "objective_ids": ["lo-2"],
+    },
+    {
+        "id": "q-06",
+        "kind": "assessment",
+        "stem": "How is progress remeasured over the contract?",
+        "choices": [
+            {"id": "a", "text": "It is fixed at inception"},
+            {"id": "b", "text": "Updated as circumstances change"},
+            {"id": "c", "text": "Only on completion"},
+        ],
+        "correct": "b",
+        "feedback": "Progress estimates are updated.",
         "objective_ids": ["lo-2"],
     },
 ]
@@ -192,7 +246,9 @@ def test_publish_refuses_with_every_block_finding_at_once(
     assert any("description is blank" in e for e in errors)
     # An Accounting course with no participants at all also fails 4.02.
     assert any("licensed CPA" in e for e in errors)
-    assert len(errors) == 4
+    # The blank description also fails the 016 disclosure check (item 7).
+    assert any("8.01 item 7" in e for e in errors)
+    assert len(errors) == 5
 
     detail = get_detail(client, admin_headers, "ASC606-CON")
     assert detail["status"] == "draft"

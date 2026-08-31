@@ -242,6 +242,11 @@ function AdminCourseDetail() {
   );
   const development = course.development;
   const blockFindings = course.readiness.filter((f) => f.level === "block");
+  // 016: 8.01 items the course cannot currently disclose. These block
+  // publish too; on a published course they are the flag that it would
+  // no longer pass the gate (nothing auto-unpublishes).
+  const disclosureMissing = course.disclosure_missing;
+  const blockingCount = blockFindings.length + disclosureMissing.length;
   const developerDirty =
     developerSmeId !==
       (development.developer_id !== null
@@ -863,9 +868,9 @@ function AdminCourseDetail() {
           <span className={styles.muted}>
             {published
               ? `Published ${new Date(development.published_at).toLocaleString()}. Content is immutable while published.`
-              : blockFindings.length === 0
+              : blockingCount === 0
                 ? "Readiness is clean; the course can publish."
-                : `${blockFindings.length} blocking finding${blockFindings.length === 1 ? "" : "s"} below.`}
+                : `${blockingCount} blocking finding${blockingCount === 1 ? "" : "s"} below.`}
             {published &&
               course.active_enrollment_count > 0 &&
               ` ${course.active_enrollment_count} participant${
@@ -873,6 +878,14 @@ function AdminCourseDetail() {
               } enrolled on the current versions and will keep them if the course is unpublished.`}
           </span>
         </div>
+        {published && disclosureMissing.length > 0 && (
+          <p className={styles.findingBlock}>
+            This course is published but can no longer disclose every 8.01
+            item — it would not pass the publish gate today. Nothing is
+            unpublished automatically; the missing items are listed under
+            Readiness.
+          </p>
+        )}
         <ErrorPanel errors={publishErrors} />
       </section>
 
@@ -886,7 +899,7 @@ function AdminCourseDetail() {
             : "; the required count needs a fresh credit measurement"}
           . Two-choice questions do not count.
         </p>
-        {course.readiness.length === 0 && (
+        {course.readiness.length === 0 && disclosureMissing.length === 0 && (
           <p className={styles.muted}>No findings.</p>
         )}
         {course.readiness.map((finding) => (
@@ -900,6 +913,12 @@ function AdminCourseDetail() {
           >
             {finding.level === "block" ? "Blocks publish: " : "Warning: "}
             {finding.message}
+          </p>
+        ))}
+        {disclosureMissing.map((item) => (
+          <p key={`disclosure-${item.number}`} className={styles.findingBlock}>
+            Blocks publish: 8.01 item {item.number} ({item.name}) cannot be
+            disclosed — {item.reason}
           </p>
         ))}
       </section>

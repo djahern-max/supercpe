@@ -18,7 +18,6 @@ from tests.conftest import (
     ADMIN_PASSWORD,
     login,
     make_account,
-    publish_test_policies,
 )
 
 POLICIES_URL = "/api/v1/policies"
@@ -73,6 +72,10 @@ def test_site_open_refused_naming_missing_policies_until_published(
 
     for kind in ("registration", "refund", "complaint"):
         publish(client, kind)
+    # 016's half of the launch gate needs a disclosing published course.
+    from tests.test_enrollments import make_published_course
+
+    make_published_course(db_session)
     opened = client.put(SITE_MODE_URL, json={"site_mode": "open"})
     assert opened.status_code == 200, opened.json()
 
@@ -140,9 +143,12 @@ def test_public_route_gated_by_site_mode_exactly_as_courses(
     assert client.get(POLICIES_URL).status_code == 200
     assert client.get("/api/v1/how-it-works").status_code == 200
 
-    # Open: public.
+    # Open: public. make_published_course also publishes the policies,
+    # satisfying both halves of the launch gate.
     login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
-    publish_test_policies(db_session, admin_account)
+    from tests.test_enrollments import make_published_course
+
+    make_published_course(db_session)
     assert (
         client.put(SITE_MODE_URL, json={"site_mode": "open"}).status_code
         == 200
@@ -202,7 +208,12 @@ def test_public_course_payload_links_policies_and_carries_outline(
 
     course, _ = make_published_course(db_session)
     detail = client.get(f"/api/v1/courses/{course.course_code}").json()
-    assert detail["policies_url"] == "/policies"
+    # 016: items 8-10 are named links with the current version's effective
+    # date, never inlined policy text.
+    for key in ("registration_policy", "refund_policy", "complaint_policy"):
+        assert detail[key]["url"].startswith("/policies#")
+        assert detail[key]["effective_at"] is not None
+        assert "body" not in detail[key]
     [lesson] = detail["outline"]
     assert lesson["title"] == "Lesson GOLD-01"
     assert lesson["position"] == 1

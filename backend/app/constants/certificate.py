@@ -29,8 +29,8 @@ PROGRAM_TYPE = "Self study"
 # sponsor". The Registry's standard wording, with the sponsor's name filled
 # in at render time. This text may ONLY be rendered while
 # `SponsorProfile.may_claim_registry` is true — anywhere else it is a false
-# claim of Registry membership; `services.policies.current` is the one
-# place that gates it.
+# claim of Registry membership; `services.policies.sponsor_statement` is
+# the one place that gates it.
 NASBA_SPONSOR_STATEMENT = (
     "{sponsor_name} is registered with the National Association of State "
     "Boards of Accountancy (NASBA) as a sponsor of continuing professional "

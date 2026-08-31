@@ -133,9 +133,8 @@ def build_scenario(client, db_session):
     failed = sit(db_session, enrollment_b, wrong=4)
     assert failed.status == "failed"
 
-    from tests.conftest import publish_test_policies
-
-    publish_test_policies(db_session, admin)
+    # The three policies were published by make_published_course — since
+    # 016 nothing publishes without them.
     return course, completion, package_v1, package_v2
 
 

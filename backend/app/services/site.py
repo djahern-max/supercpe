@@ -21,9 +21,10 @@ def get_site_mode(db: Session) -> str:
 
 
 def site_open_blockers(db: Session) -> list[str]:
-    """What refuses opening the site: the block-level launch findings
-    (today, each 8.01 policy kind with no current version). New in 011 —
-    009 let the flip through unchecked. Warn-level launch findings
+    """What refuses opening the site: the block-level launch findings —
+    each 8.01 policy kind with no current version (011), and no published
+    course passing the 8.01 disclosure completeness check (016). New in
+    011 — 009 let the flip through unchecked. Warn-level launch findings
     (evaluation_review_due) are reported on /admin/sponsor but do not
     block: an overdue evaluation review must never be able to close
     enrollment forever."""

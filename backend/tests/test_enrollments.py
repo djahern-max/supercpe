@@ -54,11 +54,14 @@ def make_recorder(db):
     return account
 
 
-def make_published_course(db, course_code="GOLD"):
-    """A course that clears every publish gate: fresh credit, question
-    minimums, description, developer, and an approved review by a second
-    active CPA. Like test_assessment's make_ready_course, but with a
-    distinct lesson per course code so several courses can coexist."""
+def make_publish_ready_course(db, course_code="GOLD"):
+    """A course that clears every course-level publish gate: fresh
+    credit, question minimums, description, developer, and an approved
+    review by a second active CPA. Like test_assessment's
+    make_ready_course, but with a distinct lesson per course code so
+    several courses can coexist. What it deliberately does NOT do is
+    publish the 8.01 item 8-10 policies, so 016's disclosure tests can
+    prove the refusal."""
     package = make_package_row(
         db,
         lesson_id=f"{course_code}-01",
@@ -85,6 +88,16 @@ def make_published_course(db, course_code="GOLD"):
         "approved",
         recorded_by=make_recorder(db),
     )
+    return course, package
+
+
+def make_published_course(db, course_code="GOLD"):
+    """A published course with the three policies published too — since
+    016 the publish gate refuses without them (8.01 items 8-10)."""
+    from tests.conftest import publish_test_policies
+
+    course, package = make_publish_ready_course(db, course_code)
+    publish_test_policies(db, make_recorder(db))
     courses_service.publish(db, course)
     return course, package
 

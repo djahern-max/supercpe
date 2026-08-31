@@ -49,7 +49,8 @@ function Policies() {
 
       {payload !== null &&
         payload.policies.map((policy) => (
-          <section key={policy.kind} className={styles.policy}>
+          // The id anchors the 016 course-page links (/policies#refund).
+          <section key={policy.kind} id={policy.kind} className={styles.policy}>
             <h2 className={styles.policyTitle}>{policy.label}</h2>
             <p className={styles.effective}>
               Effective {formatDate(policy.effective_at)}

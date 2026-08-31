@@ -138,8 +138,10 @@ def test_signup_against_a_removed_row_re_adds(client, db_session, admin_headers)
 
 
 def test_open_site_404s_both_routes(client, db_session, admin_account):
+    from tests.test_enrollments import make_published_course
+
     login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
-    publish_test_policies(db_session, admin_account)
+    make_published_course(db_session)
     open_the_site(client)
     client.cookies.clear()
     assert client.get(LANDING_URL).status_code == 404

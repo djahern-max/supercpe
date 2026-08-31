@@ -93,8 +93,9 @@ def make_account(
 
 
 def publish_test_policies(db_session, account):
-    """Publish the three 8.01 policies so `set_site_mode(open)` passes the
-    011 launch gate; tests that open the site call this first."""
+    """Publish the three 8.01 policies: half of the 011/016 launch gate,
+    and since 016 a publish requirement too (items 8-10 of the disclosure
+    check)."""
     from app.services import policies as policies_service
 
     for kind in ("registration", "refund", "complaint"):

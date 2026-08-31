@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
-import { getHealth } from "./api/health";
 import RequireRole from "./auth/RequireRole.jsx";
 import { SessionProvider } from "./auth/SessionContext.jsx";
 import SiteGate from "./components/SiteGate/SiteGate.jsx";
@@ -28,39 +26,6 @@ import ReviewCourse from "./pages/ReviewCourse/ReviewCourse.jsx";
 import ReviewHome from "./pages/ReviewHome/ReviewHome.jsx";
 import styles from "./App.module.css";
 
-function Home() {
-  const [connected, setConnected] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getHealth()
-      .then(() => {
-        if (!cancelled) setConnected(true);
-      })
-      .catch(() => {
-        if (!cancelled) setConnected(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <main className={styles.page}>
-      <h1 className={styles.wordmark}>
-        super<span className={styles.accent}>CPE</span>
-      </h1>
-      {connected !== null && (
-        <span
-          className={connected ? styles.pillConnected : styles.pillUnreachable}
-        >
-          {connected ? "Backend connected" : "Backend unreachable"}
-        </span>
-      )}
-    </main>
-  );
-}
-
 function NotFound() {
   return (
     <main className={styles.page}>
@@ -82,7 +47,10 @@ function App() {
   return (
     <SessionProvider>
       <Routes>
-        <Route path="/" element={<SiteGate><Home /></SiteGate>} />
+        {/* 016: at open the public face of the site is the catalog, so
+            the root path renders it (in coming_soon, SiteGate still
+            serves the 015 landing page to anonymous visitors). */}
+        <Route path="/" element={<SiteGate><Catalog /></SiteGate>} />
         <Route path="/courses" element={<SiteGate><Catalog /></SiteGate>} />
         <Route
           path="/courses/:code"

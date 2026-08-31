@@ -427,7 +427,7 @@ def _descriptive_files(db: Session, course: Course, files: dict) -> None:
     # payload that must be byte-identical with what the public route serves.
     from app.routers.courses import public_detail
 
-    payload = public_detail(course)
+    payload = public_detail(db, course)
     files["6-descriptive/course.json"] = _json_bytes(
         payload.model_dump(mode="json")
     )
@@ -455,6 +455,7 @@ def _course_markdown(payload) -> str:
         payload.description,
         "",
         f"- Course code: {payload.course_code}",
+        f"- Type of formal learning program: {payload.program_type}",
         f"- Field of study: {payload.field_of_study}",
         f"- Knowledge level: {payload.knowledge_level}",
         f"- Prerequisites: {payload.prerequisites}",

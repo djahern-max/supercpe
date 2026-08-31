@@ -41,8 +41,12 @@ function Catalog() {
               <Link to={`/courses/${course.course_code}`}>{course.title}</Link>
             </h2>
             <p className={styles.entryMeta}>
-              {course.field_of_study} · {course.knowledge_level} ·{" "}
-              {course.lesson_count}{" "}
+              {course.field_of_study}
+              {course.recommended_credit !== null &&
+                ` · ${course.recommended_credit} CPE credit${
+                  course.recommended_credit === "1.0" ? "" : "s"
+                }`}{" "}
+              · {course.knowledge_level} · {course.lesson_count}{" "}
               {course.lesson_count === 1 ? "lesson" : "lessons"} ·{" "}
               {formatTotal(course.total_duration_seconds)} of video
             </p>

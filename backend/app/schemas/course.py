@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
 class CourseCreate(BaseModel):
@@ -147,6 +147,16 @@ class ReadinessFinding(BaseModel):
     message: str
 
 
+class DisclosureItemOut(BaseModel):
+    """One 8.01 item the course cannot currently disclose (016). On a
+    published course this is a flag the admin must see — the course was
+    published when it disclosed completely and no longer does."""
+
+    number: int
+    name: str
+    reason: str
+
+
 class ReviewCountsOut(BaseModel):
     """5.01.2.1 count vs requirement, shown even when satisfied. `required`
     is null while the credit is stale."""
@@ -215,6 +225,10 @@ class CourseDetailAdmin(BaseModel):
     credit: CourseCreditAdmin
     questions: list[QuestionGroup]
     readiness: list[ReadinessFinding]
+    # 016: the 8.01 items currently missing or unusable. Non-empty on a
+    # published course means it would no longer pass the publish gate;
+    # the page flags it rather than anything auto-unpublishing.
+    disclosure_missing: list[DisclosureItemOut]
     review_counts: ReviewCountsOut
     development: CourseDevelopmentAdmin
     # 010: enrollments whose derived status is active right now; the admin
@@ -249,6 +263,9 @@ class CoursePublicSummary(BaseModel):
     course_code: str
     title: str
     description: str
+    # 8.01 item 2: always the PROGRAM_TYPE constant — "Self study", never
+    # "QAS Self Study" (a Registry designation superCPE may not use).
+    program_type: str
     field_of_study: str | None
     knowledge_level: str | None
     prerequisites: str | None
@@ -279,13 +296,41 @@ class PublicOutlineLesson(BaseModel):
     objectives: list[LessonObjective]
 
 
+class PolicyLink(BaseModel):
+    """One of the 8.01 item 8-10 policies as the course page discloses
+    it: a link to the published policy plus the effective date of its
+    current version — never inlined policy text, so the page and the
+    policy can never disagree."""
+
+    kind: str
+    label: str
+    url: str
+    effective_at: datetime
+
+
 class CoursePublicDetail(CoursePublicSummary):
-    """The full 8.01 disclosure payload for a published course page."""
+    """The full 8.01 disclosure payload for a published course page: a
+    named field for every applicable item (asserted by key-set test, the
+    inverse of 015's no-field-for-course-facts test)."""
 
     objectives: list[PublicObjectiveGroup]
     lessons: list[PublicLesson]
     # 4.05.3 item 1: an overview of topics.
     outline: list[PublicOutlineLesson]
-    # 8.01 items 8-10 live on one published policies page; the course page
-    # links it above the enrollment call to action.
-    policies_url: str
+    # 8.01 items 8-10. Null only for a course published before the 016
+    # gate existed (dev data); the publish gate refuses without them.
+    registration_policy: PolicyLink | None
+    refund_policy: PolicyLink | None
+    complaint_policy: PolicyLink | None
+    # 8.01 item 11 is conditional by the Standard's own wording ("if an
+    # approved NASBA sponsor"): while may_claim_registry is false the
+    # item is inapplicable and the key is absent from the payload — not
+    # null — which the serializer below enforces.
+    sponsor_statement: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _drop_inapplicable_statement(self, handler):
+        data = handler(self)
+        if data.get("sponsor_statement") is None:
+            data.pop("sponsor_statement", None)
+        return data

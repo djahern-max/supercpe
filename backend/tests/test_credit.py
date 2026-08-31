@@ -259,7 +259,7 @@ def test_recompute_endpoint_refreshes_a_stale_credit(
     assert response.json()["credit"]["is_stale"] is False
 
 
-def test_public_payload_serves_credit_when_fresh_and_null_when_stale(
+def test_public_payload_serves_credit_when_fresh_and_refuses_when_stale(
     client, admin_headers, db_session, tmp_path
 ):
     # Six questions push the factory package over the minimum awardable:
@@ -283,11 +283,13 @@ def test_public_payload_serves_credit_when_fresh_and_null_when_stale(
     [summary] = client.get(PUBLIC_URL).json()
     assert summary["recommended_credit"] == "0.2"
 
+    # 016: a stale credit no longer serves null — the payload refuses to
+    # render the course at all (a page missing item 3 would be partial
+    # disclosure), and the catalog omits it.
     db_session.execute(text("UPDATE courses SET credit_computed_at = NULL"))
     db_session.commit()
-    detail = client.get(f"{PUBLIC_URL}/ASC606-CON").json()
-    assert detail["recommended_credit"] is None
-    assert detail["credit_basis"] is None
+    assert client.get(f"{PUBLIC_URL}/ASC606-CON").status_code == 404
+    assert client.get(PUBLIC_URL).json() == []
 
 
 def test_public_payload_never_serves_a_zero_award(

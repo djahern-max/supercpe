@@ -63,6 +63,7 @@ def launch_findings(db: Session) -> list[Finding]:
     open flip with; warn findings are reported beside them."""
     from app.constants.evaluation import EVALUATION_REVIEW_DAYS
     from app.services import courses as courses_module
+    from app.services import disclosure
     from app.services import evaluations as evaluations_service
     from app.services import policies as policies_service
 
@@ -80,6 +81,44 @@ def launch_findings(db: Session) -> list[Finding]:
                 ),
             )
         )
+    # 016: opening onto an empty or non-compliant catalog is opening onto
+    # nothing — at least one published course must disclose every
+    # applicable 8.01 item. Only possible in dev (the publish gate refuses
+    # incomplete disclosure), but the flip must not assume that.
+    published = courses_module.list_published(db)
+    incomplete = {
+        course.course_code: disclosure.missing_items(db, course)
+        for course in published
+    }
+    if not any(not items for items in incomplete.values()):
+        if not published:
+            findings.append(
+                Finding(
+                    code="catalog_empty",
+                    level="block",
+                    message=(
+                        "No course is published; opening the site would "
+                        "open onto an empty catalog, with no 8.01 "
+                        "descriptive materials to make available."
+                    ),
+                )
+            )
+        for course_code, items in incomplete.items():
+            findings.append(
+                Finding(
+                    code="catalog_undisclosable",
+                    level="block",
+                    message=(
+                        f"{course_code} is published but cannot disclose "
+                        + "; ".join(
+                            f"8.01 item {item.number} ({item.name}): "
+                            f"{item.reason}"
+                            for item in items
+                        )
+                        + " — no published course discloses completely."
+                    ),
+                )
+            )
     for course in courses_module.list_courses(db):
         due = evaluations_service.review_due(db, course)
         if due is not None:

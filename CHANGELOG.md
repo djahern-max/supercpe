@@ -1549,3 +1549,129 @@ Shipped: 2026-08-30
   again for anonymous visitors). Harmless today — on production the
   links are absent because nothing is published — and 016 replaces this
   page entirely; noted so nobody reads the footer code as a gate hole.
+
+## 016 — Public catalog and course pages with full 8.01 disclosure
+Shipped: 2026-08-31
+
+015's stale known-gap paragraph is closed: the operator ran 014a's
+bucket-setup and deploy steps and production reached `b0b8850` healthy on
+2026-08-30, and 015's acceptance 6–7 (the deploy through the preflight
+gate, a real submission on supercpe.com, and the by-eye browser check of
+the deployed page) were completed by Dane on 2026-08-30.
+
+**What changed**
+- Disclosure completeness as a named check: `missing_items` in
+  `backend/app/services/disclosure.py` returns every applicable 8.01
+  item (by number and name) that is missing or unusable. Items 2 and 11
+  are constants and cannot fail; item 11 is counted only while
+  `may_claim_registry` is true ("if an approved NASBA sponsor" is the
+  Standard's own condition); item 3 is unusable — not just missing —
+  when 005's stored credit is stale or the award is below the minimum
+  awardable; items 4 and 6 fail on blank, never on a stored "None";
+  items 8–10 fail when the 011 policy kind has no current published
+  version.
+- Publish gate: `courses.publish` now also refuses with one error per
+  missing item, each naming its 8.01 number, in the same 422
+  `{"errors": [...]}` shape. A course that cannot disclose completely
+  cannot be published. Unpublishing is untouched. A published course
+  that would now fail (dev only; production starts empty) is flagged on
+  the admin course view — a visible warning under Publish and one
+  finding per item under Readiness — never auto-unpublished.
+- Registration-and-attendance policy (item 8): **011 already built it**
+  — `registration` is one of the three `POLICY_KINDS` with the same
+  append-only effective-dated versions, so nothing was added. The
+  site-open gate **iterates** policy kinds (`missing_kinds` walks
+  `POLICY_KINDS`), so it already included the registration policy and
+  needed no update.
+- Public payload, final shape (`backend/app/routers/courses.py`,
+  `backend/app/schemas/course.py`): `program_type` (item 2, always the
+  `PROGRAM_TYPE` constant — "Self study", never "QAS Self Study") joins
+  both payloads; the detail payload carries `registration_policy`,
+  `refund_policy`, and `complaint_policy` as named `PolicyLink` fields —
+  a link (`/policies#<kind>`, anchored on the policies page) plus the
+  current version's effective date, never inlined policy text — and
+  `sponsor_statement` (item 11) only while claimable: the key is absent,
+  not null, while `may_claim_registry` is false, enforced by the model's
+  own serializer so the route and the audit bundle's
+  `6-descriptive/course.json` cannot disagree. `policies_url` is
+  removed; the 4.01 `last_documented_date` was already served and is now
+  asserted by the key-set test. A course whose stored credit is stale is
+  refused outright — omitted from the catalog, 404 on detail — instead
+  of rendering with a hole where item 3 belongs. `public_detail` now
+  takes `db`; the item 11 gate moved into
+  `services.policies.sponsor_statement`, the one place it is applied.
+- Site-open gate extension: `launch_findings` blocks
+  `coming_soon → open` while no published course passes the disclosure
+  check — one finding when nothing is published at all, otherwise one
+  itemized finding per published course, same shape as the 011 policies
+  refusal.
+- Frontend: the root path renders the catalog (the 001 walking-skeleton
+  home page is retired; SiteGate verified to stop serving the landing
+  page at open — `site_mode === "open"` returns children before
+  `ComingSoon` is considered). Catalog cards add the recommended credit.
+  The course page renders the items in the Standard's stable order —
+  description, objectives/outline, a Program details list in item order
+  2–6, the three policy links with effective dates, lessons, a visibly
+  reserved Registration section with no dead button (017's future home),
+  the conditional item 11 statement, and the provenance line with the
+  4.01 date. Everything renders from the payload; the page adds no
+  course fact of its own.
+- Tests: 288 pass (272 at 015). New `backend/tests/test_disclosure.py`:
+  the check item by item, publish refusal naming item numbers and
+  success after restoring, the detail key-set (the exact inverse of
+  015's landing-payload test), Registry absence from both payloads,
+  the statement appearing once claimable, stale-credit refusal plus the
+  admin flag, the mode matrix for both routes, and both open-gate
+  refusals. 015's router walk passes with its allowlist untouched.
+- Docs: COMPLIANCE.md 8.01 row rewritten from deliberately-not-satisfied
+  to satisfied-by-design; 8.01.2, 4.01, 8.01 items 8–11/8.01.1, and the
+  004/005 8.01 rows updated. ROADMAP.md records 016 as built ahead of
+  ship and drops the closed 4.01 improvement note.
+
+**Standards touched**
+- 8.01 — satisfied by design: every applicable item is a stored fact
+  with a named payload field, a completeness check, and a publish gate;
+  partial disclosure is impossible by construction.
+- 8.01.1 — the registration/attendance policy is disclosed beside
+  refund/cancellation and complaint resolution as published, versioned
+  policies linked from the course page; unpublished policies now block
+  publish as well as site-open.
+- 8.01.2 — prerequisites and advance preparation must be a stored
+  statement ("None" counts, blank does not) before a course can publish;
+  precision of language remains the 008 reviewer's judgment.
+- 4.01 — the "most recent publication, revision, or review date" is
+  asserted on the detail payload by key-set test; the ROADMAP
+  improvement note is closed.
+- 7.01 — credit is displayed exactly as 005 stored it (rounded down to
+  one-fifth); a stale credit refuses the whole course render rather than
+  serving a number the formula no longer backs.
+
+**Decisions**
+- The publish gate includes items 8–10, superseding 011's "launch
+  blocker, not a publish blocker" line: 016's rule that a course that
+  cannot disclose completely cannot be published is the stronger and
+  simpler invariant (docstring updated in `services/policies.py`).
+- The payload refusal is exactly what the spec names — a stale credit.
+  A fresh award below the minimum keeps 005's null-row rendering (it can
+  no longer be published anyway; only pre-016 dev data can reach it).
+- `sponsor_statement` is dropped from the serialized payload when
+  inapplicable via a `model_serializer` on `CoursePublicDetail`, so
+  every consumer of the model — route and audit bundle alike — gets the
+  same key set.
+- The test factory's publishable question list grew from 3 to 6
+  questions: with the 2-second factory video, the question term
+  (6 × 1.85 = 11.10 minutes) is what lifts the award to the 0.2 minimum,
+  without which no API-built course could publish under the new gate.
+  `make_published_course` now publishes the three policies itself.
+
+**Known gaps**
+- Frontend rendering was verified by build and by the payload tests; the
+  by-eye browser pass of the catalog and disclosure pages through the
+  hidden login, and the production deploy of 016, are the operator's
+  steps.
+- The published-but-incomplete flag lives on the admin course detail
+  page only; the admin course list does not surface it.
+- The open-gate refusal itemizes failing courses only when no published
+  course passes; a failing course alongside a passing one is visible
+  only on its own admin page (and is served publicly with null policy
+  links — reachable only from pre-016 dev data).

@@ -367,11 +367,12 @@ def get_published(db: Session, course_code: str) -> Course | None:
 
 
 def publish(db: Session, course: Course) -> Course:
-    """The publish gate: refuses with every block readiness finding at
-    once. Touches no content, so `content_updated_at` is unchanged and the
-    review stays current."""
-    # Deferred import: readiness imports this module.
-    from app.services import readiness
+    """The publish gate: refuses with every block readiness finding and
+    every missing 8.01 disclosure item at once — a course that cannot
+    disclose completely cannot be published (016). Touches no content, so
+    `content_updated_at` is unchanged and the review stays current."""
+    # Deferred imports: readiness and disclosure import this module.
+    from app.services import disclosure, readiness
 
     if course.status == "published":
         raise CourseRuleViolation(
@@ -381,6 +382,11 @@ def publish(db: Session, course: Course) -> Course:
         finding.message
         for finding in readiness.check(db, course)
         if finding.level == "block"
+    ]
+    blocks += [
+        f"8.01 item {item.number} ({item.name}) cannot be disclosed: "
+        f"{item.reason}"
+        for item in disclosure.missing_items(db, course)
     ]
     if blocks:
         raise CourseRuleViolation(blocks)

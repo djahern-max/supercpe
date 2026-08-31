@@ -24,8 +24,9 @@ function personLine(person) {
     : person.name;
 }
 
-// The 8.01 disclosure page: every fact a potential participant needs to
-// assess the course, laid out in reading order. The fields are the page.
+// The 8.01 disclosure page: every applicable item made available in
+// advance, in the Standard's stable order, rendered from the payload with
+// no course fact of the page's own. The fields are the page.
 function CoursePage() {
   const { code } = useParams();
   const [course, setCourse] = useState(null);
@@ -116,8 +117,12 @@ function CoursePage() {
         </div>
       ))}
 
-      <h2 className={styles.sectionTitle}>Who this course is for</h2>
+      {/* 8.01 items 2-6 in the Standard's order (item 3 is credit and
+          field of study together). */}
+      <h2 className={styles.sectionTitle}>Program details</h2>
       <dl className={styles.facts}>
+        <dt>Type of formal learning program</dt>
+        <dd>{course.program_type}</dd>
         {course.recommended_credit !== null && (
           <>
             <dt>Recommended CPE credit</dt>
@@ -127,23 +132,44 @@ function CoursePage() {
             </dd>
           </>
         )}
-        <dt>Program knowledge level</dt>
-        <dd>{course.knowledge_level}</dd>
+        <dt>Recommended field of study</dt>
+        <dd>{course.field_of_study}</dd>
         <dt>Prerequisites</dt>
         <dd>{course.prerequisites}</dd>
+        <dt>Program knowledge level</dt>
+        <dd>{course.knowledge_level}</dd>
         <dt>Advance preparation</dt>
         <dd>{course.advance_preparation}</dd>
-        <dt>Field of study</dt>
-        <dd>{course.field_of_study}</dd>
       </dl>
 
-      {/* 8.01 items 8-10, linked above where enrollment will live (017). */}
-      <p className={styles.policyLinks}>
-        <Link to={course.policies_url}>
-          Registration, refund, and complaint policies
-        </Link>{" "}
-        · <Link to="/how-it-works">How this course works</Link>
-      </p>
+      {/* 8.01 items 8-10: links to the published policies with the
+          current version's effective date, never inlined text. */}
+      <h2 className={styles.sectionTitle}>Policies</h2>
+      <ul className={styles.policyList}>
+        {[
+          course.registration_policy,
+          course.refund_policy,
+          course.complaint_policy,
+        ]
+          .filter(Boolean)
+          .map((policy) => (
+            <li key={policy.kind}>
+              <Link to={policy.url}>{policy.label} policy</Link>
+              <span className={styles.policyEffective}>
+                {" "}
+                — effective{" "}
+                {new Date(policy.effective_at).toLocaleDateString(undefined, {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </span>
+            </li>
+          ))}
+        <li>
+          <Link to="/how-it-works">How this course works</Link>
+        </li>
+      </ul>
 
       <h2 className={styles.sectionTitle}>Lessons</h2>
       <ol className={styles.lessonList}>
@@ -156,6 +182,22 @@ function CoursePage() {
           </li>
         ))}
       </ol>
+
+      {/* 017 puts registration here; the space is visibly reserved with
+          no dead button. */}
+      <section className={styles.registrationReserved}>
+        <h2 className={styles.registrationTitle}>Registration</h2>
+        <p className={styles.muted}>
+          Registration for this course is not open yet. When it opens, you
+          will register and enroll from this page.
+        </p>
+      </section>
+
+      {/* 8.01 item 11, present in the payload only when the sponsor may
+          claim it — this page never decides. */}
+      {course.sponsor_statement && (
+        <p className={styles.statement}>{course.sponsor_statement}</p>
+      )}
 
       {(course.developed_by || course.reviewed_by) && (
         <p className={styles.provenance}>

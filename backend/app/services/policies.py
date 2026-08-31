@@ -6,8 +6,9 @@ of a kind is derived — the latest `effective_at <= now()` — never marked.
 The re-take policy is rendered from `RETAKES_ALLOWED` and `PASSING_PCT` so
 it cannot disagree with what the code enforces, and the item 11 sponsor
 statement renders only while `may_claim_registry` is true. A kind with no
-current version is a launch blocker (`readiness.launch_findings`), not a
-publish blocker: a course may publish, but the site may not open.
+current version is a launch blocker (`readiness.launch_findings`) and,
+since 016, a publish blocker too: it fails 8.01 items 8-10 in the
+disclosure completeness check, so no course can publish without it.
 """
 
 from datetime import datetime, timezone
@@ -77,11 +78,21 @@ def missing_kinds(db: Session) -> list[str]:
     return [kind for kind in POLICY_KINDS if current_version(db, kind) is None]
 
 
+def sponsor_statement(db: Session) -> str | None:
+    """The 8.01 item 11 statement, or None while the sponsor may not
+    claim Registry membership — the one place the gate is applied.
+    Everything that renders the statement (the policies payload, the 016
+    course detail) goes through here."""
+    profile = sponsor_service.get_profile(db)
+    if not profile.may_claim_registry:
+        return None
+    return NASBA_SPONSOR_STATEMENT.format(sponsor_name=profile.name)
+
+
 def current(db: Session) -> dict:
     """The public /policies payload: the three kinds' current bodies, the
     derived re-take text, and — only while the sponsor may claim it — the
     item 11 statement."""
-    profile = sponsor_service.get_profile(db)
     policies = []
     for kind in POLICY_KINDS:
         version = current_version(db, kind)
@@ -97,11 +108,7 @@ def current(db: Session) -> dict:
     return {
         "policies": policies,
         "retake_policy": retake_policy_text(),
-        "sponsor_statement": (
-            NASBA_SPONSOR_STATEMENT.format(sponsor_name=profile.name)
-            if profile.may_claim_registry
-            else None
-        ),
+        "sponsor_statement": sponsor_statement(db),
     }
 
 

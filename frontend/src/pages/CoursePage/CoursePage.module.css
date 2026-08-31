@@ -124,16 +124,41 @@
   color: var(--color-text-muted);
 }
 
-.policyLinks {
-  margin: var(--space-lg) 0 0;
+.policyList {
+  margin: 0;
+  padding-left: 1.25rem;
+  line-height: 1.9;
   font-size: 0.9375rem;
 }
 
-.policyLinks a {
+.policyList a {
   color: var(--color-accent);
   text-decoration: none;
 }
 
-.policyLinks a:hover {
+.policyList a:hover {
   text-decoration: underline;
+}
+
+.policyEffective {
+  color: var(--color-text-muted);
+}
+
+.registrationReserved {
+  margin-top: var(--space-xl);
+  padding: var(--space-lg);
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+}
+
+.registrationTitle {
+  margin: 0 0 var(--space-xs);
+  font-size: 1.25rem;
+}
+
+.statement {
+  margin: var(--space-lg) 0 0;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
 }

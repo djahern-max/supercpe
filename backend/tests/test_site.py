@@ -1,9 +1,11 @@
 """Feature 009: site mode — the logged Phase B gate on public routes.
 
 011 added the launch gate: opening the site is refused while any 8.01
-policy is unpublished, so tests that open it publish the policies first
-(the refusal itself is proven in test_policies.py). 015 added the
-router-table walk with its intentionally-public list."""
+policy is unpublished; 016 extended it to also require a published course
+that discloses completely. Tests that open the site call
+`make_published_course` first, which satisfies both (the refusals
+themselves are proven in test_policies.py and test_disclosure.py). 015
+added the router-table walk with its intentionally-public list."""
 
 import re
 
@@ -15,8 +17,8 @@ from tests.conftest import (
     ADMIN_PASSWORD,
     login,
     make_account,
-    publish_test_policies,
 )
+from tests.test_enrollments import make_published_course
 
 SITE_URL = "/api/v1/site"
 SITE_MODE_URL = "/api/v1/admin/site-mode"
@@ -49,7 +51,7 @@ def test_any_session_passes_the_closed_gate(client, db_session):
 def test_open_site_is_public_and_the_change_is_logged(
     client, db_session, admin_account, admin_headers
 ):
-    publish_test_policies(db_session, admin_account)
+    make_published_course(db_session)
     response = open_the_site(client, note="Phase C begins.")
     [change] = response.json()
     assert change["from_mode"] == "coming_soon"
@@ -91,7 +93,7 @@ def test_ungated_routes_are_reachable_in_both_modes(client, db_session, admin_ac
     assert client.get(SITE_URL).status_code == 200
     login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
 
-    publish_test_policies(db_session, admin_account)
+    make_published_course(db_session)
     open_the_site(client)
     client.cookies.clear()
     assert client.get("/api/v1/health").status_code == 200

@@ -11,7 +11,13 @@ from app.constants.auth import MAX_FAILED_LOGINS, SESSION_COOKIE
 from app.main import app
 from app.models.account import Account, AuthSession
 from app.models.review import CourseReview
-from tests.conftest import ADMIN_EMAIL, ADMIN_PASSWORD, login, make_account
+from tests.conftest import (
+    ADMIN_EMAIL,
+    ADMIN_PASSWORD,
+    login,
+    make_account,
+    publish_test_policies,
+)
 from tests.test_development import make_publishable_course, make_sme, publish
 
 LOGIN_URL = "/api/v1/auth/login"
@@ -245,8 +251,10 @@ def test_every_admin_route_is_guarded(client, db_session):
 
 
 def test_reviewer_records_a_review_in_the_first_person(
-    client, db_session, admin_headers, tmp_path
+    client, db_session, admin_account, admin_headers, tmp_path
 ):
+    # 016: publish also requires the 8.01 item 8-10 policies.
+    publish_test_policies(db_session, admin_account)
     make_publishable_course(client, admin_headers, tmp_path)
     developer = make_sme(client, admin_headers, name="Dana Developer")
     reviewer_sme = make_sme(client, admin_headers, name="Rae Reviewer")
@@ -297,7 +305,8 @@ def test_reviewer_records_a_review_in_the_first_person(
     [listed] = client.get("/api/v1/admin/courses/ASC606-CON/reviews").json()
     assert listed["recorded_by"] == REVIEWER_EMAIL
     assert listed["is_current"] is True
-    assert publish(client, {}, "ASC606-CON").status_code == 200
+    response = publish(client, {}, "ASC606-CON")
+    assert response.status_code == 200, response.json()
 
 
 def test_reviewer_naming_the_developer_still_blocks_publish(

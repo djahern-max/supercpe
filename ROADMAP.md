@@ -107,6 +107,10 @@ After NASBA acceptance: set `registry_status = registered` with the sponsor
 ID, flip site mode to `open`.
 
 - 016 Public landing page, catalog, course pages with full 8.01 disclosure
+  (built 2026-08-31, ahead of ship: a Phase C feature finished and tested
+  during Phase B behind the 009 gate, so it is live the moment site mode
+  flips to `open` — which the gate now also refuses until a published
+  course discloses completely)
 - 017 Self-registration and email verification
 - 018 Stripe checkout; payment success creates the enrollment (010) and
   starts the one-year clock; refunds follow the 8.01.1 policy page
@@ -133,8 +137,6 @@ of scope goes here as a one-liner, so it is not lost and not built early.
 - Participant-facing captions/transcript toggle on the player for
   accessibility; must be labelled as the narration, not as reading material
   (7.02.5).
-- The 4.01 "most recent revision or review date" shown on the course page,
-  fed by 008's sign-off date.
 - When attach refuses a taken manifest position, the error could suggest the
   lowest free position instead of making the admin work it out.
 - `update_version` on a course's only lesson compares the new package's
