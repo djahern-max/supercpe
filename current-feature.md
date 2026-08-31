@@ -1,139 +1,143 @@
 # Current Feature
 
-## Feature 019, Certificate delivery and public verification
+## Feature 020, Per-jurisdiction credit policy
 
 ## Goal
-When a participant completes a course, the certificate reaches them by
-email without them asking, and anyone they hand it to — a state board, an
-employer — can confirm it is real on a public page. Delivery is a courtesy
-layered on the record; the record is the snapshot the completion already
-made, and nothing in this feature can make completion fail. Like 016–018,
-**built now, ships at open**.
+A participant who has told superCPE their state of licensure sees, beside
+a course, what their board's rules mean for the recommended credit — the
+accepted rounding increment (7.01) and any non-technical cap that applies
+to the course's field of study. Every displayed fact is one the admin
+verified against a source on a date; the table **ships empty** and stays
+empty until Dane fills rows he has checked. The Standard puts the final
+check on the CPA ("should refer to the respective state board
+requirements", 7.01); this feature is superCPE doing part of that lookup
+for them, never speaking for a board.
 
 ## Read before building
-Read the existing certificate feature first: the completion-time snapshot,
-the render, where the PDF lives in `certificates/` (a 9.02 record under
-bucket versioning), and whatever participant-facing download already
-exists. 019 adds delivery and verification around it; it does not touch
-what the certificate says or when the snapshot is taken (standing
-decision: at completion, not at render). Read 017's email service — the
-`send` interface, the console/smtp backends, the `email_message` log —
-because delivery goes through it, extended, not around it.
-
-Then read 9.01 and 9.01.1 from the 2026 Standards before writing the
-COMPLIANCE rows: the ≤60-day timeliness expectation and the sponsor's
-role in issuing acceptable documentation are the two hooks this feature
-hangs on. Cite what the Standard says, not this spec.
+- 7.01/7.01.1 from the 2026 Standards (increments, rounding down) — cite
+  the Standard in code comments, not this spec.
+- The 2024 Fields of Study document (also in the repo's PDFs) for the
+  technical / non-technical classification of each field — the mapping
+  in scope below is transcribed from that document, not from memory.
+- 015's `US_JURISDICTIONS` (this is the reuse it was placed for), 017's
+  optional `accounts.state`, 005's stored credit, and 016's course
+  payload with its key-set test — which this feature deliberately does
+  **not** touch (see routes).
 
 ## In scope
 
-### 1. Verification code on the certificate
-- Every certificate row gains a high-entropy verification code
-  (URL-safe, ≥128 bits, unique, generated at issuance). It is an
-  identifier, not a secret credential — stored plainly, indexed.
-- The rendered PDF gains one line near the sponsor block: "Verify this
-  certificate at supercpe.com/certificates/verify — code: XXXX…". This
-  is a template change; it applies to certificates issued from now on.
-- Migration backfills codes for existing (dev-only) certificate rows so
-  the verification page works for them, but **does not re-render their
-  PDFs** — snapshots are immutable, and production starts empty so no
-  real certificate will ever lack the printed line. Say this in the
-  changelog.
+### 1. Fields of study classification
+`constants/fields_of_study.py`: the NASBA fields with a
+technical/non-technical flag per the 2024 document, transcribed with a
+comment naming the document. Then look at how courses store
+`field_of_study` today: if it is free text, validate it against this
+list on course create/edit (existing courses with a non-matching value
+are flagged in admin readiness, not broken); if 004/005 already
+constrain it, just wire the lookup. A course whose field is unknown to
+the list gets no classification and no jurisdiction hint.
 
-### 2. Email delivery on completion
-- On completion, after the snapshot and render succeed, send one email:
-  kind `certificate`, the PDF attached, a sentence naming the course,
-  credit, and completion date, and a link to the participant's
-  certificates page. Attachment support is the one extension the 017
-  email service needs (both backends; the `email_message` row records
-  the attachment filename, still never a body).
-- **Delivery failure cannot fail completion.** The send happens after
-  the completion transaction commits (background task or
-  post-commit hook — whatever fits the existing completion flow), and a
-  failure is recorded, not raised: the certificate row gains
-  `delivery_status` (`sent` / `failed` / `pending`) and
-  `delivered_at`. The participant can always download from their
-  account regardless — that path is what actually satisfies 9.01's
-  timeliness; the email is how it satisfies it without being asked.
-- Admin: a Resend action on the certificate (guarded, logged, updates
-  delivery status), and failed deliveries surfaced on the admin
-  certificates view. No automatic retry machinery — one loud flag and a
-  human button; retries are a follow-up if reality demands them.
+### 2. Jurisdiction policy table
+One row per jurisdiction code (unique, validated against
+`US_JURISDICTIONS`), admin-maintained:
+- `credit_increment`: enum `one_fifth` / `one_half` / `whole` /
+  `unknown` (default)
+- `non_technical_cap_note`: nullable free text — caps are per reporting
+  period and cannot be computed, only quoted (e.g. "no more than half
+  of total hours may be non-technical")
+- `source`: free text/URL naming where the rule was read — required to
+  display
+- `verified_on`: date — required to display
+- `notes`: nullable, admin-only
+A row is **displayable** only when `credit_increment` is not `unknown`,
+and `source` and `verified_on` are set. No seed data beyond the 55 empty
+codes (or create-on-edit; whichever is simpler — but never shipped
+increments). Docstring: reference data, not CPE records.
 
-### 3. Public verification
-- `GET /api/v1/certificates/verify/{code}` — public at `open`, 404
-  anonymously in `coming_soon` like every Phase C route (router walk
-  untouched). Response for a real code: valid; participant name; course
-  title; field of study and recommended credit as the snapshot recorded
-  them; completion date; sponsor name; the "Self study" program type.
-  All of it **from the snapshot**, never from today's course row — the
-  certificate is the frozen fact being verified.
-- Unknown, malformed, or revoked-in-some-future-sense codes all answer
-  the identical not-found shape. No existence oracle, no distinction.
-- Frontend `/certificates/verify` (a code-entry box) and
-  `/certificates/verify/{code}` (the result card, shareable URL).
-  **Namespace deliberately avoids 017's `/verify`** — that path is email
-  verification and stays untouched; a test pins both routes resolving
-  to their own pages.
-- Caddy rate limit on the verification GET mirroring the signup rule —
-  it is a public unauthenticated lookup and the only cost of politeness
-  is a config line.
+### 3. Participant state
+- Participants may set or change their own `state` from their account
+  page (the 017 column; dropdown from `US_JURISDICTIONS`, clearable).
+  It is their claim about themselves, not a credential — no verification
+  step. Admin-side state edit, if 009's account admin has one, is
+  untouched.
 
-### 4. Participant surface
-- The participant's certificates page (extend what exists): download,
-  the verification code with a copy affordance, and the shareable
-  verification link — so a participant can hand a board the link
-  instead of the PDF if they prefer.
+### 4. The hint
+- `GET /api/v1/courses/{code}/jurisdiction-note` — authed participant
+  only; 404 when the participant has no state, the jurisdiction row
+  isn't displayable, or the course isn't publicly renderable. **A
+  separate endpoint on purpose**: the 016 public payload and its
+  key-set test stay byte-for-byte untouched, and the hint is inherently
+  per-viewer, which a public cached payload should never be.
+- Response: the jurisdiction, the increment; when the increment is
+  coarser than one-fifth, the recommended credit rounded **down** to
+  that increment (7.01.1's arithmetic — e.g. 1.4 under one-half → 1.0),
+  labeled as computed; the cap note **only when the course's field is
+  non-technical**; `verified_on`; and a fixed sentence that boards of
+  accountancy have final authority on acceptance of CPE credits.
+- Frontend: a small "For your board (NH)" panel on the course page,
+  rendered only when the endpoint answers, showing exactly the
+  response; the final-authority sentence is not truncatable. Nothing
+  for anonymous visitors, participants without a state, or unverified
+  jurisdictions — absence, not a stub asking them to check back.
+- **Never on the certificate.** The certificate's credit and 50-minute
+  statement (9.01 item 10) are untouched; a test pins the certificate
+  render free of jurisdiction content.
 
-### 5. Tests and docs
-- Delivery: completion with a working console backend sends exactly one
-  `certificate` email with the attachment logged; completion with a
-  send that raises still completes, marks `failed`, and the admin
-  resend recovers it to `sent`.
-- Verification: real code returns snapshot facts (test mutates the
-  course after issuance and asserts the response did not move);
-  unknown/malformed identical; mode matrix; both `/verify` namespaces
-  resolve independently; rate-limit config present.
-- COMPLIANCE.md: 9.01 row updated — documentation is delivered
-  immediately by email and on demand from the account, well inside 60
-  days; 9.01.1 row for the verification page as the sponsor's
-  confirmation channel. Cite from the PDF.
-- OPERATIONS.md: a short "Certificate delivery (019)" note — what
-  `failed` means, the resend button, and that verification is public by
-  design.
+### 5. Admin
+- `/admin/jurisdictions`: the 55 rows, inline edit of the five fields,
+  a Displayable column derived live, and a staleness nudge (admin-only)
+  on rows whose `verified_on` is older than 12 months. Routes under
+  `/admin`, swept by 009's walk automatically.
+- OPERATIONS.md: a short "Jurisdiction policies (020)" section — the
+  displayability rule, that rows are Dane's research responsibility
+  with sources, and the annual re-verification nudge.
+
+### 6. Tests and docs
+- Displayability matrix (unknown increment / missing source / missing
+  date → 404 on the hint; complete row → 200).
+- Rounding: one-fifth board shows the stored credit unchanged;
+  one-half and whole boards show the computed round-down; the
+  computation never alters 005's stored value (assert the course row
+  is unread-only… i.e. unchanged).
+- Cap note appears only for non-technical fields; ASC842-PCX
+  (Accounting, technical) never shows one.
+- No-state participant, anonymous, and coming_soon all 404; the 016
+  key-set test and 015 router walk pass untouched.
+- Certificate render pinned jurisdiction-free.
+- COMPLIANCE.md: a 7.01 row — superCPE awards in one-fifth increments
+  (005 unchanged) and surfaces verified board increment differences to
+  the claiming CPA, who retains the Standard's own duty to check;
+  final authority stays with boards.
 
 ## Out of scope
-- Per-jurisdiction credit display (020) and waiting-list invitations
-  (021).
-- Any change to certificate content, the snapshot timing, or the
-  completion rules.
-- Revocation. No certificate has ever needed revoking; if one does, it
-  is its own carefully-considered feature, not a status enum stub built
-  on speculation.
-- Automatic delivery retries (flag + human button only, see above).
-- Email-change flows (still admin-only, per 017's known gap).
+- Tracking a participant's reporting-period totals or whether they are
+  near a cap — superCPE cannot know their other CPE and must not
+  pretend to.
+- Auto-populating or scraping board rules; any shipped increment
+  values.
+- Changing 005's calculation, the 0.2 minimum, or certificate content.
+- State-specific certificate statements or registration numbers (9.01
+  items 9/11) — nothing today requires them; if a board someday does,
+  that is its own feature.
+- Waiting-list invitations (021).
 
 ## Acceptance
-1. Completing a course in dev issues the certificate, sends the email
-   through the console backend with the PDF attached, and marks
-   delivery `sent`; a forced send failure leaves the completion intact,
-   marks `failed`, and Resend recovers it.
-2. The printed verification line appears on newly rendered PDFs;
-   backfilled dev certificates verify by code with unchanged PDFs.
-3. The public page confirms a real certificate from snapshot data even
-   after the course's title/credit change, and answers identically for
-   unknown and malformed codes.
-4. `/certificates/verify/*` is public at open and 404 in coming_soon;
-   017's `/verify` is untouched; the 015 router walk is green with its
-   allowlist unchanged.
-5. Full suite green; changelog entry written; nothing in the completion
-   path gained a new failure mode (the delivery tests prove it).
+1. Fresh database: no jurisdiction hint appears anywhere for anyone.
+2. Admin fills NH with one-fifth increment + source + date: a NH
+   participant sees the panel with the stored credit and the
+   final-authority sentence; a participant with no state, and an
+   anonymous visitor, see nothing.
+3. Admin sets a test row to one-half: the panel shows the computed
+   round-down labeled as computed; 005's stored value is unchanged
+   everywhere else.
+4. Cap note renders only when the course's field is non-technical per
+   the transcribed mapping.
+5. The 016 key-set test, the 015 router walk, and the certificate
+   render test all pass untouched.
+6. Full suite green; changelog entry written; the fields-of-study
+   mapping's changelog line names the 2024 document as its source.
 
 ## Notes for Claude Code
-- The send-after-commit ordering matters: a certificate email about a
-  completion that then rolled back would be a lie in someone's inbox.
-- The verification response is assembled from the snapshot columns/JSON
-  only; if a fact isn't in the snapshot, it does not appear, even if
-  the live course row has it.
-- ROADMAP: mark 019 built ahead of ship. Phase C remaining after this:
-  020, 021, and the open flip itself.
+- The rounding helper is three lines and must round down, never
+  half-up; property-test it across increments if quick.
+- ROADMAP: mark 020 built ahead of ship. After this, Phase C code is
+  021 plus the flip.
