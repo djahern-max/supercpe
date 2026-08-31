@@ -1,4 +1,5 @@
-from app.models.account import Account, AuthSession
+from app.models.account import Account, AuthSession, EmailVerificationToken
+from app.models.email_message import EmailMessage
 from app.models.attempt import Attempt, AttemptAnswer
 from app.models.audit import AuditExport
 from app.models.course import Course, CourseLesson
@@ -31,6 +32,8 @@ __all__ = [
     "Course",
     "CourseLesson",
     "CourseReview",
+    "EmailMessage",
+    "EmailVerificationToken",
     "Enrollment",
     "Evaluation",
     "EvaluationReview",

@@ -23,6 +23,7 @@ from app.routers import (
     my,
     player,
     policies,
+    register,
     review,
     site,
     sponsor,
@@ -78,4 +79,6 @@ app.include_router(my.router, prefix="/api/v1")
 app.include_router(player.router, prefix="/api/v1")
 app.include_router(policies.router, prefix="/api/v1")
 app.include_router(policies.admin_router, prefix="/api/v1")
+app.include_router(register.router, prefix="/api/v1")
+app.include_router(register.admin_router, prefix="/api/v1")
 app.include_router(sponsor.router, prefix="/api/v1")

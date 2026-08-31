@@ -431,6 +431,43 @@ export).
   `POST /api/v1/waiting-list` per minute per client IP, plus a hidden
   honeypot field answered with a normal 200 that stores nothing.
 
+## Outbound email (017)
+
+The app sends email through one service with two backends chosen by
+`EMAIL_BACKEND`: `console` (dev/test — the message goes to the app log
+and the `email_message` table, no network) and `smtp` (production —
+generic SMTP with STARTTLS). The code is provider-agnostic on purpose:
+choosing a provider is this runbook's decision, recorded here when made.
+
+**Provider: not yet chosen.** Record the provider, the account owner,
+and where the credentials live when the choice is made.
+
+To configure production email:
+
+1. Choose an SMTP provider and create credentials for a
+   `no-reply@supercpe.com` (or similar) sender. Set up SPF/DKIM for the
+   domain per the provider's instructions so verification email lands
+   in inboxes.
+2. Set all six variables in the production env: `EMAIL_BACKEND=smtp`,
+   `EMAIL_HOST`, `EMAIL_PORT` (587 for STARTTLS), `EMAIL_USERNAME`,
+   `EMAIL_PASSWORD`, `EMAIL_FROM`. They are all-or-nothing: a partial
+   set refuses to boot (`python -m app.cli preflight` catches it before
+   the deploy does).
+3. Prove the config before relying on it: sign in as admin, open
+   `/admin/sponsor`, and use **Send test email** — it delivers to your
+   own admin address through the configured backend and logs an
+   `email_message` row. A 502 with the SMTP error means the config is
+   wrong; nothing else in the site is affected.
+4. Only then flip `coming_soon → open`. The flip **refuses** while
+   `EMAIL_BACKEND` is not `smtp` or any `EMAIL_*` is unset — an open
+   site with a registration form that cannot send verification email
+   would be lying to the public. Absent email config is a valid state
+   only while the site is coming-soon.
+
+The `email_message` table logs kind, recipient, subject, and backend for
+every send — never the body. These are operational records, not CPE
+records; no retention floor applies.
+
 ## When /health goes red
 
 The monitor alerts on non-200. Fields, in the order to check:

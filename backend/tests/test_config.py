@@ -140,6 +140,76 @@ def test_prod_offsite_secret_follows_the_length_rule():
     assert any("OFFSITE_SECRET" in violation for violation in violations)
 
 
+EMAIL_OK = dict(
+    email_backend="smtp",
+    email_host="smtp.example.com",
+    email_port=587,
+    email_username="mailer",
+    email_password="e" * 20,
+    email_from="superCPE <no-reply@supercpe.com>",
+)
+
+
+def test_prod_with_smtp_email_has_no_violations():
+    assert boot_violations(make_settings(**PROD_OK, **EMAIL_OK)) == []
+
+
+def test_email_absent_entirely_is_valid_config():
+    """The site can boot — and run coming-soon — with no email settings
+    at all; the coming_soon -> open flip is what refuses (017), not boot."""
+    assert boot_violations(make_settings()) == []
+    assert boot_violations(make_settings(**PROD_OK)) == []
+
+
+@pytest.mark.parametrize(
+    "missing, unset",
+    [
+        ("email_host", ""),
+        ("email_port", 0),
+        ("email_username", ""),
+        ("email_password", ""),
+        ("email_from", ""),
+    ],
+)
+def test_email_config_is_all_or_nothing(missing, unset):
+    # In dev and with the console backend too: a partial EMAIL_* is a
+    # typo, never a valid state.
+    values = dict(EMAIL_OK, email_backend="console")
+    values[missing] = unset
+    violations = boot_violations(make_settings(**values))
+    assert len(violations) == 1
+    assert missing.upper() in violations[0]
+
+
+def test_smtp_backend_with_nothing_set_names_all_five():
+    violations = boot_violations(make_settings(email_backend="smtp"))
+    for var in ("EMAIL_HOST", "EMAIL_PORT", "EMAIL_USERNAME", "EMAIL_PASSWORD", "EMAIL_FROM"):
+        assert any(var in violation for violation in violations)
+
+
+def test_unknown_email_backend_is_refused():
+    violations = boot_violations(make_settings(email_backend="carrier-pigeon"))
+    assert any("EMAIL_BACKEND" in violation for violation in violations)
+
+
+@pytest.mark.parametrize(
+    "email_from, ok",
+    [
+        ("no-reply@supercpe.com", True),
+        ("superCPE <no-reply@supercpe.com>", True),
+        ("not-an-address", False),
+        ("@supercpe.com", False),
+    ],
+)
+def test_email_from_must_parse_as_an_address(email_from, ok):
+    values = dict(EMAIL_OK, email_from=email_from)
+    violations = boot_violations(make_settings(**values))
+    if ok:
+        assert violations == []
+    else:
+        assert any("EMAIL_FROM" in violation for violation in violations)
+
+
 def test_ensure_boot_config_lists_every_violation_at_once():
     values = dict(PROD_OK)
     values.update(dev=True, cors_origins="*", storage_backend="local")

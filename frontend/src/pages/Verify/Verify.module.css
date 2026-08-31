@@ -1,0 +1,36 @@
+.page {
+  max-width: 24rem;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  text-align: center;
+}
+
+.wordmark {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.accent {
+  color: var(--color-accent);
+}
+
+.body {
+  margin: 0;
+}
+
+.success {
+  margin: 0;
+  padding: var(--space-md);
+  background: var(--color-success-bg);
+  border-radius: var(--radius-md);
+}
+
+.error {
+  margin: 0;
+  padding: var(--space-md);
+  background: var(--color-error-bg);
+  border-radius: var(--radius-md);
+}

@@ -61,6 +61,7 @@ def launch_findings(db: Session) -> list[Finding]:
     published, and made available" before participants arrive). Block
     findings here are exactly what `site.site_open_blockers` refuses the
     open flip with; warn findings are reported beside them."""
+    from app.config import EMAIL_VARS, settings
     from app.constants.evaluation import EVALUATION_REVIEW_DAYS
     from app.services import courses as courses_module
     from app.services import disclosure
@@ -68,6 +69,30 @@ def launch_findings(db: Session) -> list[Finding]:
     from app.services import policies as policies_service
 
     findings: list[Finding] = []
+    # 017: a site that is open but cannot send verification email has a
+    # registration form that lies. The console backend is never enough to
+    # open; dev/test flips satisfy this with dummy SMTP config, not by
+    # weakening it.
+    if not (settings.email_backend == "smtp" and settings.email_configured):
+        missing = [
+            var for var in EMAIL_VARS if not getattr(settings, var.lower())
+        ]
+        detail = (
+            f"EMAIL_BACKEND is '{settings.email_backend}'"
+            + (f" and {', '.join(missing)} unset" if missing else "")
+        )
+        findings.append(
+            Finding(
+                code="email_not_configured",
+                level="block",
+                message=(
+                    "Outbound email is not configured for production "
+                    f"({detail}); an open site must be able to send "
+                    "verification email (017). Set EMAIL_BACKEND=smtp "
+                    "with complete EMAIL_* settings."
+                ),
+            )
+        )
     item_of = {"registration": 8, "refund": 9, "complaint": 10}
     for kind in policies_service.missing_kinds(db):
         findings.append(

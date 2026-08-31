@@ -1,9 +1,9 @@
 """Accounts and sessions: the server-vouched identity 6.01 requires.
 
 Authentication failures (login) are deliberately uniform: unknown email,
-wrong password, and inactive account all raise `AuthenticationFailed` with
-the same message, and unknown emails still cost a hash verification so the
-response time does not say which it was. Rule violations raise
+wrong password, inactive account, and unverified email (017) all raise
+`AuthenticationFailed` with the same message, and unknown emails still
+cost a hash verification so the response time does not say which it was. Rule violations raise
 `AuthRuleViolation` carrying error strings for the router to wrap in the
 same 422 `{"errors": [...]}` shape as every prior feature.
 """
@@ -67,7 +67,13 @@ def create_account(
     created_by: Account | None,
     display_name: str = "",
     must_change_password: bool = True,
+    email_verified: bool = True,
+    state: str | None = None,
 ) -> Account:
+    """`email_verified` defaults True: an admin (or the CLI) creating an
+    account and hand-delivering the initial password is the vouch that the
+    address reaches its holder. Only 017 self-registration passes False
+    and proves the address with an emailed token instead."""
     email = email.strip().lower()
     errors = []
     if "@" not in email or email.startswith("@") or email.endswith("@"):
@@ -87,6 +93,8 @@ def create_account(
         display_name=display_name,
         must_change_password=must_change_password,
         created_by_account_id=created_by.id if created_by else None,
+        email_verified_at=_now() if email_verified else None,
+        state=state,
     )
     db.add(account)
     db.commit()
@@ -117,6 +125,12 @@ def authenticate(db: Session, email: str, password: str) -> Account:
         raise AuthenticationFailed(LOGIN_FAILED)
 
     if not account.is_active:
+        raise AuthenticationFailed(LOGIN_FAILED)
+
+    # 017: an unverified self-registered account cannot log in, and the
+    # refusal is indistinguishable from a wrong password — no enumeration
+    # through the login door.
+    if account.email_verified_at is None:
         raise AuthenticationFailed(LOGIN_FAILED)
 
     account.failed_logins = 0

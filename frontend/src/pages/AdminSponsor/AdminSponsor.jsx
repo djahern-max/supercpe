@@ -5,6 +5,7 @@ import { ApiError } from "../../api/client";
 import { getAdminPolicies, publishPolicy } from "../../api/admin";
 import {
   getSponsor,
+  sendTestEmail,
   setStateRegistrations,
   updateSponsor,
 } from "../../api/sponsor";
@@ -109,6 +110,57 @@ function LaunchPanel({ findings }) {
         </div>
       )}
     </>
+  );
+}
+
+function TestEmailPanel() {
+  // 017: the runbook step that proves the SMTP config before the open
+  // flip. The result names the backend so a console send in production
+  // config reads as the warning it is.
+  const [result, setResult] = useState(null);
+  const [errors, setErrors] = useState(null);
+  const [sending, setSending] = useState(false);
+
+  const handleSend = async () => {
+    setSending(true);
+    setResult(null);
+    setErrors(null);
+    try {
+      setResult(await sendTestEmail());
+    } catch (err) {
+      if (err instanceof ApiError && err.data?.errors) {
+        setErrors(err.data.errors);
+      } else {
+        setErrors(["The request failed. Try again."]);
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className={styles.field}>
+      <button
+        className={styles.button}
+        type="button"
+        onClick={handleSend}
+        disabled={sending}
+      >
+        {sending ? "Sending…" : "Send test email"}
+      </button>
+      {result && (
+        <p className={styles.muted}>
+          Sent to {result.recipient} through the {result.backend} backend.
+        </p>
+      )}
+      {errors && (
+        <div className={styles.errorPanel}>
+          {errors.map((error) => (
+            <p key={error}>{error}</p>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -536,6 +588,7 @@ function AdminSponsor() {
             missingForIssuance={profile.missing_for_issuance}
           />
           <LaunchPanel findings={profile.launch_findings} />
+          <TestEmailPanel />
           <FindingsPanel findings={profile.findings} />
 
           <form className={styles.form} onSubmit={handleSaveProfile}>

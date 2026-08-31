@@ -1,3 +1,5 @@
+from email.utils import parseaddr
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PRODUCTION_ORIGIN = "https://supercpe.com"
@@ -28,6 +30,19 @@ OFFSITE_VARS = (
 # OFFSITE_ENDPOINT at DigitalOcean would be a second bucket, not a second
 # provider.
 DIGITALOCEAN_ENDPOINT_SUFFIX = "digitaloceanspaces.com"
+
+# Outbound email (017). Provider-agnostic SMTP on purpose: choosing a
+# provider is an ops step recorded in docs/OPERATIONS.md, not a code
+# change. Absent entirely is valid config while the site is coming-soon;
+# the coming_soon -> open flip is what refuses to proceed without it
+# (readiness.launch_findings), never boot.
+EMAIL_VARS = (
+    "EMAIL_HOST",
+    "EMAIL_PORT",
+    "EMAIL_USERNAME",
+    "EMAIL_PASSWORD",
+    "EMAIL_FROM",
+)
 
 
 class Settings(BaseSettings):
@@ -60,10 +75,24 @@ class Settings(BaseSettings):
     offsite_secret: str = ""
     # The git sha baked into the image at build time; `/health` reports it.
     app_version: str = "dev"
+    # console | smtp (017). console writes the message to the log and the
+    # outbound table — no network; it is the dev and test backend. smtp is
+    # production: generic SMTP over TLS from the EMAIL_* values below.
+    email_backend: str = "console"
+    email_host: str = ""
+    # 0 means unset; the EMAIL_* group is all-or-nothing.
+    email_port: int = 0
+    email_username: str = ""
+    email_password: str = ""
+    email_from: str = ""
 
     @property
     def offsite_configured(self) -> bool:
         return all(getattr(self, var.lower()) for var in OFFSITE_VARS)
+
+    @property
+    def email_configured(self) -> bool:
+        return all(getattr(self, var.lower()) for var in EMAIL_VARS)
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -100,6 +129,34 @@ def boot_violations(settings: Settings) -> list[str]:
                     f"{var} is required when any OFFSITE_* variable is set "
                     "(the off-site mirror is all-or-nothing)."
                 )
+
+    if settings.email_backend not in ("console", "smtp"):
+        violations.append(
+            "EMAIL_BACKEND must be 'console' or 'smtp', not "
+            f"'{settings.email_backend}'."
+        )
+    email_set = [var for var in EMAIL_VARS if getattr(settings, var.lower())]
+    if email_set and len(email_set) < len(EMAIL_VARS):
+        for var in EMAIL_VARS:
+            if var not in email_set:
+                violations.append(
+                    f"{var} is required when any EMAIL_* variable is set "
+                    "(the email settings are all-or-nothing)."
+                )
+    # With a partial EMAIL_* set the all-or-nothing check above already
+    # names each missing variable; this covers smtp with nothing set.
+    if settings.email_backend == "smtp" and not email_set:
+        for var in EMAIL_VARS:
+            violations.append(f"{var} is required when EMAIL_BACKEND=smtp.")
+    if settings.email_from:
+        # parseaddr tolerates a display name ("superCPE <x@y>"); the
+        # address half must have the same shape services.auth accepts.
+        address = parseaddr(settings.email_from)[1]
+        if "@" not in address or address.startswith("@") or address.endswith("@"):
+            violations.append(
+                f"EMAIL_FROM ('{settings.email_from}') does not parse as "
+                "an email address."
+            )
 
     if settings.env == "prod":
         if settings.dev:

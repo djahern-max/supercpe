@@ -16,6 +16,19 @@ from app.storage import LocalStorage, get_storage
 ADMIN_EMAIL = "admin@supercpe.test"
 ADMIN_PASSWORD = "correct-horse-battery"
 
+# 017: the launch gate refuses coming_soon -> open unless the email
+# backend is smtp with complete settings. The test env satisfies it with
+# dummy SMTP config — the gate itself is never weakened — while every
+# test that actually sends email forces the console backend through the
+# `console_email` fixture, so nothing in the suite touches the network
+# (.invalid is reserved and unresolvable if one ever slips through).
+settings.email_backend = "smtp"
+settings.email_host = "smtp.invalid"
+settings.email_port = 587
+settings.email_username = "mailer"
+settings.email_password = "not-a-real-password"
+settings.email_from = "no-reply@supercpe.test"
+
 
 @pytest.fixture(scope="session")
 def test_engine():
@@ -55,7 +68,8 @@ def db_session(test_engine):
                 "course_reviews, course_lessons, courses, lesson_packages, "
                 "site_mode_changes, sponsor_profile, "
                 "sponsor_state_registrations, subject_matter_experts, "
-                "waiting_list, sessions, accounts RESTART IDENTITY"
+                "waiting_list, email_message, email_verification_tokens, "
+                "sessions, accounts RESTART IDENTITY"
             )
         )
 
@@ -110,6 +124,14 @@ def login(client, email, password):
     )
     assert response.status_code == 200, response.json()
     return response
+
+
+@pytest.fixture
+def console_email(monkeypatch):
+    """Route every send in this test through the console backend (log +
+    outbound table, no network); the launch gate still sees the module's
+    dummy SMTP config wherever it is read before this fixture applies."""
+    monkeypatch.setattr(settings, "email_backend", "console")
 
 
 @pytest.fixture

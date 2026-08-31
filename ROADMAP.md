@@ -111,7 +111,10 @@ ID, flip site mode to `open`.
   during Phase B behind the 009 gate, so it is live the moment site mode
   flips to `open` — which the gate now also refuses until a published
   course discloses completely)
-- 017 Self-registration and email verification
+- 017 Self-registration and email verification (built 2026-08-31, ahead
+  of ship like 016: every public route 404s in `coming_soon`, and the
+  open gate now also refuses until the email backend is smtp with
+  complete settings)
 - 018 Stripe checkout; payment success creates the enrollment (010) and
   starts the one-year clock; refunds follow the 8.01.1 policy page
 - 019 Certificate delivery by email and a public verification page
@@ -186,3 +189,8 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   Turning it on is the five `OFFSITE_*` values in the server `.env` plus
   one `backup.sh` run; no code. (COMPLIANCE.md carries the matching
   2026-08-30 correction row.)
+- Password reset (017a?): 002 built no reset for the hidden login and 017
+  deliberately did not ride it in. The 017 token machinery
+  (`email_verification_tokens`, hashed single-use tokens, supersede-on-
+  resend) was written so a reset can reuse the shape unchanged; it is its
+  own small feature.

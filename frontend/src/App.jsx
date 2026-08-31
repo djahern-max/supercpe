@@ -22,8 +22,11 @@ import MyCourse from "./pages/MyCourse/MyCourse.jsx";
 import MyCourses from "./pages/MyCourses/MyCourses.jsx";
 import MyLesson from "./pages/MyLesson/MyLesson.jsx";
 import Policies from "./pages/Policies/Policies.jsx";
+import Register from "./pages/Register/Register.jsx";
+import ResendVerification from "./pages/ResendVerification/ResendVerification.jsx";
 import ReviewCourse from "./pages/ReviewCourse/ReviewCourse.jsx";
 import ReviewHome from "./pages/ReviewHome/ReviewHome.jsx";
+import Verify from "./pages/Verify/Verify.jsx";
 import styles from "./App.module.css";
 
 function NotFound() {
@@ -60,6 +63,14 @@ function App() {
         <Route
           path="/how-it-works"
           element={<SiteGate><HowItWorks /></SiteGate>}
+        />
+        {/* 017: behind SiteGate like the catalog — in coming_soon these
+            paths render the landing page; the API routes 404 too. */}
+        <Route path="/register" element={<SiteGate><Register /></SiteGate>} />
+        <Route path="/verify" element={<SiteGate><Verify /></SiteGate>} />
+        <Route
+          path="/resend-verification"
+          element={<SiteGate><ResendVerification /></SiteGate>}
         />
         {/* Reachable but unlinked; staff and testers know the address. */}
         <Route path="/login" element={<Login />} />

@@ -11,6 +11,7 @@ import re
 
 from fastapi.routing import APIRoute
 
+from app.config import settings
 from app.main import app
 from tests.conftest import (
     ADMIN_EMAIL,
@@ -29,7 +30,18 @@ PASSWORD = "a-long-enough-password"
 
 
 def open_the_site(client, note=""):
-    response = client.put(SITE_MODE_URL, json={"site_mode": "open", "note": note})
+    # 017: the flip requires the smtp backend with complete settings. The
+    # test env carries dummy SMTP config (conftest); restore the smtp
+    # backend for the flip itself in case the test at hand forced console
+    # for its sends (`console_email`).
+    before = settings.email_backend
+    settings.email_backend = "smtp"
+    try:
+        response = client.put(
+            SITE_MODE_URL, json={"site_mode": "open", "note": note}
+        )
+    finally:
+        settings.email_backend = before
     assert response.status_code == 200, response.json()
     return response
 

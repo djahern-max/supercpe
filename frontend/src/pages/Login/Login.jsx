@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { login } from "../../api/auth";
 import { roleHome } from "../../auth/RequireRole.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
@@ -78,6 +78,14 @@ function Login() {
         >
           {submitting ? "Signing in…" : "Sign in"}
         </button>
+        {/* 017: a general affordance for everyone — an unverified login
+            failure looks exactly like a wrong password, so this link may
+            not single anyone out. */}
+        <p className={styles.resendLink}>
+          <Link to="/resend-verification">
+            Didn't get your verification email?
+          </Link>
+        </p>
       </form>
     </main>
   );

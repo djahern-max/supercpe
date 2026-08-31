@@ -1675,3 +1675,107 @@ the deployed page) were completed by Dane on 2026-08-30.
   course passes; a failing course alongside a passing one is visible
   only on its own admin page (and is served publicly with null policy
   links — reachable only from pre-016 dev data).
+
+## 017 — Self-registration and email verification
+Shipped: 2026-08-31
+
+**What changed**
+- One email service (`backend/app/services/email.py`) with two backends
+  chosen by `EMAIL_BACKEND`: `console` (dev and every test — message to
+  the log, no network) and `smtp` (generic SMTP over STARTTLS from the
+  five `EMAIL_*` env vars; provider-agnostic, the provider choice is an
+  OPERATIONS.md decision). 019's certificates and 021's invitations will
+  call the same `send`.
+- Outbound log: `email_message` table (kind, recipient, subject,
+  backend, created_at — never the body). Declared operational records,
+  not CPE records, like 015's waiting list.
+- `POST /api/v1/register` `{name, email, password, state?}`: creates an
+  unverified `participant` account. State of licensure is optional,
+  validated against `US_JURISDICTIONS` when present, stored in a new
+  nullable `accounts.state` column. Email shape and the 002 password
+  policy (`MIN_PASSWORD_LENGTH`) are reused verbatim from the auth
+  service — no second policy.
+- The constant response: every well-formed registration or resend
+  answers the identical 200 (`CHECK_YOUR_EMAIL`, one shared constant in
+  `services/registration.py`). Behind it: new email → account +
+  verification email; existing active → already-registered email, no new
+  row; deactivated → contact-the-sponsor email, no reactivation (9.02 —
+  reactivation stays the deliberate 009 admin action). The taken-email
+  branches hash the offered password anyway so response time matches the
+  branch that stores one.
+- Verification: `email_verification_tokens` — ≥256-bit random tokens
+  stored as sha256 (fast hash on purpose; they are high-entropy, argon2
+  is for passwords), 48-hour expiry (`VERIFICATION_TOKEN_*` constants),
+  single-use, one live token per account (resend supersedes the prior).
+  `POST /api/v1/verify` consumes the token and sets
+  `accounts.email_verified_at`; expired/unknown/used/superseded tokens
+  fail with one message. `POST /api/v1/resend-verification` follows the
+  registration constant-response rule.
+- Login: an unverified account is refused with the same 401 body as a
+  wrong password (`authenticate` in `services/auth.py`). Admin/CLI
+  account creation is unchanged: `create_account` marks those verified
+  at creation (the hand-delivered initial password is the vouch), and
+  the migration backfills all existing accounts the same way.
+- 012 config validation learned the email settings: `EMAIL_*` is
+  all-or-nothing, `EMAIL_FROM` must parse as an address, unknown
+  `EMAIL_BACKEND` refuses boot; absent entirely is valid while
+  coming-soon.
+- Open gate: `launch_findings` gained the block finding
+  `email_not_configured` — `coming_soon → open` refuses unless
+  `EMAIL_BACKEND=smtp` with complete settings. Tests satisfy it with
+  dummy SMTP config in the test env (conftest), never by weakening it.
+- Admin: `POST /api/v1/admin/email/test` sends a test email to the
+  requesting admin through the configured backend (502 with the SMTP
+  error on failure); a Send-test-email button on `/admin/sponsor`.
+  OPERATIONS.md gained the "Outbound email (017)" runbook section.
+- Site mode: all three public routes sit behind
+  `require_site_open_or_session` — 404 anonymously in `coming_soon`, the
+  015 router walk stayed green with its allowlist untouched. Caddy rate
+  limits register/verify/resend like login (10/min/IP).
+- Frontend: `/register` (with the state dropdown and a link to the
+  published registration policy — linked, not restated, per 8.01.1),
+  `/verify`, `/resend-verification`, and a general "Didn't get your
+  verification email?" link on the login page (a targeted hint would
+  undo the login-door indistinguishability). The course page's reserved
+  Registration section is untouched — enrollment is 018's.
+- Tests: 313 passing (25 new) — byte-identical constant responses with
+  the outbound log proving the branch, token lifecycle, login refusals,
+  mode matrix, open-gate refusal/success, EMAIL_* config matrix, admin
+  test email through both a working and a refusing backend.
+
+**Standards touched**
+- 8.01.1 — the registration form links the published
+  registration/attendance policy; the flow cannot go live before the
+  policy and the email machinery exist (open-gate findings).
+- 9.02 — self-registered accounts inherit deactivate-never-delete
+  unchanged; re-registration can never reactivate or duplicate a
+  deactivated account. COMPLIANCE.md gained both rows.
+
+**Decisions**
+- The email backend is explicit config (`EMAIL_BACKEND`), not derived
+  from whether `EMAIL_*` is set: the test env must satisfy the open gate
+  with dummy SMTP settings while every actual test send stays on the
+  console backend, which requires the two to vary independently.
+- Verification links are built on `settings.cors_origins_list[0]` — in
+  prod 012 already forces CORS_ORIGINS to exactly the production origin,
+  so no new "site URL" variable was invented.
+- The table is named `email_message` (singular), following the feature
+  spec's naming verbatim over the plural house convention.
+- Self-registration fits the existing 002 account model with no parallel
+  table: two new nullable columns (`email_verified_at`, `state`), no
+  change to roles. The migration backfills `email_verified_at =
+  created_at` for existing accounts so admin/tester login behavior is
+  untouched.
+- Resend for an unknown address sends nothing (there is no one to
+  write to) but answers the same constant 200.
+
+**Known gaps**
+- Password reset does not exist (002 never built it); recorded as the
+  017a improvement note in ROADMAP.md. The token machinery was shaped
+  for that reuse.
+- The SMTP path is exercised in tests only as far as a refused
+  connection; a real provider send is the operator's step 3 in the new
+  OPERATIONS.md section, before the open flip.
+- No self-service email-address change; that remains an admin action.
+- The 015 browser-check date correction was conditional on Dane
+  reporting one; none was reported, so no correction entry.
