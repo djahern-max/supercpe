@@ -290,3 +290,16 @@ export function voidEnrollment(enrollmentId) {
     method: "POST",
   });
 }
+
+// 020: the per-jurisdiction credit policy table — always all 55 codes;
+// a row is created the first time it is saved.
+export function listJurisdictions() {
+  return request("/api/v1/admin/jurisdictions");
+}
+
+export function updateJurisdiction(code, body) {
+  return request(`/api/v1/admin/jurisdictions/${code}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}

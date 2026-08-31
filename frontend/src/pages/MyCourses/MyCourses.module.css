@@ -141,3 +141,13 @@
 .footerLink a:hover {
   text-decoration: underline;
 }
+
+.accountLink {
+  color: var(--color-accent);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.accountLink:hover {
+  text-decoration: underline;
+}

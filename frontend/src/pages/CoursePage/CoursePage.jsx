@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { startCheckout } from "../../api/checkout";
 import { ApiError } from "../../api/client";
-import { getPublicCourse } from "../../api/courses";
+import { getJurisdictionNote, getPublicCourse } from "../../api/courses";
 import { listMyCourses } from "../../api/my";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { formatUsd } from "../../constants/money";
@@ -26,6 +26,68 @@ function personLine(person) {
   return person.credentials
     ? `${person.name}, ${person.credentials}`
     : person.name;
+}
+
+const INCREMENT_LABELS = {
+  one_fifth: "one-fifth (0.2)",
+  one_half: "one-half (0.5)",
+  whole: "whole (1.0)",
+};
+
+// 020: what this participant's board's verified rules mean for this
+// course's credit. Renders exactly what the endpoint answers and nothing
+// when it 404s — no stub for visitors, participants without a state, or
+// unverified jurisdictions. The final-authority sentence always renders
+// in full.
+function JurisdictionNote({ course }) {
+  const { account } = useSession();
+  const [note, setNote] = useState(null);
+
+  const isParticipant = account?.role === "participant";
+
+  useEffect(() => {
+    if (!isParticipant) return undefined;
+    let cancelled = false;
+    getJurisdictionNote(course.course_code)
+      .then((data) => {
+        if (!cancelled) setNote(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isParticipant, course.course_code]);
+
+  if (!note) return null;
+
+  return (
+    <aside className={styles.jurisdictionNote}>
+      <h2 className={styles.jurisdictionTitle}>
+        For your board ({note.jurisdiction})
+      </h2>
+      <p className={styles.jurisdictionFact}>
+        {note.jurisdiction_name} accepts CPE credit in{" "}
+        {INCREMENT_LABELS[note.credit_increment]} increments.
+      </p>
+      {note.board_rounded_credit !== null && (
+        <p className={styles.jurisdictionFact}>
+          The recommended {note.recommended_credit} credit rounds down to{" "}
+          <strong>{note.board_rounded_credit}</strong> in that increment
+          (computed, not the course's recommended credit).
+        </p>
+      )}
+      {note.non_technical_cap_note && (
+        <p className={styles.jurisdictionFact}>
+          This course's field of study is non-technical there:{" "}
+          {note.non_technical_cap_note}
+        </p>
+      )}
+      <p className={styles.jurisdictionVerified}>
+        Verified {formatDate(note.verified_on)}.
+      </p>
+      <p className={styles.jurisdictionAuthority}>{note.final_authority}</p>
+    </aside>
+  );
 }
 
 // 018: the live Registration section. What it shows follows the session:
@@ -253,6 +315,10 @@ function CoursePage() {
         <dt>Advance preparation</dt>
         <dd>{course.advance_preparation}</dd>
       </dl>
+
+      {/* 020: per-viewer, from its own endpoint — absent for everyone
+          the hint does not apply to. */}
+      <JurisdictionNote course={course} />
 
       {/* 8.01 items 8-10: links to the published policies with the
           current version's effective date, never inlined text. */}

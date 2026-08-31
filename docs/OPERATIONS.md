@@ -553,6 +553,30 @@ rate limited in Caddy like the other anonymous routes. Do not treat a
 verification code as a secret — it identifies one certificate, grants
 nothing, and is meant to be handed out.
 
+## Jurisdiction policies (020)
+
+`/admin/jurisdictions` holds one row per US licensing jurisdiction: the
+board's accepted credit increment, any non-technical cap (quoted, never
+computed), the source the rule was read from, and the date it was
+verified. The table ships empty on purpose and **filling it is Dane's
+research responsibility** — every fact a participant sees is one a human
+checked against a board source on a date.
+
+A row reaches participants (the "For your board" panel on course pages)
+only when it is **Displayable**: increment set (not Unknown), source
+filled, verification date set. Anything less shows nothing — no stub, no
+"check back later". Participants opt in by setting their state of
+licensure on their account page; nothing is shown to anyone else, and
+nothing from this table ever reaches a certificate.
+
+Rows verified more than 12 months ago get a **Re-verify** nudge in the
+admin table. Once a year (or when a board announces a rule change),
+re-read the source, update the row if the rule moved, and set the
+verification date to today. Boards of accountancy keep final authority
+on acceptance of CPE credits; the panel says so in a fixed sentence and
+these rows must never be written as if superCPE were speaking for a
+board.
+
 ## When /health goes red
 
 The monitor alerts on non-200. Fields, in the order to check:

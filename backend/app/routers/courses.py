@@ -7,9 +7,11 @@ everyone else sees 404 (require_site_open_or_session)."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth import require_site_open_or_session
+from app.auth import optional_account, require_site_open_or_session
 from app.constants.certificate import PROGRAM_TYPE
+from app.constants.jurisdiction_policy import FINAL_AUTHORITY_SENTENCE
 from app.db import get_db
+from app.models.account import Account
 from app.models.course import Course
 from app.schemas.course import (
     CoursePublicDetail,
@@ -20,7 +22,9 @@ from app.schemas.course import (
     PublicOutlineLesson,
     PublicPerson,
 )
+from app.schemas.jurisdiction import JurisdictionNoteOut
 from app.services import courses, credit, development
+from app.services import jurisdictions as jurisdictions_service
 from app.services import policies as policies_service
 
 router = APIRouter(
@@ -143,3 +147,33 @@ def get_course(course_code: str, db: Session = Depends(get_db)):
     if course is None or not _renderable(course):
         raise HTTPException(status_code=404, detail="Course not found")
     return public_detail(db, course)
+
+
+@router.get(
+    "/{course_code}/jurisdiction-note", response_model=JurisdictionNoteOut
+)
+def jurisdiction_note(
+    course_code: str,
+    db: Session = Depends(get_db),
+    account: Account | None = Depends(optional_account),
+):
+    """020: what this participant's board's verified rules mean for this
+    course's recommended credit. A separate endpoint on purpose — the
+    016 public payload stays byte-for-byte cacheable, and this answer is
+    per-viewer. Every miss is the same 404: no participant session, no
+    state given, nothing verified for the state, or no renderable course
+    — absence, not a stub."""
+    course = courses.get_published(db, course_code)
+    if course is None or not _renderable(course):
+        raise HTTPException(status_code=404, detail="Not found")
+    state = (
+        account.state
+        if account is not None and account.role == "participant"
+        else None
+    )
+    note = jurisdictions_service.note_for(db, state, course)
+    if note is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return JurisdictionNoteOut(
+        **note, final_authority=FINAL_AUTHORITY_SENTENCE
+    )

@@ -127,6 +127,10 @@ ID, flip site mode to `open`.
   email backend, so both go live with the flip and need no new gate)
 - 020 Per-jurisdiction credit policy: rounding increment (7.01) and
   non-technical caps, read from a table the admin maintains
+  (built 2026-08-31, ahead of ship like 016–019: the hint endpoint 404s
+  anonymously in `coming_soon` and the policy table ships empty, so
+  nothing shows anywhere until Dane verifies rows — OPERATIONS.md
+  "Jurisdiction policies (020)")
 - 021 Waiting-list invitation emails
 
 (Phase C shifted by one on 2026-08-30 when Phase B was renumbered;

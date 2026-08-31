@@ -95,7 +95,8 @@ def round_down(raw: Decimal) -> Decimal:
     """floor(raw / 0.2) * 0.2 — one-fifth increments, never up (7.01, 7.02.6).
 
     State boards differ on acceptable increments of CPE credit (7.01);
-    superCPE will need a per-jurisdiction increment policy (roadmap 019).
+    what a verified board increment means for this award is surfaced —
+    never stored — by services.jurisdictions (020).
     One-fifth is the finest granularity the Standards permit for self study,
     and rounding down to it never overstates under any coarser policy.
     """

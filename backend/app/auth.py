@@ -37,6 +37,16 @@ def current_account(
     return account
 
 
+def optional_account(
+    request: Request, db: Session = Depends(get_db)
+) -> Account | None:
+    """The account behind the session, or None — for routes whose answer
+    is per-viewer but whose absence must look like absence: 020's
+    jurisdiction hint answers 404, never 401, so it does not advertise
+    that a hint exists for somebody else."""
+    return _resolve_account(request, db)
+
+
 def require_role(*roles: str):
     """Dependency factory: a valid session whose account holds one of the
     named roles. While `must_change_password` is set, every route behind

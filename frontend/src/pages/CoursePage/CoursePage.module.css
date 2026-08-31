@@ -190,3 +190,38 @@
   color: var(--color-text-muted);
   line-height: 1.6;
 }
+
+/* 020: the per-jurisdiction hint panel. */
+.jurisdictionNote {
+  margin-top: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+
+.jurisdictionTitle {
+  margin: 0 0 var(--space-xs);
+  font-size: 1.125rem;
+}
+
+.jurisdictionFact {
+  margin: 0 0 var(--space-xs);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.jurisdictionVerified {
+  margin: 0 0 var(--space-xs);
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+/* The final-authority sentence renders whole — no clamps, no overflow
+   hiding, ever. */
+.jurisdictionAuthority {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}

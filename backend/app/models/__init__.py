@@ -11,6 +11,7 @@ from app.models.enrollment import (
     ReviewAnswer,
 )
 from app.models.evaluation import Evaluation, EvaluationReview
+from app.models.jurisdiction import JurisdictionPolicy
 from app.models.lesson_package import LessonPackage
 from app.models.payment import Payment, StripeWebhookEvent
 from app.models.policy import PolicyVersion
@@ -38,6 +39,7 @@ __all__ = [
     "Enrollment",
     "Evaluation",
     "EvaluationReview",
+    "JurisdictionPolicy",
     "LessonPackage",
     "LessonProgress",
     "Payment",

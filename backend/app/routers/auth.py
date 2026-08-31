@@ -11,12 +11,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.auth import current_account
+from app.auth import current_account, require_role
 from app.config import settings
 from app.constants.auth import SESSION_ABSOLUTE_HOURS, SESSION_COOKIE
+from app.constants.jurisdictions import US_JURISDICTIONS
 from app.db import get_db
 from app.models.account import Account
-from app.schemas.auth import ChangePasswordRequest, LoginRequest, MeOut
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    LoginRequest,
+    MeOut,
+    MyStateOut,
+    MyStateRequest,
+)
 from app.schemas.package import ValidationErrors
 from app.services import auth as auth_service
 from app.services.auth import AuthenticationFailed, AuthRuleViolation
@@ -101,6 +108,43 @@ def logout_all(
 @router.get("/me", response_model=MeOut)
 def me(account: Account = Depends(current_account)):
     return _me(account)
+
+
+@router.get("/me/state", response_model=MyStateOut)
+def my_state(
+    account: Account = Depends(require_role("participant")),
+):
+    """020: the state of licensure the jurisdiction hint keys on. The
+    participant's claim about themselves, not a credential — no
+    verification step, and it never reaches a certificate."""
+    return MyStateOut(state=account.state)
+
+
+@router.put(
+    "/me/state",
+    response_model=MyStateOut,
+    dependencies=[Depends(require_json)],
+    responses={422: {"model": ValidationErrors}},
+)
+def set_my_state(
+    payload: MyStateRequest,
+    db: Session = Depends(get_db),
+    account: Account = Depends(require_role("participant")),
+):
+    state = (payload.state or "").strip().upper()
+    if state and state not in US_JURISDICTIONS:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "errors": [
+                    f'"{state}" is not a two-letter US licensing '
+                    "jurisdiction code"
+                ]
+            },
+        )
+    account.state = state or None
+    db.commit()
+    return MyStateOut(state=account.state)
 
 
 @router.post(

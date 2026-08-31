@@ -1982,3 +1982,78 @@ Shipped: 2026-08-31
   retries become a follow-up only if reality demands them.
 - Revocation remains deliberately unbuilt; every code that ever
   verified keeps verifying.
+
+## 020 — Per-jurisdiction credit policy
+Shipped: 2026-08-31
+
+**What changed**
+- `jurisdiction_policies` table (migration `c4d7e81f2a90`): one
+  admin-maintained row per `US_JURISDICTIONS` code — credit increment
+  (`one_fifth`/`one_half`/`whole`/`unknown`), quoted non-technical cap
+  note, source, verification date, admin-only notes. Ships empty;
+  create-on-edit, no seeded increments ever. Displayable (increment
+  known + source + date) and the 12-month re-verify nudge are derived
+  live, never stored.
+- `/admin/jurisdictions` (API and page): all 55 codes with inline edit
+  of the five fields, a Displayable column, and the staleness nudge.
+  Guarded by 009's admin walk automatically.
+- Participants set/change/clear their own state of licensure on a new
+  `/account` page (`GET`/`PUT /auth/me/state`, validated against
+  `US_JURISDICTIONS`) — their claim, no verification step. 017's
+  registration flow and admin surfaces untouched.
+- `GET /courses/{code}/jurisdiction-note`: the per-viewer hint — the
+  verified increment; when coarser than one-fifth, the recommended
+  credit rounded **down** to it (7.01.1's arithmetic, computed per
+  request, labeled computed, never stored); the cap note only when the
+  course's field is non-technical per the 2024 Fields of Study
+  classification already transcribed in `constants/fields_of_study.py`
+  (this feature wires the flag's first reader); the verification date;
+  and a fixed final-authority sentence. Every miss — anonymous, no
+  state, unverified row, unknown field, unrenderable course — is the
+  same 404: absence, not a stub.
+- Course page renders a "For your board (XX)" panel with exactly that
+  response; the final-authority sentence renders whole. 016's public
+  payload and key-set test byte-for-byte untouched (separate endpoint
+  on purpose: the hint is per-viewer, the payload is cacheable).
+- Certificate render pinned jurisdiction-free by test; 005's stored
+  credit asserted unchanged by the round-down.
+- Constants in `constants/jurisdiction_policy.py` (7.01's three
+  increments as Decimal steps, the 12-month cadence, the sentence).
+- OPERATIONS.md "Jurisdiction policies (020)"; COMPLIANCE.md gained a
+  7.01/7.01.1 update row; ROADMAP marks 020 built ahead of ship.
+- 364 tests (24 new).
+
+**Standards touched**
+- 7.01 — board increment differences are now surfaced per verified
+  jurisdiction to the claiming CPA, who keeps the Standard's own duty
+  to check; awards stay one-fifth (005 unchanged).
+- 7.01.1 — the round-down-to-coarser-increment arithmetic, computed
+  per request for display only.
+
+**Decisions**
+- The hint answers 404 for every miss (including anonymous, via a new
+  `optional_account` dependency) rather than 401 — whether a hint
+  exists for somebody is nobody else's business, matching /my's 404
+  posture.
+- `/auth/me/state` is its own GET/PUT pair; `MeOut` and its exact-key
+  test stay untouched.
+- Caps are quoted text per reporting period, never computed —
+  superCPE cannot know a CPA's other CPE and must not pretend to.
+- `field_of_study` was already constrained to the NASBA list at
+  package ingest (002's CHECK + validation), so no course-side
+  validation or readiness flag was needed; the technical flag's lookup
+  is `FIELDS_OF_STUDY.get`, and an unknown/legacy value yields no hint.
+- A one-fifth board shows the stored credit with no computed value at
+  all — there is nothing to compute.
+- The fields-of-study technical/non-technical mapping is transcribed
+  from `docs/2024-Fields-of-Study.pdf` (January 2024), done in 002;
+  this feature is its first reader.
+
+**Known gaps**
+- The table ships empty and stays empty until Dane verifies rows;
+  until then the feature is invisible everywhere (by design, but worth
+  saying: deploying this changes nothing participants see).
+- Reporting-period cap arithmetic is deliberately out of scope —
+  superCPE cannot know a participant's other CPE.
+- Deploy is the operator's: run the migration, reload; no new env
+  vars, no Caddy change.

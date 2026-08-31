@@ -8,11 +8,13 @@ import AdminCourseAttempts from "./pages/AdminCourseAttempts/AdminCourseAttempts
 import AdminCourseDetail from "./pages/AdminCourseDetail/AdminCourseDetail.jsx";
 import AdminCoursePreview from "./pages/AdminCoursePreview/AdminCoursePreview.jsx";
 import AdminCourses from "./pages/AdminCourses/AdminCourses.jsx";
+import AdminJurisdictions from "./pages/AdminJurisdictions/AdminJurisdictions.jsx";
 import AdminPackages from "./pages/AdminPackages/AdminPackages.jsx";
 import AdminPayments from "./pages/AdminPayments/AdminPayments.jsx";
 import AdminSmes from "./pages/AdminSmes/AdminSmes.jsx";
 import AdminSponsor from "./pages/AdminSponsor/AdminSponsor.jsx";
 import AdminWaitingList from "./pages/AdminWaitingList/AdminWaitingList.jsx";
+import Account from "./pages/Account/Account.jsx";
 import Catalog from "./pages/Catalog/Catalog.jsx";
 import ChangePassword from "./pages/ChangePassword/ChangePassword.jsx";
 import CoursePage from "./pages/CoursePage/CoursePage.jsx";
@@ -95,6 +97,8 @@ function App() {
           path="/purchase/success"
           element={participant(<PurchaseSuccess />)}
         />
+        {/* 020: the account page — today just the state of licensure. */}
+        <Route path="/account" element={participant(<Account />)} />
         <Route path="/my/courses" element={participant(<MyCourses />)} />
         <Route
           path="/my/courses/:enrollmentId"
@@ -127,6 +131,10 @@ function App() {
         <Route
           path="/admin/courses/:code/preview/:packageId"
           element={preview(<AdminCoursePreview />)}
+        />
+        <Route
+          path="/admin/jurisdictions"
+          element={admin(<AdminJurisdictions />)}
         />
         <Route path="/admin/packages" element={admin(<AdminPackages />)} />
         <Route path="/admin/payments" element={admin(<AdminPayments />)} />

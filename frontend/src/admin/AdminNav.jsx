@@ -50,6 +50,12 @@ function AdminNav() {
         Accounts
       </NavLink>
       <NavLink
+        to="/admin/jurisdictions"
+        className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
+      >
+        Jurisdictions
+      </NavLink>
+      <NavLink
         to="/admin/waiting-list"
         className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
       >

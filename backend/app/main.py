@@ -10,6 +10,7 @@ from app.routers import (
     admin_courses,
     admin_enrollments,
     admin_evaluations,
+    admin_jurisdictions,
     admin_packages,
     admin_payments,
     admin_smes,
@@ -67,6 +68,7 @@ app.include_router(admin_audit.router, prefix="/api/v1")
 app.include_router(admin_courses.router, prefix="/api/v1")
 app.include_router(admin_evaluations.router, prefix="/api/v1")
 app.include_router(admin_enrollments.router, prefix="/api/v1")
+app.include_router(admin_jurisdictions.router, prefix="/api/v1")
 app.include_router(admin_packages.router, prefix="/api/v1")
 app.include_router(admin_payments.router, prefix="/api/v1")
 app.include_router(admin_smes.router, prefix="/api/v1")

@@ -24,6 +24,16 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class MyStateOut(BaseModel):
+    state: str | None
+
+
+class MyStateRequest(BaseModel):
+    # A US_JURISDICTIONS code, or null/"" to clear — the participant's
+    # claim about themselves, not a credential (020).
+    state: str | None = None
+
+
 class AccountCreate(BaseModel):
     email: str
     role: ROLE

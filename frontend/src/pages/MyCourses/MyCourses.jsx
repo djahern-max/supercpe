@@ -98,6 +98,9 @@ function MyCourses() {
         <h1 className={styles.heading}>My courses</h1>
         <span className={styles.spacer} />
         {account && <span className={styles.who}>{account.email}</span>}
+        <Link className={styles.accountLink} to="/account">
+          Account
+        </Link>
         <button
           className={styles.signOut}
           type="button"

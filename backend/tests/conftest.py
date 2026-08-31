@@ -76,6 +76,7 @@ def db_session(test_engine):
                 "attempts, payments, stripe_webhook_events, enrollments, "
                 "choices, questions, "
                 "course_reviews, course_lessons, courses, lesson_packages, "
+                "jurisdiction_policies, "
                 "site_mode_changes, sponsor_profile, "
                 "sponsor_state_registrations, subject_matter_experts, "
                 "waiting_list, email_message, email_verification_tokens, "
