@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { getCheckoutStatus } from "../../api/checkout";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./PurchaseSuccess.module.css";
 
 const POLL_MS = 2000;
@@ -11,6 +12,7 @@ const SLOW_AFTER_MS = 30000;
 // creates the enrollment — so this page polls the payment's status until
 // it does, then links to the course.
 function PurchaseSuccess() {
+  usePageTitle("Purchase");
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("session_id");
   const [payment, setPayment] = useState(null);

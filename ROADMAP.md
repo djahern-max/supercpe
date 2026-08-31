@@ -135,6 +135,12 @@ ID, flip site mode to `open`.
   (built 2026-08-31, ahead of ship like 016–020: the send action refuses
   while `coming_soon`, so nothing can be emailed before the flip; it is
   step 9 of OPERATIONS.md "Opening day (021)", after the smoke test)
+- 022 Site identity and link previews — favicon, OG card, robots.txt,
+  mode-aware sitemap — the first post-021 feature demanded by reality
+  rather than the Standards: links to the site should look like the site,
+  and indexing should start while coming_soon so the domain has standing
+  by opening day (built 2026-08-31; metadata only, no analytics —
+  OPERATIONS.md "Site identity (022)")
 
 **Phase C code is complete.** What remains is not code: 014 (the course
 ingested on production with the real reviewer's sign-off), the NASBA
@@ -218,3 +224,9 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   (`email_verification_tokens`, hashed single-use tokens, supersede-on-
   resend) was written so a reset can reuse the shape unchanged; it is its
   own small feature.
+- Per-course OG link previews (022): the OG tags are static and
+  site-wide because the frontend is a SPA and scrapers run no
+  JavaScript. A pasted course URL previews with the site-wide card, not
+  the course title. Fixing it means SSR or edge-injection of per-route
+  meta tags (and per-course cards would then have to carry the full 8.01
+  question all over again) — its own feature if it ever matters.

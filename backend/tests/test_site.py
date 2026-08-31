@@ -148,6 +148,9 @@ INTENTIONALLY_PUBLIC = {
     # waiting-list signup. Both 404 again once the site opens.
     ("GET", "/api/v1/landing"),
     ("POST", "/api/v1/waiting-list"),
+    # 022: the mode-aware sitemap — public in both modes on purpose, so
+    # indexing can start while coming_soon; it lists only the root then.
+    ("GET", "/api/v1/sitemap.xml"),
 }
 
 

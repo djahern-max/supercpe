@@ -7,6 +7,7 @@ import {
   putMyProgress,
 } from "../../api/my";
 import Player from "../../components/Player/Player.jsx";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./MyLesson.module.css";
 
 /**
@@ -16,6 +17,7 @@ import styles from "./MyLesson.module.css";
  * (monotonic server-side).
  */
 function MyLesson() {
+  usePageTitle("Lesson");
   const { enrollmentId, packageId } = useParams();
   const [lesson, setLesson] = useState(null);
   const [error, setError] = useState(null);

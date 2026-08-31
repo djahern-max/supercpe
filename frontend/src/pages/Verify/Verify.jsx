@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { verifyEmail } from "../../api/register";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./Verify.module.css";
 
 /**
@@ -10,6 +11,7 @@ import styles from "./Verify.module.css";
  * server's one failure message.
  */
 function Verify() {
+  usePageTitle("Verify your email");
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token") || "";
   const [state, setState] = useState(token ? "pending" : "failed");

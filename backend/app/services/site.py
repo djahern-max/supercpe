@@ -9,6 +9,7 @@ sponsor's display name.
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.constants.auth import SITE_MODES
 from app.models.account import Account
 from app.models.site import SiteModeChange
@@ -18,6 +19,40 @@ from app.services.sponsor import get_profile
 
 def get_site_mode(db: Session) -> str:
     return get_profile(db).site_mode
+
+
+def site_origin() -> str:
+    """Where the public site lives, for absolute URLs (017's registration
+    links, 021's invitation, 022's sitemap): in prod CORS_ORIGINS is
+    exactly https://supercpe.com; in dev the first origin is where the
+    frontend lives."""
+    return settings.cors_origins_list[0]
+
+
+def sitemap_paths(db: Session) -> list[str]:
+    """What /sitemap.xml lists (022), mode-aware: while coming_soon, only
+    the root — the landing page is *meant* to be indexed, so the domain
+    has standing by opening day, but everything behind the 009 gate 404s
+    and is not announced. At open, the public set: the renderable
+    published course pages (the same filter as the catalog — a stale
+    credit refuses the page, so the sitemap must not point at it) and the
+    fixed public pages."""
+    if get_site_mode(db) != "open":
+        return ["/"]
+    from app.services import courses, credit
+
+    return [
+        "/",
+        "/courses",
+        *(
+            f"/courses/{course.course_code}"
+            for course in courses.list_published(db)
+            if not credit.is_stale(course)
+        ),
+        "/policies",
+        "/certificates/verify",
+        "/register",
+    ]
 
 
 def site_open_blockers(db: Session) -> list[str]:

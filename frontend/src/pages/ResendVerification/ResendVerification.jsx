@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { resendVerification } from "../../api/register";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./ResendVerification.module.css";
 
 /**
@@ -11,6 +12,7 @@ import styles from "./ResendVerification.module.css";
  * out. The response is the same constant message as registration.
  */
 function ResendVerification() {
+  usePageTitle("Resend verification");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState(null);
   const [errors, setErrors] = useState(null);

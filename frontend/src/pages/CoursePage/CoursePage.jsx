@@ -6,6 +6,7 @@ import { getJurisdictionNote, getPublicCourse } from "../../api/courses";
 import { listMyCourses } from "../../api/my";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { formatUsd } from "../../constants/money";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./CoursePage.module.css";
 
 function formatDuration(totalSeconds) {
@@ -205,6 +206,7 @@ function CoursePage() {
   const { code } = useParams();
   const [course, setCourse] = useState(null);
   const [status, setStatus] = useState("loading");
+  usePageTitle(course ? course.title : null);
 
   useEffect(() => {
     let cancelled = false;

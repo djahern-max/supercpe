@@ -30,7 +30,6 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.models.course import Course
 from app.models.waiting_list import WaitingListEntry
 from app.services import courses as courses_service
@@ -50,13 +49,6 @@ class InvitationRuleViolation(Exception):
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _site_origin() -> str:
-    # Same reasoning as 017's registration links: in prod CORS_ORIGINS is
-    # exactly https://supercpe.com; in dev the first origin is where the
-    # frontend lives.
-    return settings.cors_origins_list[0]
 
 
 def is_invitable(entry: WaitingListEntry) -> bool:
@@ -115,7 +107,8 @@ def render_invitation(
     the rest (the course page carries the full 8.01 disclosure), and the
     closing line keeps the 015 promise explicit. No Registry sentence,
     claimable or not — the site says what may be said."""
-    origin = _site_origin()
+    # 022 lifted the origin helper to the site service for the sitemap.
+    origin = site_service.site_origin()
     subject = f"{sponsor_name} is open"
     body = (
         f"Hello {name},\n\n"

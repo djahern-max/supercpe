@@ -4,6 +4,7 @@ import { getMyState, setMyState } from "../../api/auth";
 import { ApiError } from "../../api/client";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { US_JURISDICTIONS } from "../../constants/jurisdictions";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./Account.module.css";
 
 /**
@@ -12,6 +13,7 @@ import styles from "./Account.module.css";
  * Their claim about themselves, changeable and clearable at will.
  */
 function Account() {
+  usePageTitle("Account");
   const { account } = useSession();
   const [state, setState] = useState(null);
   const [status, setStatus] = useState("loading");

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { verifyCertificate } from "../../api/certificates";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./VerifyCertificate.module.css";
 
 /**
@@ -11,6 +12,7 @@ import styles from "./VerifyCertificate.module.css";
  * serves — the page confirms what the certificate says, frozen.
  */
 function VerifyCertificate() {
+  usePageTitle("Verify a certificate");
   const { code } = useParams();
   const navigate = useNavigate();
   const [input, setInput] = useState(code || "");

@@ -6,8 +6,10 @@ here reads `may_claim_registry` and no response may contain the words
 "National Registry" or a sponsor ID.
 """
 
+from xml.sax.saxutils import escape
+
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app.auth import require_role
@@ -27,6 +29,26 @@ admin_router = APIRouter(prefix="/admin")
 def get_site(db: Session = Depends(get_db)):
     profile = get_profile(db)
     return SiteOut(site_mode=profile.site_mode, sponsor_name=profile.name)
+
+
+@router.get("/sitemap.xml")
+def sitemap(db: Session = Depends(get_db)):
+    """022: mode-aware sitemap, intentionally public like /site — indexing
+    is meant to start while coming_soon, so the mechanism lives with the
+    mode it reads. Caddy rewrites the site-root /sitemap.xml here. The
+    URLs are frontend pages on the public origin, never API routes."""
+    origin = site_service.site_origin()
+    urls = "\n".join(
+        f"  <url><loc>{escape(f'{origin}{path}')}</loc></url>"
+        for path in site_service.sitemap_paths(db)
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{urls}\n"
+        "</urlset>\n"
+    )
+    return Response(content=xml, media_type="application/xml")
 
 
 def _changes(db: Session) -> list[SiteModeChangeOut]:

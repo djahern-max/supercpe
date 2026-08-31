@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getPolicies } from "../../api/policies";
 import SimpleMarkdown from "../../components/SimpleMarkdown/SimpleMarkdown.jsx";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./Policies.module.css";
 
 function formatDate(iso) {
@@ -19,6 +20,7 @@ function formatDate(iso) {
  * otherwise; this page never decides.
  */
 function Policies() {
+  usePageTitle("Policies");
   const [payload, setPayload] = useState(null);
   const [error, setError] = useState(false);
 

@@ -9,6 +9,7 @@ import {
   submitMyAttempt,
 } from "../../api/my";
 import Assessment from "../../components/Assessment/Assessment.jsx";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./MyAssessment.module.css";
 
 /**
@@ -18,6 +19,7 @@ import styles from "./MyAssessment.module.css";
  * rules on start either way.
  */
 function MyAssessment() {
+  usePageTitle("Assessment");
   const { enrollmentId } = useParams();
   const [gate, setGate] = useState(null);
 

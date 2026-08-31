@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getMyEnrollment, myCertificateUrl } from "../../api/my";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./MyCourse.module.css";
 
 function formatDuration(totalSeconds) {
@@ -44,6 +45,7 @@ function CopyButton({ text, label }) {
  * review question is answered, with the reasons spelled out otherwise.
  */
 function MyCourse() {
+  usePageTitle("My course");
   const { enrollmentId } = useParams();
   const [enrollment, setEnrollment] = useState(null);
   const [status, setStatus] = useState("loading");

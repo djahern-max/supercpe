@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { listMyCourses, myCertificateUrl } from "../../api/my";
 import EvaluationForm from "../../components/EvaluationForm/EvaluationForm.jsx";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./MyCourses.module.css";
 
 function formatDate(iso) {
@@ -68,6 +69,7 @@ function PrimaryAction({ enrollment }) {
 }
 
 function MyCourses() {
+  usePageTitle("My courses");
   const navigate = useNavigate();
   const { account, signOut } = useSession();
   const [enrollments, setEnrollments] = useState(null);

@@ -4,9 +4,11 @@ import { changePassword } from "../../api/auth";
 import { ApiError } from "../../api/client";
 import { roleHome } from "../../auth/RequireRole.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./ChangePassword.module.css";
 
 function ChangePassword() {
+  usePageTitle("Change password");
   const navigate = useNavigate();
   const { account, loading, setAccount } = useSession();
   const [current, setCurrent] = useState("");

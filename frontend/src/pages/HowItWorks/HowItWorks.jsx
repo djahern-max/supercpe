@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getHowItWorks } from "../../api/policies";
 import SimpleMarkdown from "../../components/SimpleMarkdown/SimpleMarkdown.jsx";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./HowItWorks.module.css";
 
 /**
@@ -9,6 +10,7 @@ import styles from "./HowItWorks.module.css";
  * backend, where every number is read from the constant that enforces it.
  */
 function HowItWorks() {
+  usePageTitle("How it works");
   const [markdown, setMarkdown] = useState(null);
   const [error, setError] = useState(false);
 

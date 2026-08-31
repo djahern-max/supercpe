@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import RequireRole from "./auth/RequireRole.jsx";
 import { SessionProvider } from "./auth/SessionContext.jsx";
 import SiteGate from "./components/SiteGate/SiteGate.jsx";
+import usePageTitle from "./hooks/usePageTitle";
 import AdminAccounts from "./pages/AdminAccounts/AdminAccounts.jsx";
 import AdminAssessmentPreview from "./pages/AdminAssessmentPreview/AdminAssessmentPreview.jsx";
 import AdminCourseAttempts from "./pages/AdminCourseAttempts/AdminCourseAttempts.jsx";
@@ -35,6 +36,10 @@ import VerifyCertificate from "./pages/VerifyCertificate/VerifyCertificate.jsx";
 import styles from "./App.module.css";
 
 function NotFound() {
+  // 022: only when this page actually renders — while coming_soon,
+  // SiteGate shows the landing page instead and the tab keeps the
+  // site-wide title, which stays truthful.
+  usePageTitle("Page not found");
   return (
     <main className={styles.page}>
       <h1 className={styles.wordmark}>404</h1>

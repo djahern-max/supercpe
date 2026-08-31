@@ -1,0 +1,7 @@
+# 022: indexing is welcome — including the coming-soon page, so the
+# domain has standing by opening day. /admin is staff-only chrome.
+User-agent: *
+Disallow: /admin
+Allow: /
+
+Sitemap: https://supercpe.com/sitemap.xml

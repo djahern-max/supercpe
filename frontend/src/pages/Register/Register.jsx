@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { register } from "../../api/register";
 import { US_JURISDICTIONS } from "../../constants/jurisdictions";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./Register.module.css";
 
 /**
@@ -12,6 +13,7 @@ import styles from "./Register.module.css";
  * it does not restate it.
  */
 function Register() {
+  usePageTitle("Register");
   const [form, setForm] = useState({
     name: "",
     email: "",

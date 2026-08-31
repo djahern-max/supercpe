@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listPublicCourses } from "../../api/courses";
 import { formatUsd } from "../../constants/money";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./Catalog.module.css";
 
 function formatTotal(totalSeconds) {
@@ -10,6 +11,7 @@ function formatTotal(totalSeconds) {
 }
 
 function Catalog() {
+  usePageTitle("Courses");
   const [courses, setCourses] = useState(null);
   const [error, setError] = useState(false);
 

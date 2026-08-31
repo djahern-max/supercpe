@@ -67,6 +67,15 @@ supercpe.com {
 		reverse_proxy api:8000
 	}
 
+	# 022: /sitemap.xml is the API's mode-aware answer, not a static
+	# file — rewritten under /api/v1 where the route actually lives.
+	# robots.txt points crawlers here; no rate limit, same as any GET
+	# the SPA serves.
+	handle /sitemap.xml {
+		rewrite * /api/v1/sitemap.xml
+		reverse_proxy api:8000
+	}
+
 	# Everything else is the built SPA; client-side routes fall back to
 	# index.html. /media/* is not special-cased: in prod the API never
 	# mounts it, so it 404s like any unknown /api path would.

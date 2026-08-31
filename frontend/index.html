@@ -2,9 +2,39 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>superCPE</title>
+    <!-- 022: every SITE_ token below is filled by the site-meta plugin in
+         vite.config.js from site.config.json and global.css, so this file
+         never disagrees with the OG image or the page-title helper. The
+         tags are static and site-wide: scrapers run no JavaScript, and the
+         site-wide description is deliberately course-fact-free (the 015/021
+         restraint — link, don't restate; no Registry words). -->
+    <title>%SITE_TITLE%</title>
+    <meta name="description" content="%SITE_DESCRIPTION%" />
+    <link rel="canonical" href="%SITE_ORIGIN%/" />
+    <meta name="theme-color" content="%SITE_THEME_COLOR%" />
+    <link rel="icon" type="image/svg+xml" href="/src/assets/identity/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="%SITE_NAME%" />
+    <meta property="og:title" content="%SITE_TITLE%" />
+    <meta property="og:description" content="%SITE_DESCRIPTION%" />
+    <meta property="og:url" content="%SITE_ORIGIN%/" />
+    <meta property="og:image" content="%SITE_ORIGIN%/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "%SITE_NAME%",
+        "url": "%SITE_ORIGIN%/",
+        "logo": "%SITE_ORIGIN%/icon-512.png"
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

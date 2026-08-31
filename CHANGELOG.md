@@ -2133,3 +2133,94 @@ Shipped: 2026-08-31
 - Phase C code is complete, but launch still waits on 014 (production
   ingest + real reviewer sign-off), the Registry application, and the
   flip itself, per "Opening day (021)".
+
+## 022 — Site identity and link previews
+Shipped: 2026-08-31
+
+**What changed**
+- supercpe.com now looks like itself everywhere a link lands: a real
+  favicon (SVG, hashed by the build, with a 32px `favicon.ico`
+  fallback), `apple-touch-icon.png`, 192/512 manifest icons, a
+  `site.webmanifest`, and a 1200×630 `og.png` link-preview card. The
+  mark is a deliberately plain "sC" monogram drawn as code in the site's
+  own palette — every asset regenerates from one committed script
+  (`frontend/scripts/generate_identity.py`, Pillow on the backend venv,
+  the certificate DejaVu fonts) reading the palette from `global.css`
+  and the words from `site.config.json`.
+- `frontend/index.html` carries the full static metadata set: title,
+  description, canonical, theme-color, `og:type/site_name/title/
+  description/url/image` (absolute https URL — scrapers resolve
+  nothing), `twitter:card=summary_large_image`, and a minimal JSON-LD
+  Organization block (name, url, logo — nothing it can't back). The
+  tags are static and site-wide because scrapers run no JavaScript
+  against a SPA; per-course OG cards would need SSR and are a ROADMAP
+  improvement note, not built.
+- One source for the words: `frontend/site.config.json` holds the
+  origin, name, tagline, and description. A ten-line inline Vite plugin
+  (`siteMeta` in `vite.config.js`) fills index.html's SITE_ tokens from
+  it (and the theme color from `global.css`); the OG-image script and
+  the page-title helper read the same file, so the three cannot drift.
+- Per-route tab titles: `usePageTitle` (frontend hook, no dependency)
+  on every public and participant page — the course page uses the
+  loaded course title, the unmatched route says "Page not found" only
+  when the 404 actually renders (while `coming_soon`, SiteGate shows
+  the landing page and the tab keeps the site-wide title). Admin and
+  review pages unchanged.
+- `robots.txt` (static, `frontend/public/`): allow all, `Disallow:
+  /admin`, and the Sitemap line — the coming-soon page is meant to be
+  indexed, so the domain has standing by opening day.
+- `GET /api/v1/sitemap.xml`, mode-aware: only the root while
+  `coming_soon`; at `open` the root, `/courses`, each renderable
+  published course page (the catalog's own filter — a stale credit is
+  never announced), `/policies`, `/certificates/verify`, and
+  `/register`. Added to `INTENTIONALLY_PUBLIC` marked 022 — the
+  designed mechanism for a deliberately anonymous route; the router
+  walk holds everyone else to 401/404 as before. Caddy routes it with a
+  dedicated `handle /sitemap.xml` block that rewrites to
+  `/api/v1/sitemap.xml` and proxies to the API (no rate limit — a GET
+  as cheap as any the SPA serves).
+- The 021 invitation's `_site_origin` helper moved to the site service
+  as `site_origin()` so the sitemap and the invitation read the same
+  origin (prod: CORS_ORIGINS, exactly https://supercpe.com).
+- OPERATIONS.md "Site identity (022)": how to regenerate after a
+  rebrand, why link-preview and favicon caches lag a deploy (time and a
+  query-string variant are the only levers), and the Caddy-reload note.
+- 379 tests (8 new in `test_identity.py`): the content rules on the
+  rendered index.html (no "National Registry", no "QAS", no credit
+  figure, no price), the full tag set with absolute `og:image`, valid
+  minimal JSON-LD, every Vite default gone, manifest and robots.txt
+  pinned, and the sitemap mode matrix (coming_soon vs open,
+  published-courses-only).
+
+**Standards touched**
+- 8.01 — COMPLIANCE.md gained an update row on the 015/016 8.01 row:
+  the site-wide metadata follows the landing page's and the
+  invitation's rule (link, don't restate) — the description describes
+  the sponsor, not the course, pinned by test; the sitemap never
+  announces a page that cannot disclose completely.
+
+**Decisions**
+- "superCPE — Self-Study CPE for CPAs" is the one line used everywhere
+  (tab, OG card, og.png); the description claims only that the platform
+  is built to the NASBA Standards — a statement about design, not a
+  Registry claim. Dane has final word: both live in `site.config.json`,
+  and a change there plus one script run is the whole edit.
+- The sitemap is served by the backend, not a static file, because its
+  contents depend on `site_mode` and the published catalog — derived
+  state, computed where it lives (the site service), never stored.
+- No analytics, no third-party scripts, no tracking pixels — 015's
+  decision stands; this feature is metadata only.
+- `og.png`, `favicon.ico`, `apple-touch-icon.png`, and the manifest
+  icons keep fixed names in `public/` (scrapers and old browsers fetch
+  them blindly; the OG URL is baked into a static tag); only the SVG
+  favicon rides the hashed asset pipeline. Stale-cache recovery after a
+  rebrand is time, by design.
+
+**Known gaps**
+- Deploy is the operator's: routine deploy (frontend rebuild picks up
+  `public/` and the tags) plus a Caddy reload for the `/sitemap.xml`
+  handle; no migration, no new env vars. The by-eye step — texting the
+  production URL and seeing the card — waits for that deploy, and
+  preview caches may lag it (OPERATIONS.md says so).
+- Per-course OG cards need SSR or edge injection; recorded as a ROADMAP
+  improvement note, deliberately not built.

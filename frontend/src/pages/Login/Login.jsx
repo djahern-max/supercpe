@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { login } from "../../api/auth";
 import { roleHome } from "../../auth/RequireRole.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
+import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./Login.module.css";
 
 /**
@@ -11,6 +12,7 @@ import styles from "./Login.module.css";
  * the server does not say which part was wrong, and neither do we.
  */
 function Login() {
+  usePageTitle("Sign in");
   const navigate = useNavigate();
   const location = useLocation();
   const { setAccount } = useSession();
