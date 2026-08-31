@@ -92,7 +92,13 @@ def make_package_row(
 
 
 def make_course_row(db, course_code="GOLD", *packages):
-    course = Course(course_code=course_code, title=f"Course {course_code}")
+    # 018: publish requires a price (business rule); the factory sets one
+    # so only the price tests exercise its absence.
+    course = Course(
+        course_code=course_code,
+        title=f"Course {course_code}",
+        price_cents=4900,
+    )
     for position, package in enumerate(packages, start=1):
         course.lessons.append(
             CourseLesson(package_id=package.id, position=position)

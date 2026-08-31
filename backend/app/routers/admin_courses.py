@@ -24,6 +24,7 @@ from app.schemas.course import (
     DisclosureItemOut,
     MoveRequest,
     ObjectiveGroup,
+    PriceRequest,
     QuestionGroup,
     ReadinessFinding,
     ReviewCreate,
@@ -185,6 +186,7 @@ def _detail(db: Session, course: Course) -> CourseDetailAdmin:
         prerequisites=course.prerequisites,
         advance_preparation=course.advance_preparation,
         status=course.status,
+        price_cents=course.price_cents,
         content_updated_at=course.content_updated_at,
         created_at=course.created_at,
         updated_at=course.updated_at,
@@ -420,6 +422,22 @@ def list_reviews(course_code: str, db: Session = Depends(get_db)):
         _review_out(course, review, current)
         for review in development.sorted_reviews(course)
     ]
+
+
+@router.put(
+    "/{course_code}/price",
+    response_model=CourseDetailAdmin,
+    responses={422: {"model": ValidationErrors}},
+)
+def set_price(
+    course_code: str, payload: PriceRequest, db: Session = Depends(get_db)
+):
+    course = _get_course_or_404(db, course_code)
+    try:
+        course = courses.set_price(db, course, payload.price_cents)
+    except CourseRuleViolation as violation:
+        return _violation_response(violation)
+    return _detail(db, course)
 
 
 @router.put("/{course_code}/review-cycle", response_model=CourseDetailAdmin)

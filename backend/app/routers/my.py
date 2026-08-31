@@ -79,6 +79,18 @@ def _get_enrollment_or_404(
     return enrollment
 
 
+def _refuse_if_voided(enrollment: Enrollment) -> None:
+    """018: a voided enrollment (refund granted, access ended by an
+    admin per the refund policy) serves no video and grades nothing —
+    unlike expired, where the participant may still review what they
+    paid for. The enrollment still appears in listings with its derived
+    status; only the content routes refuse."""
+    if enrollments.status(enrollment) == "voided":
+        raise HTTPException(
+            status_code=403, detail="This enrollment has been voided"
+        )
+
+
 def _get_pinned_package_or_404(db: Session, enrollment: Enrollment, package_id: int):
     package = enrollments.pinned_package(db, enrollment, package_id)
     if package is None:
@@ -119,6 +131,8 @@ def _unavailable_reasons(
         )
     if status == "completed":
         reasons.append("The course is completed.")
+    if status == "voided":
+        reasons.append("This enrollment has been voided.")
     for group in progress["unanswered"]:
         reasons.append(
             f"Unanswered review questions in {group['lesson_id']}: "
@@ -216,6 +230,7 @@ def play_lesson(
 ):
     """The 006 play payload, from the pinned package version."""
     enrollment = _get_enrollment_or_404(db, account, enrollment_id)
+    _refuse_if_voided(enrollment)
     package = _get_pinned_package_or_404(db, enrollment, package_id)
     progress = enrollments.progress(db, enrollment)
     furthest = next(
@@ -266,6 +281,7 @@ def grade_review(
     5.01.2 engagement record, and a re-answer updates it. The response is
     exactly what 006 returned."""
     enrollment = _get_enrollment_or_404(db, account, enrollment_id)
+    _refuse_if_voided(enrollment)
     package = _get_pinned_package_or_404(db, enrollment, package_id)
     question = questions_service.get_question(db, package.id, question_key)
     if question is None or question.kind != "review":
@@ -304,6 +320,7 @@ def put_progress(
     account: Account = Depends(participant),
 ):
     enrollment = _get_enrollment_or_404(db, account, enrollment_id)
+    _refuse_if_voided(enrollment)
     package = _get_pinned_package_or_404(db, enrollment, package_id)
     row = enrollments.record_progress(
         db, enrollment, package, payload.furthest_seconds

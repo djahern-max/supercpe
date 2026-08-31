@@ -45,6 +45,12 @@ class Course(Base):
     status: Mapped[str] = mapped_column(
         String, nullable=False, default="draft", server_default="draft"
     )
+    # Admin-set integer cents, USD only (018). Null until first set;
+    # publish requires > 0 as a business rule ("published" must mean
+    # "purchasable" at open). Not retroactive: what a participant was
+    # actually charged lives on the payment row from the Stripe event,
+    # never re-derived from here.
+    price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Bumped on every change a participant could observe, only ever by
     # services.courses.touch. Later features derive "credit is stale" and
     # "review is stale" from this one column.
@@ -123,6 +129,10 @@ class Course(Base):
         CheckConstraint(
             "review_cycle IN ('annual', 'biennial')",
             name="ck_courses_review_cycle",
+        ),
+        CheckConstraint(
+            "price_cents IS NULL OR price_cents > 0",
+            name="ck_courses_price_positive",
         ),
     )
 

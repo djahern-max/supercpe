@@ -153,6 +153,17 @@ def record_review(client, headers, code, reviewer_id, **overrides):
     )
 
 
+def set_price(client, headers, code, cents=4900):
+    # 018: publish also requires a price (business rule).
+    response = client.put(
+        f"{COURSES_URL}/{code}/price",
+        json={"price_cents": cents},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.json()
+    return response
+
+
 def publish(client, headers, code):
     return client.post(f"{COURSES_URL}/{code}/publish", headers=headers)
 
@@ -170,6 +181,7 @@ def make_publishable_course(client, headers, tmp_path):
     )
     make_course(client, headers, description="Revenue recognition under ASC 606.")
     assert attach(client, headers, "ASC606-CON", package_id).status_code == 200
+    set_price(client, headers, "ASC606-CON")
     return package_id
 
 
@@ -248,7 +260,9 @@ def test_publish_refuses_with_every_block_finding_at_once(
     assert any("licensed CPA" in e for e in errors)
     # The blank description also fails the 016 disclosure check (item 7).
     assert any("8.01 item 7" in e for e in errors)
-    assert len(errors) == 5
+    # No price yet: the 018 business rule blocks too.
+    assert any("business rule" in e for e in errors)
+    assert len(errors) == 6
 
     detail = get_detail(client, admin_headers, "ASC606-CON")
     assert detail["status"] == "draft"
@@ -351,6 +365,7 @@ def test_taxes_accepts_an_enrolled_agent(client, admin_headers, tmp_path):
         description="What changed this year.",
     )
     assert attach(client, admin_headers, "TAX-101", package_id).status_code == 200
+    set_price(client, admin_headers, "TAX-101")
 
     developer = make_sme(
         client,

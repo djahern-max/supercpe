@@ -26,11 +26,14 @@ class Enrollment(Base):
     course, carrying the 9.02.2(3) expiration date from creation. 017 later
     creates these on a successful charge; nothing downstream changes.
 
-    `status` (active / expired / completed) is derived by
-    `services.enrollments.status` from `expires_at` and the completion row,
-    never stored. `package_versions` pins `{package_id: version}` as of
-    enrollment; the player and assessment serve the pinned versions until
-    the enrollment completes or expires. Never deleted."""
+    `status` (active / voided / expired / completed) is derived by
+    `services.enrollments.status` from `expires_at`, `voided_at`, and the
+    completion row, never stored. `package_versions` pins
+    `{package_id: version}` as of enrollment; the player and assessment
+    serve the pinned versions until the enrollment completes or expires.
+    Never deleted — voiding (018, the admin's answer to a refund when the
+    policy says access ends) stamps `voided_at`, the house
+    deactivate-never-delete rule as it applies here."""
 
     __tablename__ = "enrollments"
 
@@ -54,6 +57,14 @@ class Enrollment(Base):
         ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
     )
     package_versions: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # 018: set once by the guarded admin void action, never cleared — who
+    # ended access and when is the log. Null for every other enrollment.
+    voided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    voided_by_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
 
     account = relationship("Account", foreign_keys=[account_id])
     course = relationship("Course")
@@ -64,6 +75,11 @@ class Enrollment(Base):
     __table_args__ = (
         CheckConstraint(
             "source IN ('admin', 'purchase')", name="ck_enrollments_source"
+        ),
+        # A void always records who did it.
+        CheckConstraint(
+            "(voided_at IS NULL) = (voided_by_account_id IS NULL)",
+            name="ck_enrollments_void_names_admin",
         ),
         # "One active enrollment per (account, course)" depends on now(), so
         # it cannot be a partial index; the service enforces it. This plain

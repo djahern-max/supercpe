@@ -43,6 +43,8 @@ PUBLISH_ONLY_CODES = frozenset(
         "reviewer_is_developer",
         "cpa_participation",
         "description_missing",
+        # 018: a price gates selling, not the assessment's quality.
+        "price_missing",
     }
 )
 
@@ -61,7 +63,7 @@ def launch_findings(db: Session) -> list[Finding]:
     published, and made available" before participants arrive). Block
     findings here are exactly what `site.site_open_blockers` refuses the
     open flip with; warn findings are reported beside them."""
-    from app.config import EMAIL_VARS, settings
+    from app.config import EMAIL_VARS, STRIPE_VARS, settings
     from app.constants.evaluation import EVALUATION_REVIEW_DAYS
     from app.services import courses as courses_module
     from app.services import disclosure
@@ -90,6 +92,26 @@ def launch_findings(db: Session) -> list[Finding]:
                     f"({detail}); an open site must be able to send "
                     "verification email (017). Set EMAIL_BACKEND=smtp "
                     "with complete EMAIL_* settings."
+                ),
+            )
+        )
+    # 018: an open site sells courses; a catalog whose Enroll buttons
+    # cannot reach Stripe is the same lie as a registration form that
+    # cannot send email. Dev/test flips satisfy this with dummy keys
+    # (conftest), never by weakening it.
+    if not settings.stripe_configured:
+        missing_stripe = [
+            var for var in STRIPE_VARS if not getattr(settings, var.lower())
+        ]
+        findings.append(
+            Finding(
+                code="payments_not_configured",
+                level="block",
+                message=(
+                    "Stripe is not configured "
+                    f"({', '.join(missing_stripe)} unset); an open site "
+                    "must be able to sell its published courses (018). "
+                    "Set all three STRIPE_* settings."
                 ),
             )
         )
@@ -309,6 +331,22 @@ def check(db: Session, course: Course) -> list[Finding]:
     findings += _assessment_findings(db, course, fresh_credit, review_questions)
     findings += _development_findings(course)
     findings += _evaluation_findings(db, course)
+
+    # 018, a business rule and not an 8.01 disclosure item: at open,
+    # "published" must mean "purchasable" — a course page with no way to
+    # buy is a dead end.
+    if course.price_cents is None or course.price_cents <= 0:
+        findings.append(
+            Finding(
+                code="price_missing",
+                level="block",
+                message=(
+                    "The course has no price; a published course must be "
+                    "purchasable. This is a superCPE business rule (018), "
+                    "not an 8.01 disclosure item."
+                ),
+            )
+        )
 
     return findings
 

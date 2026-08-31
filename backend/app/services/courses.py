@@ -109,6 +109,23 @@ def update_course(
     return course
 
 
+def set_price(db: Session, course: Course, price_cents: int) -> Course:
+    """Admin-set integer cents, USD only (018). A business fact, not
+    course content: no `touch`, so the credit and the review stay
+    current, and a published course's price can be corrected without
+    unpublishing. Never cleared once set — publish requires a price, and
+    a published course with no way to buy it is a dead end. Not
+    retroactive: what a participant was charged is on their payment row,
+    stamped from the Stripe event."""
+    if price_cents <= 0:
+        raise CourseRuleViolation(
+            [f"price_cents must be a positive integer, not {price_cents}"]
+        )
+    course.price_cents = price_cents
+    db.commit()
+    return course
+
+
 def delete_course(db: Session, course: Course) -> None:
     """Detaches the lessons (rows cascade), never deletes packages. A
     course with enrollments is never deleted, whatever its status: the

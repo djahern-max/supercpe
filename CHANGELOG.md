@@ -1779,3 +1779,121 @@ Shipped: 2026-08-31
 - No self-service email-address change; that remains an admin action.
 - The 015 browser-check date correction was conditional on Dane
   reporting one; none was reported, so no correction entry.
+
+## 018 — Stripe checkout
+Shipped: 2026-08-31
+
+**What changed**
+- Payments: one `payments` row per checkout attempt that reached Stripe
+  (session id unique, amount/currency as Stripe reported them,
+  `pending → paid → refunded` plus `expired`), plus
+  `stripe_webhook_events` for idempotency. Financial records, never
+  deleted, outliving `RETENTION_YEARS`. Migration `a9d21c5b7e30`.
+- Boundary: `services/stripe_gateway.py` owns every Stripe API call and
+  the webhook signature check, on the official `stripe` package (new
+  dependency, justified in requirements.txt). Checkout is Stripe's
+  hosted page — card data never transits superCPE. Tests stub this
+  module; nothing in the suite touches the network.
+- Price: admin-set integer cents on the course (`PUT
+  /admin/courses/{code}/price`, editable while published — a business
+  fact, not content, so no `touch`). Publish now also requires a price
+  (> 0), as the `price_missing` readiness block finding, worded as a
+  business rule and listed apart from the 8.01 disclosure items; it is
+  in `PUBLISH_ONLY_CODES` so assessment previews are unaffected. Price
+  renders as dollars on the catalog card and course page.
+- Checkout: `POST /api/v1/checkout` for a logged-in (hence 017-verified)
+  participant — refusals for unpublished course and
+  already-actively-enrolled; re-purchase after expiry allowed; a live
+  `pending` session younger than `CHECKOUT_SESSION_LIFETIME_HOURS` is
+  returned, not duplicated. The payment row is written `pending` before
+  the redirect URL is returned; metadata carries account id, course
+  code, payment row id. Stripe sends the receipt email; superCPE sends
+  no payment email of its own.
+- Webhook: `POST /api/v1/stripe/webhook`, signature-verified, refuses
+  anything unsigned (400); idempotent by stored event id.
+  `checkout.session.completed` marks the payment paid and creates the
+  enrollment via 010's one constructor (`source="purchase"`, one-year
+  clock) in one transaction; `charge.refunded` marks the payment and
+  deliberately stops; `checkout.session.expired` marks abandoned
+  sessions; unhandled types answer 200 and are logged by name. A missing
+  payment row logs loudly and answers 200 — Stripe retries 500s forever.
+- Void: enrollments gained `voided_at`/`voided_by_account_id`
+  (deactivate-never-delete); derived status gained `voided` (checked
+  after completed, before expired). `POST
+  /admin/enrollments/{id}/void` is the guarded, logged "access ends"
+  answer to a refund; it refuses non-active enrollments — a completion
+  is an immutable 9.02 record no refund can unmake. Voided enrollments
+  refuse the player/progress/review routes (403) and the assessment via
+  the existing active-only rule.
+- Success page: `/purchase/success` polls
+  `GET /api/v1/checkout/{session_id}/status` (owner-only, 404 for
+  anyone else) until the webhook lands, then links the course; after
+  ~30s an honest "taking longer than usual" state names the sponsor's
+  contact address.
+- Course page: the reserved Registration section is live — price and
+  Enroll (redirect to Stripe) for a participant, sign-in/register links
+  for visitors, "you're enrolled" with a player link when enrolled.
+- Admin: `/admin/payments` — the paper trail with Stripe dashboard
+  links, the loud refunded-with-active-enrollment flag, and the Void
+  action (confirm dialog; the flag clears once answered).
+- Config and gate: `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` /
+  `STRIPE_WEBHOOK_SECRET` join 012's validation, all-or-nothing, absent
+  entirely valid while coming-soon; the open gate gained the
+  `payments_not_configured` block finding. Test env satisfies it with
+  dummy keys in conftest. OPERATIONS.md gained "Payments (018)":
+  account setup, restricted key, webhook registration, Stripe CLI
+  test-mode walkthrough, and the refund runbook.
+- Site mode: all three 018 public routes sit behind
+  `require_site_open_or_session` — 404 anonymously in `coming_soon`;
+  the 015 router walk stayed green with its allowlist untouched.
+- Tests: 332 passing (19 new) — checkout refusal matrix, pending-session
+  reuse, exactly-one-enrollment across webhook replays and duplicate
+  events, unsigned webhook refused, refund-leaves-enrollment-intact plus
+  flag and void, orphaned-metadata tolerance, owner-only status, price
+  business-rule publish refusal, open-gate refusal/success on Stripe
+  config, boot all-or-nothing, 018 mode matrix.
+
+**Standards touched**
+- 8.01 item 9 — courses are now actually "sold for a fee"; the refund
+  policy link on the point-of-sale page is load-bearing, and the refund
+  workflow stops where the policy begins (webhook marks, admin decides).
+  COMPLIANCE.md row updated.
+- 9.02.2(3) — the enrollment the webhook creates carries the one-year
+  expiration from 010 unchanged ("date of purchase or enrollment").
+- 9.02 — payment amounts are recorded per charge as Stripe reported
+  them, never re-derived from the course's current price. Deliberately
+  beyond the letter: 9.02.2's element list names no payment records;
+  COMPLIANCE.md row added saying exactly that.
+
+**Decisions**
+- The webhook is the sole creator of enrollments; the success page only
+  polls. A browser return proves nothing.
+- The enrollment a payment created is derived (account + course +
+  source + enrolled-after), never stored as an FK — house
+  derived-state rule, and it keeps the paid+enrolled write a single
+  transaction through 010's constructor unmodified.
+- Refunds never unwind access automatically; the void action is the
+  admin's policy answer, and completed enrollments cannot be voided.
+- Voided enrollments lose the player too (unlike expired, which keeps
+  read access): the money came back, the access ends.
+- Price edits are allowed on published courses without `touch`: price is
+  a business fact, not content — no re-review, no credit staleness, and
+  not retroactive by design.
+- Table names follow the plural house convention (`payments`,
+  `stripe_webhook_events`).
+
+**Known gaps**
+- Sales tax, coupons, subscriptions, multiple currencies, invoicing,
+  and self-service refunds are out of scope; Stripe Tax recorded as a
+  ROADMAP improvement note.
+- Certificate email on completion is 019; paying starts the clock and
+  nothing else.
+- Disputes (`charge.dispute.*`) are logged as unhandled, not mapped to
+  `refunded`; if disputes ever occur, handling them is a small follow-up.
+- The operator walkthrough (Stripe account, webhook registration,
+  test-mode end-to-end with the Stripe CLI) is written in OPERATIONS.md
+  but not yet performed — acceptance 7 is the operator's, later, not
+  build-blocking.
+- The 015 browser-check date correction was conditional on Dane
+  reporting one when feeding this spec; none was reported, so no
+  correction entry.

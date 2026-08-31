@@ -69,6 +69,9 @@ def _summary_fields(course: Course) -> dict:
         "total_duration_seconds": sum(
             cl.package.duration_seconds for cl in ordered
         ),
+        # 018: what the Registration section and catalog card render as
+        # dollars.
+        "price_cents": course.price_cents,
     }
 
 

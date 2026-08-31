@@ -38,9 +38,13 @@ def _now() -> datetime:
 
 def status(enrollment: Enrollment) -> str:
     """Derived, never stored: completed if a completion row exists, else
-    expired if past `expires_at`, else active."""
+    voided if an admin ended access (018), else expired if past
+    `expires_at`, else active. Voided is checked before expired so a
+    voided enrollment stays voided when its year later runs out."""
     if enrollment.completion is not None:
         return "completed"
+    if enrollment.voided_at is not None:
+        return "voided"
     if _now() > enrollment.expires_at:
         return "expired"
     return "active"
@@ -104,6 +108,32 @@ def enroll(
         },
     )
     db.add(enrollment)
+    db.commit()
+    return enrollment
+
+
+def void(db: Session, enrollment: Enrollment, admin: Account) -> Enrollment:
+    """The guarded admin action behind a refund whose policy answer is
+    "access ends" (018). Deactivate-never-delete: stamps `voided_at` and
+    who did it; the row, its progress, and its answers stay. Only an
+    active enrollment can be voided — a completion is an immutable 9.02
+    record no refund can unmake, and voiding an expired or already-voided
+    enrollment has nothing left to end."""
+    current = status(enrollment)
+    if current != "active":
+        raise EnrollmentRuleViolation(
+            [
+                f"enrollment {enrollment.id} is {current}, not active; "
+                + (
+                    "the completion and certificate are immutable 9.02 "
+                    "records — a refund cannot unmake them"
+                    if current == "completed"
+                    else "there is no access left to end"
+                )
+            ]
+        )
+    enrollment.voided_at = _now()
+    enrollment.voided_by_account_id = admin.id
     db.commit()
     return enrollment
 

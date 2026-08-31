@@ -11,11 +11,13 @@ from app.routers import (
     admin_enrollments,
     admin_evaluations,
     admin_packages,
+    admin_payments,
     admin_smes,
     admin_sponsor,
     admin_waiting_list,
     assessment,
     auth,
+    checkout,
     courses,
     health,
     landing,
@@ -27,6 +29,7 @@ from app.routers import (
     review,
     site,
     sponsor,
+    stripe_webhook,
 )
 from app.services.ffprobe import ensure_ffprobe_available
 from app.storage import ensure_bucket_versioning, get_storage
@@ -64,11 +67,13 @@ app.include_router(admin_courses.router, prefix="/api/v1")
 app.include_router(admin_evaluations.router, prefix="/api/v1")
 app.include_router(admin_enrollments.router, prefix="/api/v1")
 app.include_router(admin_packages.router, prefix="/api/v1")
+app.include_router(admin_payments.router, prefix="/api/v1")
 app.include_router(admin_smes.router, prefix="/api/v1")
 app.include_router(admin_sponsor.router, prefix="/api/v1")
 app.include_router(admin_waiting_list.router, prefix="/api/v1")
 app.include_router(assessment.router, prefix="/api/v1")
 app.include_router(assessment.admin_router, prefix="/api/v1")
+app.include_router(checkout.router, prefix="/api/v1")
 app.include_router(courses.router, prefix="/api/v1")
 app.include_router(landing.router, prefix="/api/v1")
 # Under Spaces, video plays from presigned URLs and /media/ must 404;
@@ -82,3 +87,4 @@ app.include_router(policies.admin_router, prefix="/api/v1")
 app.include_router(register.router, prefix="/api/v1")
 app.include_router(register.admin_router, prefix="/api/v1")
 app.include_router(sponsor.router, prefix="/api/v1")
+app.include_router(stripe_webhook.router, prefix="/api/v1")

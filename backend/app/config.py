@@ -44,6 +44,15 @@ EMAIL_VARS = (
     "EMAIL_FROM",
 )
 
+# Stripe checkout (018). Absent entirely is valid config while the site
+# is coming-soon; the coming_soon -> open flip refuses without all three
+# (readiness.launch_findings, `payments_not_configured`), never boot.
+STRIPE_VARS = (
+    "STRIPE_SECRET_KEY",
+    "STRIPE_PUBLISHABLE_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
@@ -85,6 +94,15 @@ class Settings(BaseSettings):
     email_username: str = ""
     email_password: str = ""
     email_from: str = ""
+    # Stripe checkout (018): the restricted secret key, the publishable
+    # key, and the webhook endpoint's signing secret. All three or none.
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+
+    @property
+    def stripe_configured(self) -> bool:
+        return all(getattr(self, var.lower()) for var in STRIPE_VARS)
 
     @property
     def offsite_configured(self) -> bool:
@@ -148,6 +166,14 @@ def boot_violations(settings: Settings) -> list[str]:
     if settings.email_backend == "smtp" and not email_set:
         for var in EMAIL_VARS:
             violations.append(f"{var} is required when EMAIL_BACKEND=smtp.")
+    stripe_set = [var for var in STRIPE_VARS if getattr(settings, var.lower())]
+    if stripe_set and len(stripe_set) < len(STRIPE_VARS):
+        for var in STRIPE_VARS:
+            if var not in stripe_set:
+                violations.append(
+                    f"{var} is required when any STRIPE_* variable is set "
+                    "(the Stripe settings are all-or-nothing)."
+                )
     if settings.email_from:
         # parseaddr tolerates a display name ("superCPE <x@y>"); the
         # address half must have the same shape services.auth accepts.

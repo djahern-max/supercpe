@@ -468,6 +468,61 @@ The `email_message` table logs kind, recipient, subject, and backend for
 every send — never the body. These are operational records, not CPE
 records; no retention floor applies.
 
+## Payments (018)
+
+Stripe holds the card on its hosted Checkout page; superCPE never sees
+card data and holds only the paper trail (`payments` table, admin
+`/admin/payments`). The webhook is the sole creator of enrollments — a
+browser landing on the success page proves nothing — so the webhook
+endpoint and its signing secret are load-bearing: without them, people
+pay and no enrollment appears.
+
+To configure payments:
+
+1. Create the Stripe account (owner and credential location recorded
+   here when done, like email). In Stripe settings, enable **Successful
+   payments** customer emails — Stripe sends the receipt; superCPE
+   sends no payment email of its own.
+2. Create a **restricted** API key (not the full secret key) with write
+   access to Checkout Sessions only; that is all the app calls.
+3. Register the webhook endpoint
+   `https://supercpe.com/api/v1/stripe/webhook` in the Stripe dashboard
+   for the events `checkout.session.completed`,
+   `checkout.session.expired`, and `charge.refunded`, and capture its
+   signing secret (`whsec_…`).
+4. Set all three variables in the production env: `STRIPE_SECRET_KEY`
+   (the restricted key), `STRIPE_PUBLISHABLE_KEY`,
+   `STRIPE_WEBHOOK_SECRET`. All-or-nothing: a partial set refuses to
+   boot (`python -m app.cli preflight` catches it). Absent entirely is
+   valid only while the site is coming-soon.
+5. Test-mode end-to-end on the dev machine before trusting any of it:
+   put the test-mode keys in the local `.env`, run
+   `stripe listen --forward-to localhost:8000/api/v1/stripe/webhook`
+   (the CLI prints a test `whsec_…` — use it as
+   `STRIPE_WEBHOOK_SECRET`), buy a published course with card
+   `4242 4242 4242 4242`, and watch the success page flip to enrolled
+   when the forwarded webhook lands. `stripe trigger
+   checkout.session.completed` exercises the handler without a browser.
+6. The `coming_soon → open` flip **refuses** while any `STRIPE_*` is
+   unset (`payments_not_configured`) — an open catalog whose Enroll
+   buttons cannot reach Stripe would be lying. Publish likewise refuses
+   a course with no price (a business rule, not a Standards item).
+
+**Refund runbook.** Do the refund in the Stripe dashboard (there is no
+refund button in superCPE, deliberately). The `charge.refunded` webhook
+marks the payment `refunded`, and `/admin/payments` flags
+**refunded with active enrollment** loudly. Then decide per the
+published refund policy whether access ends: if it does, use **Void
+enrollment** on that row (logged — who and when are stamped on the
+enrollment; the participant's row and progress are kept, never
+deleted). Nothing voids automatically, because a refund after credit
+was earned or a certificate issued is a policy decision, not a
+mechanical one. Completed enrollments cannot be voided at all — the
+completion is an immutable 9.02 record.
+
+Payments rows are financial records: never deleted, not subject to the
+five-year CPE retention floor — they outlive it.
+
 ## When /health goes red
 
 The monitor alerts on non-200. Fields, in the order to check:

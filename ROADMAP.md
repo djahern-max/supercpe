@@ -117,6 +117,10 @@ ID, flip site mode to `open`.
   complete settings)
 - 018 Stripe checkout; payment success creates the enrollment (010) and
   starts the one-year clock; refunds follow the 8.01.1 policy page
+  (built 2026-08-31, ahead of ship like 016/017: every public route
+  404s in `coming_soon`, and the open gate now also refuses until the
+  three STRIPE_* settings are complete; the operator's Stripe-account
+  setup and test-mode walkthrough are in OPERATIONS.md "Payments (018)")
 - 019 Certificate delivery by email and a public verification page
 - 020 Per-jurisdiction credit policy: rounding increment (7.01) and
   non-technical caps, read from a table the admin maintains
@@ -189,6 +193,11 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   Turning it on is the five `OFFSITE_*` values in the server `.env` plus
   one `backup.sh` run; no code. (COMPLIANCE.md carries the matching
   2026-08-30 correction row.)
+- Sales tax on course sales (018): checkout charges the bare price with
+  no tax handling. Stripe Tax can compute and collect it on the same
+  hosted Checkout page (one parameter plus dashboard registration) if
+  and where selling CPE courses turns out to be taxable — an
+  accountant's question before a code change.
 - Password reset (017a?): 002 built no reset for the hidden login and 017
   deliberately did not ride it in. The 017 token machinery
   (`email_verification_tokens`, hashed single-use tokens, supersede-on-

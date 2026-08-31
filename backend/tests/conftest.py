@@ -29,6 +29,15 @@ settings.email_username = "mailer"
 settings.email_password = "not-a-real-password"
 settings.email_from = "no-reply@supercpe.test"
 
+# 018: the launch gate likewise refuses coming_soon -> open without
+# complete Stripe config; dummy keys satisfy it. Every Stripe call in the
+# suite goes through the stubbed boundary (`stripe_boundary` in
+# test_payments.py) — nothing touches the network, and these keys could
+# not authenticate anywhere if one did.
+settings.stripe_secret_key = "sk_test_dummy"
+settings.stripe_publishable_key = "pk_test_dummy"
+settings.stripe_webhook_secret = "whsec_dummy"
+
 
 @pytest.fixture(scope="session")
 def test_engine():
@@ -64,7 +73,8 @@ def db_session(test_engine):
                 "TRUNCATE evaluations, evaluation_reviews, audit_exports, "
                 "policy_versions, completions, certificate_sequences, "
                 "review_answers, lesson_progress, attempt_answers, "
-                "attempts, enrollments, choices, questions, "
+                "attempts, payments, stripe_webhook_events, enrollments, "
+                "choices, questions, "
                 "course_reviews, course_lessons, courses, lesson_packages, "
                 "site_mode_changes, sponsor_profile, "
                 "sponsor_state_registrations, subject_matter_experts, "

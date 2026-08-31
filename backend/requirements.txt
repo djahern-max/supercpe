@@ -11,6 +11,10 @@ fpdf2==2.8.3
 # Spaces is S3-compatible and boto3 is the reference client (012);
 # hand-rolling SigV4 presigning would be more code and less trustworthy.
 boto3==1.43.83
+# The official Stripe SDK (018): Checkout Session creation and webhook
+# signature verification; hand-rolling the HMAC check would be less
+# trustworthy. Only services/stripe_gateway.py imports it.
+stripe==12.4.0
 pytest==8.3.4
 httpx==0.28.1
 # Test-side PDF text extraction for the certificate tests (010).

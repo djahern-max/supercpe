@@ -9,6 +9,7 @@ import AdminCourseDetail from "./pages/AdminCourseDetail/AdminCourseDetail.jsx";
 import AdminCoursePreview from "./pages/AdminCoursePreview/AdminCoursePreview.jsx";
 import AdminCourses from "./pages/AdminCourses/AdminCourses.jsx";
 import AdminPackages from "./pages/AdminPackages/AdminPackages.jsx";
+import AdminPayments from "./pages/AdminPayments/AdminPayments.jsx";
 import AdminSmes from "./pages/AdminSmes/AdminSmes.jsx";
 import AdminSponsor from "./pages/AdminSponsor/AdminSponsor.jsx";
 import AdminWaitingList from "./pages/AdminWaitingList/AdminWaitingList.jsx";
@@ -22,6 +23,7 @@ import MyCourse from "./pages/MyCourse/MyCourse.jsx";
 import MyCourses from "./pages/MyCourses/MyCourses.jsx";
 import MyLesson from "./pages/MyLesson/MyLesson.jsx";
 import Policies from "./pages/Policies/Policies.jsx";
+import PurchaseSuccess from "./pages/PurchaseSuccess/PurchaseSuccess.jsx";
 import Register from "./pages/Register/Register.jsx";
 import ResendVerification from "./pages/ResendVerification/ResendVerification.jsx";
 import ReviewCourse from "./pages/ReviewCourse/ReviewCourse.jsx";
@@ -75,6 +77,12 @@ function App() {
         {/* Reachable but unlinked; staff and testers know the address. */}
         <Route path="/login" element={<Login />} />
         <Route path="/change-password" element={<ChangePassword />} />
+        {/* 018: where Stripe sends the participant back; the page polls
+            for the webhook-created enrollment. */}
+        <Route
+          path="/purchase/success"
+          element={participant(<PurchaseSuccess />)}
+        />
         <Route path="/my/courses" element={participant(<MyCourses />)} />
         <Route
           path="/my/courses/:enrollmentId"
@@ -109,6 +117,7 @@ function App() {
           element={preview(<AdminCoursePreview />)}
         />
         <Route path="/admin/packages" element={admin(<AdminPackages />)} />
+        <Route path="/admin/payments" element={admin(<AdminPayments />)} />
         <Route path="/admin/smes" element={admin(<AdminSmes />)} />
         <Route path="/admin/sponsor" element={admin(<AdminSponsor />)} />
         <Route path="/admin/accounts" element={admin(<AdminAccounts />)} />

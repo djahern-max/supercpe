@@ -27,11 +27,17 @@ import {
   recordEvaluationReview,
   renderCertificate,
   setCourseDeveloper,
+  setCoursePrice,
   setCourseReviewCycle,
   unpublishCourse,
   updateCourse,
   updateLessonVersion,
 } from "../../api/admin";
+import {
+  centsToDollarsText,
+  dollarsToCents,
+  formatUsd,
+} from "../../constants/money";
 import styles from "./AdminCourseDetail.module.css";
 
 const DERIVED_FIELDS = [
@@ -100,6 +106,8 @@ function AdminCourseDetail() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [editErrors, setEditErrors] = useState(null);
+  const [priceText, setPriceText] = useState("");
+  const [priceErrors, setPriceErrors] = useState(null);
   const [lessonErrors, setLessonErrors] = useState(null);
   const [attachErrors, setAttachErrors] = useState(null);
   const [creditErrors, setCreditErrors] = useState(null);
@@ -135,6 +143,9 @@ function AdminCourseDetail() {
     setCourse(data);
     setTitle(data.title);
     setDescription(data.description);
+    setPriceText(
+      data.price_cents !== null ? centsToDollarsText(data.price_cents) : ""
+    );
     setDeveloperSmeId(
       data.development.developer_id !== null
         ? String(data.development.developer_id)
@@ -258,6 +269,17 @@ function AdminCourseDetail() {
       () => updateCourse(code, { title: title.trim(), description }),
       setEditErrors
     );
+
+  // 018: price is a business fact, not content — editable while
+  // published, and publish refuses without one.
+  const handleSavePrice = () => {
+    const cents = dollarsToCents(priceText);
+    if (cents === null || cents <= 0) {
+      setPriceErrors(['Enter a dollar amount above zero, like "49.00".']);
+      return;
+    }
+    return mutate(() => setCoursePrice(code, cents), setPriceErrors);
+  };
 
   const handleSaveDeveloper = () =>
     mutate(
@@ -408,6 +430,38 @@ function AdminCourseDetail() {
           </button>
         )}
         <ErrorPanel errors={editErrors} />
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Price</h2>
+        <p className={styles.muted}>
+          USD. Required before publish (a business rule: a published course
+          must be purchasable). Changing it is not retroactive — what each
+          participant was charged stays on their payment record.
+          {course.price_cents !== null &&
+            ` Current price: ${formatUsd(course.price_cents)}.`}
+        </p>
+        <label className={styles.label} htmlFor="course-price">
+          Price in dollars
+        </label>
+        <input
+          id="course-price"
+          className={styles.input}
+          value={priceText}
+          inputMode="decimal"
+          placeholder="49.00"
+          onChange={(event) => setPriceText(event.target.value)}
+        />
+        {dollarsToCents(priceText) !== course.price_cents && (
+          <button
+            className={styles.button}
+            type="button"
+            onClick={handleSavePrice}
+          >
+            Save price
+          </button>
+        )}
+        <ErrorPanel errors={priceErrors} />
       </section>
 
       <section className={styles.card}>

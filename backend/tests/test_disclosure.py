@@ -165,6 +165,8 @@ EXPECTED_DETAIL_KEYS = {
     "advance_preparation",
     "lesson_count",
     "total_duration_seconds",
+    # 018: the price, a commercial fact beside the 8.01 items.
+    "price_cents",
     "recommended_credit",
     "credit_basis",
     "developed_by",

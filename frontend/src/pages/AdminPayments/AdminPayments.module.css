@@ -1,0 +1,75 @@
+.page {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.heading {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.errorPanel {
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border-radius: var(--radius-md, 6px);
+}
+
+.flagPanel {
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md, 6px);
+  font-weight: 600;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.table th,
+.table td {
+  padding: var(--space-xs) var(--space-sm);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.flaggedRow td {
+  background: var(--color-error-bg);
+}
+
+.stripeIds a {
+  color: var(--color-accent);
+}
+
+.voidButton {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--color-error);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-error);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.voidButton:hover {
+  background: var(--color-error);
+  color: #fff;
+}

@@ -266,3 +266,20 @@ export function auditBundleUrl(code, exportId) {
   const baseUrl = import.meta.env.VITE_API_URL;
   return `${baseUrl}/api/v1/admin/courses/${code}/audit-bundle/${exportId}.zip`;
 }
+
+export function setCoursePrice(code, priceCents) {
+  return request(`/api/v1/admin/courses/${code}/price`, {
+    method: "PUT",
+    body: JSON.stringify({ price_cents: priceCents }),
+  });
+}
+
+export function listPayments() {
+  return request("/api/v1/admin/payments");
+}
+
+export function voidEnrollment(enrollmentId) {
+  return request(`/api/v1/admin/enrollments/${enrollmentId}/void`, {
+    method: "POST",
+  });
+}

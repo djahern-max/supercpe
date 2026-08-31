@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listPublicCourses } from "../../api/courses";
+import { formatUsd } from "../../constants/money";
 import styles from "./Catalog.module.css";
 
 function formatTotal(totalSeconds) {
@@ -49,6 +50,8 @@ function Catalog() {
               · {course.knowledge_level} · {course.lesson_count}{" "}
               {course.lesson_count === 1 ? "lesson" : "lessons"} ·{" "}
               {formatTotal(course.total_duration_seconds)} of video
+              {course.price_cents !== null &&
+                ` · ${formatUsd(course.price_cents)}`}
             </p>
             {course.description && (
               <p className={styles.entryDescription}>{course.description}</p>

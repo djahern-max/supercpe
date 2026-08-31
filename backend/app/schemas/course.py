@@ -45,6 +45,12 @@ class ReviewCycleRequest(BaseModel):
     review_cycle: Literal["annual", "biennial"]
 
 
+class PriceRequest(BaseModel):
+    """Integer cents, USD only (018). Dollars exist only in rendering."""
+
+    price_cents: int = Field(gt=0)
+
+
 class CourseReviewOut(BaseModel):
     id: int
     reviewer_id: int
@@ -217,6 +223,9 @@ class CourseDetailAdmin(BaseModel):
     prerequisites: str | None
     advance_preparation: str | None
     status: str
+    # 018: admin-set integer cents; null until first set, and publish
+    # refuses without it (the price_missing readiness finding).
+    price_cents: int | None
     content_updated_at: datetime
     created_at: datetime
     updated_at: datetime
@@ -272,6 +281,11 @@ class CoursePublicSummary(BaseModel):
     advance_preparation: str | None
     lesson_count: int
     total_duration_seconds: int
+    # 018: integer cents, rendered as dollars. Null only for a course
+    # published before the price rule existed (dev data); the publish
+    # gate refuses without one. What is charged is stamped on the payment
+    # row from the Stripe event, never re-read from here.
+    price_cents: int | None
     # 8.01 item 3: the recommended CPE credit, with the basis it rests on.
     # Both are null while the stored credit is stale or below the minimum
     # awardable; a participant is never shown a stale number or "0.0".
