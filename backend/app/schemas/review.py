@@ -23,7 +23,11 @@ class ReviewLesson(BaseModel):
     package_id: int
     position: int
     title: str
+    # 023: which surface the reviewer previews the lesson in — a video
+    # lesson plays, a text lesson reads.
+    kind: str
     duration_seconds: int
+    word_count: int
 
 
 class ReviewSme(BaseModel):
@@ -48,3 +52,8 @@ class ReviewCourseDetail(BaseModel):
     lessons: list[ReviewLesson]
     reviews: list[CourseReviewOut]
     smes: list[ReviewSme]
+    # 4.02, shown above the sign-off form: the statements an approval puts
+    # the reviewer's name to. Versioned rather than stored per review, so
+    # a later reader can tell which wording a given sign-off date carried.
+    attestation_version: str
+    attestation: list[str]

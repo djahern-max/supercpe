@@ -25,3 +25,12 @@
   border-radius: var(--radius-md);
   padding: var(--space-sm) var(--space-md);
 }
+
+/* 023: a text lesson's title stands above the reader; a video lesson's is
+   inside the player's own chrome. */
+.lessonTitle {
+  max-width: 44rem;
+  margin: 0 auto var(--space-md);
+  font-size: 1.5rem;
+  font-weight: 600;
+}

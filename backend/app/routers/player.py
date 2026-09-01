@@ -7,7 +7,7 @@ participant ones. Grading is stateless (5.01.2.1 sets no passing rate on
 review questions) and re-answering is allowed.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,12 @@ from app.schemas.player import (
     ReviewAnswer,
     ReviewResult,
 )
-from app.services import courses
+from app.schemas.reader import (
+    GlossaryOut,
+    ReaderLessonOut,
+    SearchResultsOut,
+)
+from app.services import courses, reader, search
 from app.services import questions as questions_service
 from app.constants.storage import VIDEO_URL_SECONDS
 from app.storage import Storage, get_storage
@@ -115,3 +120,59 @@ def grade_review(
         feedback=question.feedback,
         correct_choice_key=correct_choice.choice_key,
     )
+
+
+@router.get(
+    "/{course_code}/lessons/{package_id}/read", response_model=ReaderLessonOut
+)
+def read_lesson(
+    course_code: str,
+    package_id: int,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+):
+    """The 023 reader payload for a text lesson, ungated.
+
+    The preview counterpart of the play route: there is no enrollment to
+    gate against, and 4.02 asks the reviewer to read the guide they are
+    signing off on, so the whole thing is served. The participant route
+    (`/my/...`) is the gated one."""
+    package = _get_lesson_package(db, course_code, package_id)
+    if not package.is_text:
+        raise HTTPException(
+            status_code=404,
+            detail="This lesson is a video lesson; use the play route",
+        )
+    return reader.build(db, storage, package, gated=False)
+
+
+def _course_packages(db: Session, course_code: str):
+    course = courses.get_course(db, course_code)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return [
+        cl.package for cl in sorted(course.lessons, key=lambda cl: cl.position)
+    ]
+
+
+@router.get("/{course_code}/search", response_model=SearchResultsOut)
+def search_course(
+    course_code: str,
+    q: str = Query("", description="Words to find in the course guide"),
+    db: Session = Depends(get_db),
+):
+    """4.05.3 item 2, in preview. Searches the guide text of the course's
+    text lessons and nothing else — question stems are not in scope."""
+    packages = _course_packages(db, course_code)
+    return SearchResultsOut(query=q, hits=search.find(db, packages, q))
+
+
+@router.get("/{course_code}/glossary", response_model=GlossaryOut)
+def course_glossary(
+    course_code: str,
+    term: str | None = Query(None, description="Look one term up"),
+    db: Session = Depends(get_db),
+):
+    """4.05.3 item 3, in preview."""
+    packages = _course_packages(db, course_code)
+    return GlossaryOut(terms=search.glossary(packages, term))

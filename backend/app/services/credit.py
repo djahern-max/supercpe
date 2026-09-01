@@ -3,10 +3,12 @@
     [(words / 180) + actual A/V minutes + (questions x 1.85)] / 50 = credit
 
 Every input is read from the stored lesson packages, never typed: durations
-are the ffprobe-measured ones from 002 (7.02.7 requires actual duration), a
-segment contributes either its A/V time or its words per the manifest's
-`av_is_additional_learning` (7.02.7), and every stored question counts
-(7.02.6). Everything that reaches a stored credit is `Decimal` or int.
+are the ffprobe-measured ones from 002 (7.02.7 requires actual duration) and
+every stored question counts (7.02.6). Which terms a lesson feeds depends on
+what it is — a video package contributes its duration or its words, never
+both (7.02.7); a text package (023) contributes both, its guide as required
+reading and its supplemental clips as additional learning. Everything that
+reaches a stored credit is `Decimal` or int.
 
 Pure and read-only except `store`. `store` deliberately does not call
 `touch`: computing credit is not a content change, and bumping
@@ -19,6 +21,12 @@ from decimal import ROUND_DOWN, ROUND_FLOOR, Decimal
 
 from sqlalchemy.orm import Session
 
+from app.constants.package_kinds import (
+    KIND_TEXT,
+    KIND_VIDEO,
+    WORD_COUNT_COMPUTED,
+    WORD_COUNT_MANIFEST,
+)
 from app.constants.credit import (
     CREDIT_BASIS,
     CREDIT_FORMULA_VERSION,
@@ -54,6 +62,12 @@ class CreditLessonRow:
     words_counted: int
     review_questions: int
     assessment_questions: int
+    # 023. Both default so a breakdown stored before 023 rebuilds through
+    # `from_stored` unchanged: every such row was a video lesson whose
+    # word count came from its manifest, which is exactly what the
+    # defaults say.
+    kind: str = KIND_VIDEO
+    word_count_source: str = WORD_COUNT_MANIFEST
 
 
 @dataclass
@@ -119,10 +133,26 @@ def compute(db: Session, course_id: int) -> CreditBreakdown:
         assessment = sum(
             1 for q in package.questions if q.get("kind") == "assessment"
         )
-        # 7.02.7: A/V that is additional learning counts by its measured
-        # duration; A/V that merely narrates the text counts by its words
-        # instead, and the duration does not enter at all.
-        if package.av_is_additional_learning:
+        # 7.02.6 adds three terms; which of them a lesson contributes to
+        # depends on what the lesson is.
+        #
+        # A text package (023) contributes to both the word term and the
+        # A/V term: the guide is the required reading, and its
+        # supplemental clips are additional learning by construction —
+        # 7.02.7 admits their duration precisely because they are "not
+        # narration of the text", and the format refuses a clip that does
+        # not claim it.
+        #
+        # A video package contributes to one or the other, never both:
+        # 7.02.7's second sentence covers the all-video program (actual
+        # video time, no word count), and a video that narrates its text
+        # counts by its words with the duration not entering at all.
+        if package.kind == KIND_TEXT:
+            av_counted, words_counted = (
+                package.duration_seconds,
+                package.word_count,
+            )
+        elif package.av_is_additional_learning:
             av_counted, words_counted = package.duration_seconds, 0
         else:
             av_counted, words_counted = 0, package.word_count
@@ -140,6 +170,8 @@ def compute(db: Session, course_id: int) -> CreditBreakdown:
                 words_counted=words_counted,
                 review_questions=review,
                 assessment_questions=assessment,
+                kind=package.kind,
+                word_count_source=package.word_count_source,
             )
         )
 
@@ -240,6 +272,38 @@ def public_credit(course: Course) -> tuple[str | None, str | None]:
     return str(course.credit_award), CREDIT_BASIS
 
 
+def _av_note(row: CreditLessonRow) -> str:
+    """The A/V line of the retained record, naming which branch of 7.02.7
+    the lesson took. Whoever reads the 9.02.2(2)(ii) record should be able
+    to see why the duration counted or did not, without the packages."""
+    if row.kind == KIND_TEXT:
+        return (
+            f"{row.av_seconds_counted} s counted "
+            "(supplemental, additional learning)"
+        )
+    if row.av_is_additional_learning:
+        # 7.02.7's second sentence: "If the entire self study program
+        # constitutes a video ... there would be no word count for text
+        # used in the formula." Naming that is more honest than
+        # "additional learning", which reads as a supplement to text that
+        # a video-only lesson does not have.
+        return f"{row.av_seconds_counted} s counted (program is the video, 7.02.7)"
+    return f"0 s counted ({row.duration_seconds} s narrates the text)"
+
+
+def _words_note(row: CreditLessonRow) -> str:
+    """The word line, naming where the number came from. The distinction
+    is the 005 trust gap and its 023 closure: a text package's words are
+    counted here from the shipped body sections, a video package's are
+    taken from its manifest."""
+    if row.word_count_source == WORD_COUNT_COMPUTED:
+        return (
+            f"{row.words_counted} counted (computed from package text, "
+            "body sections only, 7.02.5)"
+        )
+    return f"{row.words_counted} counted (from manifest, trusted)"
+
+
 def as_text(breakdown: CreditBreakdown) -> str:
     """The calculation written out the way a reviewer would read it. Retained
     in the audit bundle (011) as the 9.02.2(2)(ii) "actual calculation"."""
@@ -253,15 +317,10 @@ def as_text(breakdown: CreditBreakdown) -> str:
     if not breakdown.rows:
         lines.append("  (no lessons attached)")
     for row in breakdown.rows:
-        av_note = (
-            f"{row.av_seconds_counted} s counted (additional learning)"
-            if row.av_is_additional_learning
-            else f"0 s counted ({row.duration_seconds} s narrates the text)"
-        )
         lines += [
             f"  {row.position}. {row.lesson_id} v{row.version} — {row.title}",
-            f"     audio/video: {av_note}",
-            f"     words: {row.words_counted} counted",
+            f"     audio/video: {_av_note(row)}",
+            f"     words: {_words_note(row)}",
             f"     questions: {row.review_questions} review + "
             f"{row.assessment_questions} assessment",
         ]

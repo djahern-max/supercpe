@@ -3,9 +3,16 @@ import { Link, useParams } from "react-router-dom";
 import AdminNav from "../../admin/AdminNav.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
-import { getPlayLesson, gradeReview } from "../../api/admin";
+import {
+  getCourseGlossary,
+  getPlayLesson,
+  getReadLesson,
+  gradeReview,
+  searchCourse,
+} from "../../api/admin";
 import { getReviewCourse } from "../../api/review";
 import Player from "../../components/Player/Player.jsx";
+import Reader from "../../components/Reader/Reader.jsx";
 import styles from "./AdminCoursePreview.module.css";
 
 function formatDuration(totalSeconds) {
@@ -25,6 +32,7 @@ function AdminCoursePreview() {
   const { account, refresh: refreshSession } = useSession();
   const [course, setCourse] = useState(null);
   const [lesson, setLesson] = useState(null);
+  const [medium, setMedium] = useState(null);
   const [error, setError] = useState(null);
 
   const handleAuthFailure = useCallback(() => {
@@ -34,9 +42,22 @@ function AdminCoursePreview() {
   useEffect(() => {
     setError(null);
     setLesson(null);
+    setMedium(null);
     if (packageId) {
+      // A video lesson plays, a text lesson reads; each route 404s the
+      // other's lessons, so try the player and fall back to the reader.
       getPlayLesson(code, packageId)
-        .then(setLesson)
+        .then((data) => {
+          setLesson(data);
+          setMedium("video");
+        })
+        .catch((err) => {
+          if (!(err instanceof ApiError) || err.status !== 404) throw err;
+          return getReadLesson(code, packageId).then((data) => {
+            setLesson(data);
+            setMedium("text");
+          });
+        })
         .catch((err) => {
           if (err instanceof ApiError && err.status === 401) handleAuthFailure();
           else if (err instanceof ApiError && err.status === 404)
@@ -99,7 +120,9 @@ function AdminCoursePreview() {
                   <span className={styles.lessonPosition}>{item.position}.</span>
                   <span>{item.title}</span>
                   <span className={styles.muted}>
-                    {formatDuration(item.duration_seconds)}
+                    {item.kind === "text"
+                      ? `Study guide · ${item.word_count.toLocaleString()} words counted`
+                      : formatDuration(item.duration_seconds)}
                   </span>
                 </Link>
               </li>
@@ -117,12 +140,22 @@ function AdminCoursePreview() {
         </section>
       )}
 
-      {packageId && lesson && (
+      {packageId && lesson && medium === "video" && (
         <Player
           lesson={lesson}
           gradeAnswer={(questionKey, choiceKey) =>
             gradeReview(code, packageId, questionKey, choiceKey)
           }
+        />
+      )}
+      {packageId && lesson && medium === "text" && (
+        <Reader
+          lesson={lesson}
+          gradeAnswer={(questionKey, choiceKey) =>
+            gradeReview(code, packageId, questionKey, choiceKey)
+          }
+          onSearch={(query) => searchCourse(code, query)}
+          onLookup={(term) => getCourseGlossary(code, term)}
         />
       )}
     </main>

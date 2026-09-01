@@ -30,8 +30,14 @@ class Question(Base):
     # The package's `id` field, e.g. "q-01"; unique within the package.
     question_key: Mapped[str] = mapped_column(String, nullable=False)
     kind: Mapped[str] = mapped_column(String, nullable=False)
-    # 1-based index into manifest.video.blocks; review questions only.
+    # Where a review question is placed. Exactly one of these is set on
+    # a review question and neither on an assessment question: a video
+    # package places by 1-based index into manifest.video.blocks, a text
+    # package (023) by the key of the section the question follows. Both
+    # answer the same 5.01.2.1 requirement — questions "placed throughout
+    # the program in sufficient intervals" — in the two media.
     after_block: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    after_section: Mapped[str | None] = mapped_column(String, nullable=True)
     # Order within the package's questions.json.
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     stem: Mapped[str] = mapped_column(Text, nullable=False)
@@ -52,11 +58,17 @@ class Question(Base):
         CheckConstraint(
             "kind IN ('review', 'assessment')", name="ck_questions_kind"
         ),
-        # after_block is set iff the question is a review question: review
-        # questions pause the video after a block, assessments never do.
+        # A review question carries exactly one placement; an assessment
+        # question carries none. Review questions pause the program after
+        # a block or a section; assessments never do.
         CheckConstraint(
-            "(kind = 'review') = (after_block IS NOT NULL)",
-            name="ck_questions_after_block_iff_review",
+            "(kind = 'review') = "
+            "(after_block IS NOT NULL OR after_section IS NOT NULL)",
+            name="ck_questions_placement_iff_review",
+        ),
+        CheckConstraint(
+            "NOT (after_block IS NOT NULL AND after_section IS NOT NULL)",
+            name="ck_questions_one_placement",
         ),
     )
 

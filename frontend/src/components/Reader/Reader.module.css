@@ -1,0 +1,312 @@
+/* The guide is the page: one column at a comfortable reading measure,
+   with the search box and glossary above it and nothing competing with
+   the prose. */
+.reader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+/* --- chrome: search and glossary, 4.05.3 items 2 and 3 --- */
+
+.chrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.searchForm {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  flex: 1 1 20rem;
+}
+
+.searchLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.searchInput {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.searchButton,
+.chromeButton {
+  padding: 0.4rem 0.8rem;
+  font: inherit;
+  color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.searchButton:hover,
+.chromeButton:hover {
+  border-color: var(--color-accent);
+}
+
+.panel {
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.panelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.panelTitle {
+  margin: 0 0 var(--space-sm);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.hitList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.hitLink {
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.snippet {
+  margin: var(--space-xs) 0 0;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.snippet mark {
+  background: var(--color-warning-bg);
+  color: inherit;
+}
+
+.glossary {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.glossaryRow dt {
+  font-weight: 600;
+}
+
+.glossaryRow dd {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+/* --- contents --- */
+
+.contents {
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.contentsTitle {
+  margin: 0 0 var(--space-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.contentsList {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.contentsLink {
+  padding: 0;
+  font: inherit;
+  color: var(--color-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.contentsLocked {
+  padding: 0;
+  font: inherit;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: not-allowed;
+}
+
+/* --- the guide itself --- */
+
+.section {
+  scroll-margin-top: var(--space-lg);
+}
+
+.role {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.sectionTitle {
+  margin: var(--space-xs) 0 var(--space-md);
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+/* A locked section still has a heading — the participant can see the
+   guide continues, and what opens it — but no text. The server withheld
+   the text; this only explains the absence. */
+.locked {
+  margin: 0;
+  padding: var(--space-md);
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.mediaFigure {
+  margin: var(--space-lg) 0;
+}
+
+.video {
+  width: 100%;
+  background: #000;
+  border-radius: var(--radius-md);
+}
+
+.mediaCaption {
+  margin-top: var(--space-xs);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+/* --- review questions between sections --- */
+
+.question {
+  margin-top: var(--space-lg);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+
+.questionStem {
+  margin: 0 0 var(--space-md);
+  font-weight: 600;
+}
+
+.choiceList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.choice {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  font: inherit;
+  text-align: left;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.choice:hover {
+  border-color: var(--color-accent);
+}
+
+.choiceChosen {
+  border-color: var(--color-accent);
+}
+
+.choiceRight {
+  background: var(--color-success-bg);
+  border-color: var(--color-success);
+}
+
+.choiceWrong {
+  background: var(--color-error-bg);
+  border-color: var(--color-error);
+}
+
+.feedbackRight,
+.feedbackWrong {
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  line-height: 1.5;
+}
+
+.feedbackRight {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.feedbackWrong {
+  color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+.muted {
+  margin: var(--space-sm) 0 0;
+  color: var(--color-text-muted);
+}
+
+.footnote {
+  margin: 0;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}

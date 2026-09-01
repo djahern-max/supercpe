@@ -79,3 +79,22 @@ export function submitMyEvaluation(completionId, ratings, comments) {
     body: JSON.stringify({ ratings, comments }),
   });
 }
+
+// --- 023: the text reader, its search, and its glossary ---------------------
+
+export function getMyReadLesson(enrollmentId, packageId) {
+  return request(
+    `/api/v1/my/enrollments/${enrollmentId}/lessons/${packageId}/read`
+  );
+}
+
+export function searchMyCourse(enrollmentId, query) {
+  return request(
+    `/api/v1/my/enrollments/${enrollmentId}/search?q=${encodeURIComponent(query)}`
+  );
+}
+
+export function getMyGlossary(enrollmentId, term) {
+  const suffix = term ? `?term=${encodeURIComponent(term)}` : "";
+  return request(`/api/v1/my/enrollments/${enrollmentId}/glossary${suffix}`);
+}

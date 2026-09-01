@@ -126,7 +126,9 @@ function ReviewCourse() {
                   <li key={lesson.package_id}>
                     {lesson.position}. {lesson.title}{" "}
                     <span className={styles.muted}>
-                      {formatDuration(lesson.duration_seconds)}
+                      {lesson.kind === "text"
+                        ? `study guide · ${lesson.word_count.toLocaleString()} words counted`
+                        : formatDuration(lesson.duration_seconds)}
                     </span>
                   </li>
                 ))}
@@ -184,6 +186,30 @@ function ReviewCourse() {
               record, not this login, is the 4.02.1 qualification. Reviews
               are immutable once recorded; corrections are new reviews.
             </p>
+
+            {/* 4.02: what an approval puts the reviewer's name to. For a
+                course with text lessons this adds the two judgments only
+                a human who has read the guide can make — whether the
+                supplemental videos add learning or narrate the text
+                (7.02.7), and whether excluded material is out of the
+                counted body (7.02.5). Both are places the credit formula
+                could otherwise be inflated with nothing in the code
+                noticing. */}
+            {course.attestation && course.attestation.length > 0 && (
+              <div className={styles.attestation}>
+                <p className={styles.attestationLead}>
+                  Recording an <strong>approved</strong> review states that:
+                </p>
+                <ul className={styles.attestationList}>
+                  {course.attestation.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                <p className={styles.attestationVersion}>
+                  Attestation text version {course.attestation_version}.
+                </p>
+              </div>
+            )}
             <div className={styles.reviewForm}>
               <select
                 className={styles.input}

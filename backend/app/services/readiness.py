@@ -21,6 +21,7 @@ from app.constants.participation import (
     TAX_PARTICIPATION_FIELDS,
     TAX_QUALIFYING_CREDENTIALS,
 )
+from app.constants.package_kinds import KIND_TEXT, ROLE_FRONT_MATTER
 from app.constants.question_minimums import (
     COUNTING_MIN_CHOICES,
     MIN_CHOICES_ASSESSMENT,
@@ -45,6 +46,13 @@ PUBLISH_ONLY_CODES = frozenset(
         "description_missing",
         # 018: a price gates selling, not the assessment's quality.
         "price_missing",
+        # 023: 4.05.3 is about the instructional materials a course ships
+        # with, not about whether its assessment is qualified under
+        # 6.01.2 — so an admin can still preview a draft text course's
+        # assessment while its glossary or front matter is being written.
+        "text_word_count_zero",
+        "glossary_missing",
+        "front_matter_missing",
     }
 )
 
@@ -331,6 +339,7 @@ def check(db: Session, course: Course) -> list[Finding]:
     findings += _assessment_findings(db, course, fresh_credit, review_questions)
     findings += _development_findings(course)
     findings += _evaluation_findings(db, course)
+    findings += _text_findings(course)
 
     # 018, a business rule and not an 8.01 disclosure item: at open,
     # "published" must mean "purchasable" — a course page with no way to
@@ -348,6 +357,83 @@ def check(db: Session, course: Course) -> list[Finding]:
             )
         )
 
+    return findings
+
+
+def _text_findings(course: Course) -> list[Finding]:
+    """023: what a course with text lessons must carry before it can be
+    published. All three are 4.05.3 or 7.02.5 facts about the shipped
+    instructional materials, so all three block — and all three are in
+    PUBLISH_ONLY_CODES, because none of them makes the assessment less
+    qualified under 6.01.2.
+
+    Accumulating, like every other block finding: a course missing two of
+    them is told about both at once.
+
+    Nothing here checks the keyword search (4.05.3 item 2). Search is
+    code, not content — its absence is a failed deploy, not a publishable
+    state, and there is nothing an admin could add to a course to fix it.
+    4.05.3 item 1 (an overview of topics) is covered by the existing
+    `description_missing` finding, which every course already answers to.
+    """
+    text_lessons = [
+        cl.package
+        for cl in sorted(course.lessons, key=lambda cl: cl.position)
+        if cl.package.kind == KIND_TEXT
+    ]
+    if not text_lessons:
+        return []
+
+    findings: list[Finding] = []
+    empty = [p.lesson_id for p in text_lessons if p.word_count == 0]
+    if empty:
+        findings.append(
+            Finding(
+                code="text_word_count_zero",
+                level="block",
+                message=(
+                    "Text lessons whose body sections count zero words: "
+                    f"{', '.join(empty)}. 7.02.5 counts the text of the "
+                    "required reading, and a guide with no counted body is "
+                    "not a self study program."
+                ),
+            )
+        )
+    if not any(p.glossary_terms for p in text_lessons):
+        findings.append(
+            Finding(
+                code="glossary_missing",
+                level="block",
+                message=(
+                    "No text lesson defines any key terms. 4.05.3 item 3 "
+                    "requires instructional materials to include the "
+                    "definition of key terms (a glossary, or a search "
+                    "function that takes a participant to the definition of "
+                    "a key word). Add glossary_terms to the package and "
+                    "re-ingest."
+                ),
+            )
+        )
+    without_front_matter = [
+        p.lesson_id
+        for p in text_lessons
+        if not any(s.role == ROLE_FRONT_MATTER for s in p.sections)
+    ]
+    if without_front_matter:
+        findings.append(
+            Finding(
+                code="front_matter_missing",
+                level="block",
+                message=(
+                    "Text lessons with no front matter section: "
+                    f"{', '.join(without_front_matter)}. 4.05.3 item 4 "
+                    "requires instructions to participants regarding "
+                    "navigation through the course, course components, and "
+                    "course completion; the front matter is where the "
+                    '"How this course works" block lives.'
+                ),
+            )
+        )
     return findings
 
 

@@ -7,7 +7,7 @@ versions; the admin/reviewer preview endpoints (006/007) are untouched and
 keep serving the course's current content.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
@@ -54,7 +54,20 @@ from app.schemas.player import (
     ReviewAnswer,
     ReviewResult,
 )
-from app.services import assessment, completions, delivery, enrollments, evaluations
+from app.schemas.reader import (
+    GlossaryOut,
+    ReaderLessonOut,
+    SearchResultsOut,
+)
+from app.services import (
+    assessment,
+    completions,
+    delivery,
+    enrollments,
+    evaluations,
+    reader,
+    search,
+)
 from app.services import questions as questions_service
 from app.services.assessment import AssessmentRuleViolation
 from app.services.completions import CreditStale, IssuanceBlocked
@@ -567,3 +580,77 @@ def download_certificate(
             )
         },
     )
+
+
+@router.get(
+    "/enrollments/{enrollment_id}/lessons/{package_id}/read",
+    response_model=ReaderLessonOut,
+)
+def read_lesson(
+    enrollment_id: int,
+    package_id: int,
+    db: Session = Depends(get_db),
+    account: Account = Depends(participant),
+    storage: Storage = Depends(get_storage),
+):
+    """The 023 reader, from the pinned package version and gated by this
+    participant's own answers.
+
+    The gate is here, not in the browser: a body section whose preceding
+    review question is unanswered comes back with `markdown: null`. That
+    is 5.01.2.1's "sufficient intervals" made real — the participant gets
+    the opportunity to evaluate what needs re-studying before the guide
+    moves on. Glossary and appendix sections are never gated; they are
+    reference, not required reading, which is also why 7.02.5 keeps their
+    words out of the count."""
+    enrollment = _get_enrollment_or_404(db, account, enrollment_id)
+    _refuse_if_voided(enrollment)
+    package = _get_pinned_package_or_404(db, enrollment, package_id)
+    if not package.is_text:
+        raise HTTPException(
+            status_code=404,
+            detail="This lesson is a video lesson; use the play route",
+        )
+    answered = enrollments.answers_by_question(db, enrollment)
+    answered_keys = {
+        q.question_key
+        for q in questions_service.for_package(db, package.id)
+        if q.id in answered
+    }
+    return reader.build(db, storage, package, answered_keys)
+
+
+@router.get("/enrollments/{enrollment_id}/search", response_model=SearchResultsOut)
+def search_course(
+    enrollment_id: int,
+    q: str = Query("", description="Words to find in the course guide"),
+    db: Session = Depends(get_db),
+    account: Account = Depends(participant),
+):
+    """4.05.3 item 2: "the ability to find information quickly (for
+    example, an index or key word search function)".
+
+    Scoped to this enrollment's own pinned lessons, and to their guide
+    text alone. Question stems are never searched and never returned —
+    the payload a participant can query at will must stay as free of the
+    answer key as the reader payload is."""
+    enrollment = _get_enrollment_or_404(db, account, enrollment_id)
+    _refuse_if_voided(enrollment)
+    packages = enrollments.packages_for(db, enrollment)
+    return SearchResultsOut(query=q, hits=search.find(db, packages, q))
+
+
+@router.get("/enrollments/{enrollment_id}/glossary", response_model=GlossaryOut)
+def course_glossary(
+    enrollment_id: int,
+    term: str | None = Query(None, description="Look one term up"),
+    db: Session = Depends(get_db),
+    account: Account = Depends(participant),
+):
+    """4.05.3 item 3: the definition of key terms. Without `term` this is
+    the course glossary page; with it, the in-reader lookup — "a search
+    function that takes a participant to the definition of a key word"."""
+    enrollment = _get_enrollment_or_404(db, account, enrollment_id)
+    _refuse_if_voided(enrollment)
+    packages = enrollments.packages_for(db, enrollment)
+    return GlossaryOut(terms=search.glossary(packages, term))

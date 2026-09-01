@@ -173,9 +173,16 @@ function MyCourse() {
               <span className={styles.lessonPosition}>{lesson.position}.</span>
               <span className={styles.lessonTitle}>{lesson.title}</span>
               <span className={styles.lessonMeta}>
-                {formatDuration(lesson.furthest_seconds)} /{" "}
-                {formatDuration(lesson.duration_seconds)} ·{" "}
-                {lesson.review_answered}/{lesson.review_total} answered
+                {/* A text lesson (023) is read, not watched: reporting a
+                    furthest-second against a study guide would say
+                    nothing. Its progress is the review questions it has
+                    answered, which is also what opens the assessment. */}
+                {lesson.kind === "text"
+                  ? "Study guide"
+                  : `${formatDuration(lesson.furthest_seconds)} / ${formatDuration(
+                      lesson.duration_seconds
+                    )}`}{" "}
+                · {lesson.review_answered}/{lesson.review_total} answered
               </span>
             </Link>
           </li>

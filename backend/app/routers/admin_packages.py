@@ -11,6 +11,7 @@ from app.db import get_db
 from app.schemas.package import (
     IngestResponse,
     PackageDetail,
+    PackageOverview,
     PackageSummary,
     ValidationErrors,
 )
@@ -44,7 +45,11 @@ def upload_package(
 
         package, created = packages.ingest(db, storage, result)
         response = IngestResponse(
-            package=PackageDetail.model_validate(package), created=created
+            package=_detail(package),
+            created=created,
+            # An idempotent re-upload re-reports the same warnings: they
+            # describe the package, not the act of uploading it.
+            warnings=result.warnings,
         )
         return JSONResponse(
             status_code=201 if created else 200,
@@ -59,12 +64,19 @@ def list_packages(db: Session = Depends(get_db)):
     return packages.list_packages(db)
 
 
+def _detail(package) -> PackageDetail:
+    """The stored row plus its derived human summary."""
+    detail = PackageDetail.model_validate(package)
+    detail.overview = PackageOverview(**packages.overview(package))
+    return detail
+
+
 @router.get("/packages/{package_id}", response_model=PackageDetail)
 def get_package(package_id: int, db: Session = Depends(get_db)):
     package = packages.get_package(db, package_id)
     if package is None:
         raise HTTPException(status_code=404, detail="Package not found")
-    return package
+    return _detail(package)
 
 
 @router.get("/packages/{package_id}/transcript")
@@ -72,7 +84,31 @@ def get_transcript(package_id: int, db: Session = Depends(get_db)):
     package = packages.get_package(db, package_id)
     if package is None:
         raise HTTPException(status_code=404, detail="Package not found")
+    if package.transcript is None:
+        # A text package has no narration to transcribe; its program
+        # material is the guide, served section by section.
+        raise HTTPException(
+            status_code=404,
+            detail="This package is a text package and has no transcript",
+        )
     return PlainTextResponse(package.transcript, media_type="text/markdown")
+
+
+@router.get("/packages/{package_id}/sections/{section_key}")
+def get_section(
+    package_id: int, section_key: str, db: Session = Depends(get_db)
+):
+    """One guide section's markdown as shipped — what the word count was
+    taken from, and what a 4.02 reviewer reads."""
+    package = packages.get_package(db, package_id)
+    if package is None:
+        raise HTTPException(status_code=404, detail="Package not found")
+    section = next(
+        (s for s in package.sections if s.section_key == section_key), None
+    )
+    if section is None:
+        raise HTTPException(status_code=404, detail="Section not found")
+    return PlainTextResponse(section.markdown, media_type="text/markdown")
 
 
 @router.delete(

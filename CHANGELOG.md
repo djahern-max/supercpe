@@ -2224,3 +2224,213 @@ Shipped: 2026-08-31
   preview caches may lag it (OPERATIONS.md says so).
 - Per-course OG cards need SSR or edge injection; recorded as a ROADMAP
   improvement note, deliberately not built.
+
+## 023 — Text-first course packages
+Shipped: 2026-09-01
+
+Part B of a three-part feature. Part A (the contract change in
+`docs/course-package.md`) shipped with it and must be mirrored into
+video-tool identically; Part C (authoring and export) is video-tool's own
+session and is not built here. Everything below was built against the
+hand-made fixture package the spec called for, which is now
+`backend/tests/factories/text_package.py`.
+
+The strategy this serves is recorded in
+`docs/decisions/2026-09-01-text-first.md` and ROADMAP Phase D, not here.
+
+**What changed**
+
+*The contract (Part A)*
+- `manifest.json` gains `"kind": "video" | "text"`. **Absent means
+  video**, so every package exported before today is still valid and
+  ingests through byte-identically the same code path and the same
+  refusal messages.
+- A text package is `manifest.json` + `guide/*.md` + optional `media/*` +
+  `questions.json`. Sections carry a `role`
+  (`front_matter`/`body`/`glossary`/`appendix`); review questions carry
+  `after_section` where a video package's carry `after_block`; media
+  carry `placement.after_section` and must claim
+  `av_is_additional_learning: true`; `glossary_terms` carry the key terms.
+- `word_count` is **not a manifest field for a text package** and is
+  refused if present. `content_hash` is defined for the new layout
+  (sections in manifest order, then questions.json, then media in
+  manifest order). The 7.02.5 exclusion list and the 7.02.7 test are
+  quoted verbatim in the contract, and it ships the "How this course
+  works" front-matter template 4.05.3 item 4 requires.
+
+*Ingestion (B1)*
+- `validate` peeks the manifest's `kind` before choosing layout rules and
+  dispatches to `_validate_video` (the existing body, unchanged) or
+  `_validate_text`. A manifest that is missing or unparseable peeks as
+  video, so a broken package still gets the refusals it always got.
+- Word counting is superCPE's, from the shipped markdown
+  (`backend/app/services/word_count.py`): fences, HTML, images, and link
+  URLs stripped; headings, link text, and inline code kept; a token counts
+  as a word if it holds a letter or digit. The rules are written out in
+  the contract so an author can hand-count a section and get the same
+  number, and a test hand-counts one (3 + 29 + 22 + 10 = 64).
+- Three new tables — `package_sections`, `package_media`,
+  `glossary_terms` — normalized in the same transaction as the package
+  row, like the questions. `lesson_packages` gains `kind` and
+  `word_count_source`; `video_key`, `transcript`, and `measured_at`
+  become nullable under paired CHECKs that make each present exactly when
+  the kind is video. `questions` gains `after_section`, and the
+  "after_block iff review" CHECK becomes "exactly one placement iff
+  review".
+- Ingestion warns rather than refuses on an empty glossary (the publish
+  gate refuses); `IngestResponse` carries the warnings.
+- The package detail view gained a human summary above the raw manifest
+  — kind, words counted vs shipped, sections by role with counted/
+  excluded, media with durations, question counts, glossary size. This is
+  the walkthrough finding that `word_count` was visible only inside raw
+  JSON.
+
+*Credit (B2)*
+- A text lesson feeds **both** the word term and the A/V term; a video
+  lesson still feeds one or the other. `CreditLessonRow` gained `kind`
+  and `word_count_source`, both defaulted so a breakdown stored before
+  today rebuilds through `from_stored` unchanged.
+- The retained record now names each lesson's basis: `words: N counted
+  (computed from package text, body sections only, 7.02.5)` or `(from
+  manifest, trusted)`; A/V as `(supplemental, additional learning)`,
+  `(program is the video, 7.02.7)`, or `(N s narrates the text)`. The
+  middle one is the label fix — an all-video lesson used to print
+  "(additional learning)".
+
+*The reader (B3)*
+- `GET /my/enrollments/{id}/lessons/{pid}/read`, plus an ungated
+  admin/reviewer preview at `GET /courses/{code}/lessons/{pid}/read`.
+- **The gate is server-side and withholds the text.** A body section
+  whose preceding section still has an unanswered review question comes
+  back with `markdown: null`, and so do its media and its own questions.
+  Front matter, glossary, and appendix are never gated.
+- No answer key in the payload, the 006 rule verbatim, with the
+  equivalent test. No seek lock on supplemental clips.
+
+*Search and glossary (B4, B5)*
+- `GET /my/enrollments/{id}/search?q=` and
+  `GET /my/enrollments/{id}/glossary[?term=]`, each with an admin preview
+  twin. Search reads `package_sections` and nothing else.
+- `/how-it-works` (4.05.3 item 4, site-wide) rewritten to describe both
+  formats, including that a study guide's videos add to the text rather
+  than reading it aloud.
+
+*Review scope and the publish gate (B6, B7)*
+- The 4.02 sign-off form now shows what an approval asserts, versioned in
+  `backend/app/constants/review_attestation.py`; a course with text
+  lessons adds the 7.02.7 and 7.02.5 lines. No schema change, per spec.
+- Three accumulating block findings for a course with any text lesson:
+  `text_word_count_zero`, `glossary_missing` (4.05.3 item 3),
+  `front_matter_missing` (4.05.3 item 4). All three are in
+  `PUBLISH_ONLY_CODES`: they gate publish, not the assessment preview.
+
+*Elsewhere*
+- The audit bundle writes a text package's sections as shipped plus a
+  `word-count.txt` showing the 7.02.5 accounting section by section, and
+  media by reference — it would otherwise have crashed on a package with
+  no transcript.
+- Frontend: a `Reader` component (contents, gated sections, inline clips,
+  in-place review questions, search box, glossary panel), mounted by
+  `MyLesson` and the admin/reviewer preview beside the existing `Player`;
+  the package overview on the admin package view; the attestation above
+  the review form; kind-aware lesson and credit rows on the admin course
+  page.
+
+**Standards touched**
+- 7.02.5 — **the 005 trust gap closes for text packages.** superCPE
+  counts the words itself from the shipped body sections, and the
+  paragraph's exclusion list is a `role` with a CHECK constraint behind
+  it rather than an author's promise. COMPLIANCE.md carries the update
+  row; the 005 row stands unchanged for video packages.
+- 7.02.7 — a text package's clips are additional-learning by
+  construction: the contract requires the claim per item, ingestion
+  refuses without it quoting the paragraph's own test, and a CHECK on
+  `package_media` means a row that does not claim it cannot be stored.
+- 7.02.6 — same arithmetic, a third shape of input, and a record that
+  names each lesson's basis in words.
+- 4.05.3 items 2 and 3 — **built, and publish-gated.** The 011 row's
+  "not built" gap closes for text lessons.
+- 4.05.3 item 4 — the front-matter block is required content and its
+  absence blocks publish; `/how-it-works` covers both formats.
+- 5.01.2.1 — the same "throughout the program in sufficient intervals"
+  requirement, expressed as section gates instead of video pauses.
+- 4.02 — the reviewer is now shown what they are asserting.
+
+**Decisions**
+- **4.05.3 item 1 (overview of topics) is answered by the course
+  description**, not by a required section titled "overview". The
+  `description_missing` publish gate already existed and applies to every
+  course of either kind; adding a second, text-only overview rule would
+  have made the same requirement answerable two different ways depending
+  on the format. The per-lesson objectives outline on the course page
+  (011) continues to serve it alongside the description.
+- **No forward-seek lock on supplemental clips**, closing the ROADMAP
+  open question. Completion is verified by the qualified assessment
+  (6.01.2); interval placement is satisfied by the section gates
+  (5.01.2.1); the seek lock was always a sponsor design choice, not a
+  Standards requirement. The video-only player keeps its lock — changing
+  that is its own decision. Recorded in the decision doc too.
+- **Every review question placed after a section gates the next one**,
+  not just the last. A section may carry more than one, and keying them
+  by section (the first implementation) let a participant open the next
+  section by answering whichever happened to come last. Caught by running
+  the fixture through a real server; the test now answers them in the
+  wrong order first.
+- A locked section's markdown is **absent from the payload**, not hidden
+  by the browser. A gate the client could skip is not a gate.
+- Text packages keep `course_code`, `position`, `sources`, `author`, and
+  `content_hash` with the same meanings and rules as video packages. The
+  spec's example manifest elides them; the system needs them to attach a
+  lesson, refuse an uncited one, satisfy 9.02.2(4), and version a
+  re-upload. The contract now says so explicitly.
+- `duration_seconds` on a text package is the sum of its clips, so the
+  column means the same thing for both kinds: this lesson's actual
+  audio/video duration time. Durations are ffprobe-measured and truncated
+  down to whole seconds — a term may understate, never overstate.
+- Per-section word counts store each section's real size, including
+  excluded ones, rather than zeroing the excluded. The difference between
+  "shipped" and "counted" is exactly what 7.02.5 removed, and a reviewer
+  should be able to see how large the appendix was.
+- The attestation text is versioned, not stored per review — the spec's
+  call ("no schema change"). Storing the signed text on `course_reviews`
+  would be better evidence; see the known gap.
+- The 016-date correction the spec asks about was already carried by
+  017's entry (and again by 018's): it was conditional on Dane reporting
+  a browser-check date, none was reported, and no correction entry was
+  owed. Nothing further is carried here.
+
+**Known gaps**
+- **Part C is not built.** video-tool cannot yet export a text package;
+  `docs/course-package.md` must be copied into that repo identically, and
+  the export-time word-count preview, the `after_section` placement, and
+  the `av_is_additional_learning` export refusal are that session's work.
+  Until then the only text package that exists is the test fixture.
+- **The contract is mirrored in one repo only** (acceptance 10 is half
+  done). Copying `docs/course-package.md` into video-tool is a Part C
+  step and cannot be done from here.
+- Acceptance 9 (the operator run on production) was **performed locally,
+  not on production**: the fixture was ingested through a real uvicorn
+  against the dev Postgres, the package summary and the credit record
+  wording were read off the live API, and the draft course and its
+  package were deleted (which exercised the new media-object cleanup).
+  The production run is the operator's, after deploy. The migration
+  round-trips up and down; there is no data migration, because every
+  existing row is a video package and the server defaults say so.
+- The attestation is not stored with the review it belongs to, so a
+  future reader infers the wording from `ATTESTATION_VERSION` and the
+  sign-off date rather than reading it on the row. Worth its own small
+  feature.
+- Search is plain case-insensitive substring matching over stripped
+  prose. No stemming, no ranking, no multi-term scoring — 4.05.3's own
+  example is "an index or key word search function", and this is that.
+  A large catalog may want more.
+- A text lesson still has a `lesson_progress` row shape built for video
+  (`furthest_seconds`), which for a study guide is meaningless; the
+  participant course page shows "Study guide" instead of a timecode, and
+  nothing reads the number. Removing it would touch the 010 progress
+  contract and was left alone.
+- `ASC842-PCX` is not migrated and was not touched (explicitly out of
+  scope). No pricing changes.
+- Deploy is the operator's: one Alembic migration, no new env vars, no
+  new storage prefixes (media lands under the existing `packages/`, which
+  013's backup policy already covers).

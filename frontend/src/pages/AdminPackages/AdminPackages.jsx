@@ -51,6 +51,127 @@ function UploadResult({ result }) {
   );
 }
 
+const WORD_COUNT_SOURCES = {
+  computed: "computed by superCPE from the shipped body sections (7.02.5)",
+  manifest: "declared by the exporter and taken on trust",
+};
+
+/**
+ * The human summary above the raw manifest.
+ *
+ * It exists because the first end-to-end authoring run found the one
+ * number a reviewer most needs — how many words this lesson puts into the
+ * credit formula, and from where — visible only by reading raw JSON. For
+ * a text package the interesting fact is the 7.02.5 split: which sections
+ * were counted as required reading and which were excluded.
+ */
+function PackageOverview({ detail }) {
+  const overview = detail.overview;
+  if (!overview) return null;
+  const isText = overview.kind === "text";
+
+  return (
+    <div className={styles.overview}>
+      <dl className={styles.overviewFacts}>
+        <dt>Kind</dt>
+        <dd>{isText ? "Text — a study guide" : "Video"}</dd>
+
+        <dt>Words counted</dt>
+        <dd>
+          {overview.word_count.toLocaleString()}{" "}
+          <span className={styles.muted}>
+            ({WORD_COUNT_SOURCES[overview.word_count_source] ||
+              overview.word_count_source}
+            )
+          </span>
+        </dd>
+
+        {isText && (
+          <>
+            <dt>Words shipped in total</dt>
+            <dd>
+              {overview.total_words.toLocaleString()}{" "}
+              <span className={styles.muted}>
+                — the difference is what 7.02.5 excludes
+              </span>
+            </dd>
+          </>
+        )}
+
+        <dt>Audio/video</dt>
+        <dd>
+          {isText
+            ? `${overview.media_count} supplemental clip${
+                overview.media_count === 1 ? "" : "s"
+              }, ${overview.media_seconds} s counted`
+            : `${detail.duration_seconds} s, ${
+                detail.av_is_additional_learning
+                  ? "counted (7.02.7)"
+                  : "narration — not counted (7.02.7)"
+              }`}
+        </dd>
+
+        <dt>Questions</dt>
+        <dd>
+          {overview.review_questions} review + {overview.assessment_questions}{" "}
+          assessment
+        </dd>
+      </dl>
+
+      {isText && overview.sections_by_role.length > 0 && (
+        <table className={styles.sectionTable}>
+          <caption className={styles.tableCaption}>
+            Sections by role. Only body sections are required reading, so
+            only their words enter the credit formula (7.02.5).
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Role</th>
+              <th scope="col">Sections</th>
+              <th scope="col">Words</th>
+              <th scope="col">In the count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {overview.sections_by_role.map((row) => (
+              <tr key={row.role}>
+                <td>{row.label}</td>
+                <td>{row.sections}</td>
+                <td>{row.words.toLocaleString()}</td>
+                <td>{row.counted ? "Counted" : "Excluded"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {isText && detail.sections.length > 0 && (
+        <ol className={styles.sectionList}>
+          {detail.sections.map((section) => (
+            <li key={section.section_key}>
+              <span className={styles.sectionName}>{section.title}</span>{" "}
+              <span className={styles.muted}>
+                {section.file} · {section.word_count.toLocaleString()} words ·{" "}
+                {section.counted ? "counted" : "excluded"}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {isText && (
+        <p className={styles.muted}>
+          {detail.glossary_terms.length} glossary term
+          {detail.glossary_terms.length === 1 ? "" : "s"} (4.05.3 item 3).
+          {detail.glossary_terms.length === 0 &&
+            " A course with no glossary terms cannot be published."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+
 function PackageDetail({ id, onAuthFailure }) {
   const [detail, setDetail] = useState(null);
   const [transcript, setTranscript] = useState(null);
@@ -89,17 +210,29 @@ function PackageDetail({ id, onAuthFailure }) {
       <h3 className={styles.detailTitle}>
         {detail.lesson_id} v{detail.version} — {detail.title}
       </h3>
+      <PackageOverview detail={detail} />
       <h4 className={styles.blockTitle}>Manifest</h4>
       <pre className={styles.json}>{JSON.stringify(detail.manifest, null, 2)}</pre>
       <h4 className={styles.blockTitle}>Questions</h4>
       <pre className={styles.json}>{JSON.stringify(detail.questions, null, 2)}</pre>
-      <h4 className={styles.blockTitle}>Transcript</h4>
-      {transcript === null ? (
-        <button className={styles.linkButton} type="button" onClick={loadTranscript}>
-          View transcript
-        </button>
-      ) : (
-        <pre className={styles.json}>{transcript}</pre>
+      {/* A text package has no narration to transcribe; its program
+          material is the guide, summarized above and served section by
+          section. */}
+      {detail.kind !== "text" && (
+        <>
+          <h4 className={styles.blockTitle}>Transcript</h4>
+          {transcript === null ? (
+            <button
+              className={styles.linkButton}
+              type="button"
+              onClick={loadTranscript}
+            >
+              View transcript
+            </button>
+          ) : (
+            <pre className={styles.json}>{transcript}</pre>
+          )}
+        </>
       )}
     </section>
   );

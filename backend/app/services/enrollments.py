@@ -327,6 +327,7 @@ def progress(db: Session, enrollment: Enrollment) -> dict:
             {
                 "package_id": package.id,
                 "lesson_id": package.lesson_id,
+                "kind": package.kind,
                 "version": package.version,
                 "position": position,
                 "title": package.title,

@@ -35,7 +35,10 @@ def normalize(db: Session, package: LessonPackage) -> list[Question]:
             package_id=package.id,
             question_key=q["id"],
             kind=q["kind"],
+            # Exactly one placement per review question, whichever medium
+            # the package is (5.01.2.1); the CHECK on the table enforces it.
             after_block=q.get("after_block"),
+            after_section=q.get("after_section"),
             position=position,
             stem=q["stem"],
             feedback=q["feedback"],

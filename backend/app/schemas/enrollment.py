@@ -38,6 +38,9 @@ class MyCompletionOut(BaseModel):
 class MyLessonProgress(BaseModel):
     package_id: int
     lesson_id: str
+    # 023: "video" or "text" — which surface opens this lesson, a player
+    # or a reader.
+    kind: str
     version: int
     position: int
     title: str

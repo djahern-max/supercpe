@@ -500,6 +500,30 @@ def _material_files(
         prefix = f"7-materials/{package.lesson_id}/v{package.version}"
         files[f"{prefix}/manifest.json"] = _json_bytes(package.manifest)
         files[f"{prefix}/questions.json"] = _json_bytes(package.questions)
+        if package.is_text:
+            # A text package's program materials are its guide. The
+            # sections go in as shipped, under the file names the author
+            # wrote them as, with the 7.02.5 accounting beside them so an
+            # auditor can see which words the credit was computed from.
+            for section in package.sections:
+                files[f"{prefix}/{section.file}"] = section.markdown.encode(
+                    "utf-8"
+                )
+            files[f"{prefix}/word-count.txt"] = _word_count_text(
+                package
+            ).encode("utf-8")
+            for item in package.media:
+                files[f"{prefix}/{item.file}.txt"] = (
+                    f"storage_key: {item.storage_key}\n"
+                    f"duration_seconds: {item.duration_seconds}\n"
+                    f"after_section: {item.after_section}\n"
+                    "av_is_additional_learning: true (7.02.7)\n"
+                    "video omitted; retrieve by key\n"
+                ).encode("utf-8")
+                if include_video and storage.exists(item.storage_key):
+                    with storage.open(item.storage_key) as video:
+                        files[f"{prefix}/{item.file}"] = video.read()
+            continue
         files[f"{prefix}/transcript.md"] = package.transcript.encode("utf-8")
         files[f"{prefix}/video.txt"] = (
             f"storage_key: {package.video_key}\n"
@@ -510,6 +534,39 @@ def _material_files(
         if include_video and storage.exists(package.video_key):
             with storage.open(package.video_key) as video:
                 files[f"{prefix}/video.mp4"] = video.read()
+
+
+def _word_count_text(package) -> str:
+    """The 7.02.5 accounting for one text package, section by section: what
+    was counted, what was excluded, and why. The word term of the
+    9.02.2(2)(ii) calculation is a single number; this is where it comes
+    from."""
+    lines = [
+        f"Word count for {package.lesson_id} v{package.version}",
+        "Computed by superCPE from the shipped markdown of the body "
+        "sections (7.02.5).",
+        "",
+    ]
+    for section in package.sections:
+        mark = "counted " if section.counted else "excluded"
+        lines.append(
+            f"  {mark}  {section.word_count:>7}  {section.role:<12} "
+            f"{section.file}  {section.title}"
+        )
+    lines += [
+        "",
+        f"Counted (body sections only): {package.word_count}",
+        f"Shipped in total:             "
+        f"{sum(s.word_count for s in package.sections)}",
+        "",
+        "7.02.5 excludes material not critical to the stated learning "
+        "objectives — course introduction, instructions to the "
+        "participant,",
+        "author biographies, table of contents, glossary, pre-program "
+        "assessment, and appendixes of supplementary reference material.",
+        "Only the body sections above entered the credit formula.",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _readme(

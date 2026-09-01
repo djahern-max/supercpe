@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_role
+from app.constants import review_attestation
+from app.constants.review_attestation import ATTESTATION_VERSION
 from app.db import get_db
 from app.models.account import Account
 from app.models.course import Course
@@ -106,7 +108,9 @@ def get_course(course_code: str, db: Session = Depends(get_db)):
                 package_id=lesson.package_id,
                 position=lesson.position,
                 title=lesson.package.title,
+                kind=lesson.package.kind,
                 duration_seconds=lesson.package.duration_seconds,
+                word_count=lesson.package.word_count,
             )
             for lesson in sorted(course.lessons, key=lambda cl: cl.position)
         ],
@@ -118,6 +122,17 @@ def get_course(course_code: str, db: Session = Depends(get_db)):
             ReviewSme(id=sme.id, name=sme.name, credentials=sme.credentials)
             for sme in smes.list_smes(db)
         ],
+        # 4.02: what recording an approval puts this reviewer's name to.
+        # A course with text lessons adds the two 023 judgments only a
+        # human reading the guide can make — that the supplemental videos
+        # add learning rather than narrate the text (7.02.7), and that
+        # excluded material is out of the counted body (7.02.5). Both are
+        # places the credit formula could otherwise be inflated without
+        # anything in the code noticing.
+        attestation_version=ATTESTATION_VERSION,
+        attestation=review_attestation.for_course(
+            any(cl.package.is_text for cl in course.lessons)
+        ),
     )
 
 

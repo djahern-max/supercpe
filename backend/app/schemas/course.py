@@ -98,6 +98,7 @@ class ObjectiveGroup(BaseModel):
 class CourseLessonItem(BaseModel):
     package_id: int
     lesson_id: str
+    kind: str
     version: int
     position: int
     title: str
@@ -123,6 +124,10 @@ class CreditLessonRowOut(BaseModel):
     words_counted: int
     review_questions: int
     assessment_questions: int
+    # 023, defaulted so a breakdown stored before 023 still serves: every
+    # such row was a video lesson whose words came from its manifest.
+    kind: str = "video"
+    word_count_source: str = "manifest"
 
 
 class CourseCreditAdmin(BaseModel):

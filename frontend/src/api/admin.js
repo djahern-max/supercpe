@@ -85,6 +85,24 @@ export function getPlayLesson(code, packageId) {
   return request(`/api/v1/courses/${code}/lessons/${packageId}/play`);
 }
 
+// 023: the reader preview. Ungated — a reviewer has to read the guide
+// they sign off on (4.02), and there is no participant record to gate
+// against.
+export function getReadLesson(code, packageId) {
+  return request(`/api/v1/courses/${code}/lessons/${packageId}/read`);
+}
+
+export function searchCourse(code, query) {
+  return request(
+    `/api/v1/courses/${code}/search?q=${encodeURIComponent(query)}`
+  );
+}
+
+export function getCourseGlossary(code, term) {
+  const suffix = term ? `?term=${encodeURIComponent(term)}` : "";
+  return request(`/api/v1/courses/${code}/glossary${suffix}`);
+}
+
 export function gradeReview(code, packageId, questionKey, choiceKey) {
   return request(
     `/api/v1/courses/${code}/lessons/${packageId}/review/${questionKey}`,

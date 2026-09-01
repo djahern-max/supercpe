@@ -68,6 +68,7 @@ def _lesson_items(db: Session, course: Course) -> list[CourseLessonItem]:
             CourseLessonItem(
                 package_id=lesson.package_id,
                 lesson_id=lesson.package.lesson_id,
+                kind=lesson.package.kind,
                 version=lesson.package.version,
                 position=lesson.position,
                 title=lesson.package.title,

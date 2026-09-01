@@ -150,3 +150,33 @@
   margin: 0;
   padding-left: var(--space-md);
 }
+
+/* 4.02: the statements an approval puts the reviewer's name to, shown
+   above the form rather than buried in a policy somewhere. */
+.attestation {
+  margin: var(--space-md) 0;
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+
+.attestationLead {
+  margin: 0 0 var(--space-sm);
+}
+
+.attestationList {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  line-height: 1.5;
+}
+
+.attestationVersion {
+  margin: var(--space-md) 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}

@@ -584,9 +584,20 @@ function AdminCourseDetail() {
                       </td>
                       <td>
                         {row.av_seconds_counted} s
-                        {!row.av_is_additional_learning && " (narrates the text)"}
+                        {row.kind === "text"
+                          ? " (supplemental)"
+                          : row.av_is_additional_learning
+                            ? " (the program is the video)"
+                            : " (narrates the text)"}
                       </td>
-                      <td>{row.words_counted}</td>
+                      <td>
+                        {row.words_counted}
+                        {row.word_count_source === "computed"
+                          ? " (counted from the text)"
+                          : row.words_counted > 0
+                            ? " (from the manifest)"
+                            : ""}
+                      </td>
                       <td>{row.review_questions}</td>
                       <td>{row.assessment_questions}</td>
                     </tr>
@@ -639,7 +650,11 @@ function AdminCourseDetail() {
                   <td>{lesson.lesson_id}</td>
                   <td>v{lesson.version}</td>
                   <td>{lesson.title}</td>
-                  <td>{formatDuration(lesson.duration_seconds)}</td>
+                  <td>
+                    {lesson.kind === "text"
+                      ? "Study guide"
+                      : formatDuration(lesson.duration_seconds)}
+                  </td>
                   <td className={styles.actions}>
                     <button
                       className={styles.smallButton}

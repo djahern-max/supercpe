@@ -230,3 +230,55 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   the course title. Fixing it means SSR or edge-injection of per-route
   meta tags (and per-course cards would then have to carry the full 8.01
   question all over again) — its own feature if it ever matters.
+- The 4.05.3 items 2–3 note above (glossary in the package contract) is
+  absorbed and extended by 023: glossary plus keyword search, both
+  publish-gated, for text-first packages. Closed 2026-09-01 by 023's
+  Part B; the video-tool half of it is Part C.
+- The 4.02 attestation 023 shows the reviewer is not stored on the
+  review it belongs to (023's spec said no schema change). A future
+  reader infers the wording from `ATTESTATION_VERSION` and the sign-off
+  date; storing the signed text on `course_reviews` would be better
+  evidence and is its own small feature.
+- A text lesson carries a `lesson_progress` row shaped for video
+  (`furthest_seconds`), which means nothing for a study guide. Nothing
+  reads it and the participant page shows "Study guide" instead of a
+  timecode; removing it would touch the 010 progress contract. 
+
+## Phase D — Text-first catalog
+Decided 2026-09-01, during the first end-to-end authoring run
+(first-course-walkthrough.md), by the operator as a user. Full rationale
+and integrity lines: the "Text-first courses" entry in this repo's
+docs/decisions/ (or wherever the long-form pivot record lands).
+
+The short version: under Method 2, 50 minutes of produced video buys 1.0
+credit and ~9,000 words of instructional text buys the same (7.02.6), and
+the self-study market buys credits per hour of effort. Video-first cannot
+produce a competitive catalog. The primary format becomes a study guide
+(words ÷ 180) with short supplemental videos that are genuinely additional
+learning (7.02.7) and review questions placed between sections (5.01.2.1,
+"throughout the program" — the same principle as structural difference 1,
+generalized from video blocks to text sections). ASC842-PCX is
+reclassified as the pipeline validator, not the flagship.
+
+Nothing in Phases A–C changes: Method 2 only, all gates, snapshots, and
+retention rules carry over. The 7.02.5 exclusions (glossary, appendixes,
+front matter out of the word count) are enforced structurally at
+ingestion, and word_count for text packages is computed from the shipped
+text, not trusted from the manifest (closes the 005 trust row for the
+format that matters).
+
+- 023 Text-first course packages: contract change in
+  docs/course-package.md (`kind: text`, sections with roles, supplemental
+  media), computed word count, participant reader with section-gated
+  review questions, keyword search and glossary (4.05.3 items 2–3 become
+  publish-gate refusals), reviewer attestation extended to 7.02.7/7.02.5
+  scope. Spec: current-feature.md.
+  (Parts A and B built 2026-09-01 against a hand-made fixture package.
+  **Part C — video-tool authoring and export — is not built**, and until
+  it is, the only text package that exists is that fixture; copying
+  `docs/course-package.md` into video-tool identically is the first step
+  of that session. The open question above about the forward-seek lock is
+  decided: relaxed for supplemental clips, kept for the video-only
+  player, recorded in the decision doc and the 023 entry.)
+- 024 First text-first course authored and ingested (topic TBD; ASC 842
+  expansion is the candidate — research and videos exist).
