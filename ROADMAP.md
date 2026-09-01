@@ -280,5 +280,12 @@ format that matters).
   of that session. The open question above about the forward-seek lock is
   decided: relaxed for supplemental clips, kept for the video-only
   player, recorded in the decision doc and the 023 entry.)
+- 023a manifest.json joins the content hash: a re-upload whose only
+  change is in the manifest (a video lesson's `word_count`, a text
+  section's `role`) was deduplicated as "unchanged" and discarded, with
+  the credit left on the old number. Ran before video-tool 05 so the
+  contract is mirrored into that repo once, in its final form
+  (shipped 2026-09-01; contract, ingest, and tests only — no schema
+  change).
 - 024 First text-first course authored and ingested (topic TBD; ASC 842
   expansion is the candidate — research and videos exist).
