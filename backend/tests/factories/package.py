@@ -183,8 +183,11 @@ def build_package(
     if manifest_overrides:
         manifest = _deep_merge(manifest, manifest_overrides)
     if not hash_overridden:
+        # The manifest is hashed without its own hash field, so the value
+        # can be computed before it is written — the same order an
+        # exporter has to work in.
         manifest["content_hash"] = compute_content_hash(
-            transcript.encode(), questions_bytes, video
+            manifest, transcript.encode(), questions_bytes, video
         )
 
     written_transcript = tamper_transcript if tamper_transcript is not None else transcript

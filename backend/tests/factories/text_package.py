@@ -332,8 +332,9 @@ def build_text_package(
             for m in (manifest.get("media") or [])
             if (package_dir / m["file"]).exists()
         ]
+        # Hashed without its own hash field (see the video factory).
         manifest["content_hash"] = compute_text_content_hash(
-            section_bytes, questions_bytes, media_bytes
+            manifest, section_bytes, questions_bytes, media_bytes
         )
 
     (package_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))

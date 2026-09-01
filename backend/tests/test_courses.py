@@ -24,9 +24,10 @@ def upload(client, zip_path, headers):
 
 
 def ingest(client, headers, tmp_path, **manifest_overrides):
-    """Ingest a factory package and return its id. Each distinct lesson or
-    version needs a distinct transcript because the content hash ignores the
-    manifest. `_questions` replaces the factory's question list."""
+    """Ingest a factory package and return its id. The distinct transcript
+    per lesson or version predates 023a, when the hash ignored the
+    manifest; it is harmless now that a manifest change alone is enough.
+    `_questions` replaces the factory's question list."""
     marker = manifest_overrides.get("lesson_id", "default")
     version_marker = manifest_overrides.pop("_transcript_marker", "")
     questions = manifest_overrides.pop("_questions", None)

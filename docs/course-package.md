@@ -83,11 +83,12 @@ is the credit-bearing unit (a lesson on its own may be below the 0.2 minimum).
 - Values come from measured audio; a package whose `duration_source` is
   measured must not carry estimated block timings.
 - `questions.json` `after_block` refers to the 1-based index into this list.
-- `content_hash` is the lowercase hex sha256 digest of the concatenation of the
-  raw bytes of `transcript.md`, then `questions.json`, then `video.mp4`, in
-  exactly that order. It is recomputed on ingest and must match. A re-upload
-  with the same hash is a no-op; a different hash creates a new lesson version
-  and marks the course's credit and review as stale.
+- `content_hash` is the lowercase hex sha256 digest of the concatenation of
+  the **canonical manifest bytes** (defined below), then the raw bytes of
+  `transcript.md`, then `questions.json`, then `video.mp4`, in exactly that
+  order. It is recomputed on ingest and must match. A re-upload with the same
+  hash is a no-op; a different hash creates a new lesson version and marks the
+  course's credit and review as stale.
 - `word_count` is the count of text learning material a participant must
   *read* (7.02.5). For an all-video lesson it is 0 and stays 0. The transcript
   is not reading material and is never counted; it is the transcript of record.
@@ -97,6 +98,39 @@ is the credit-bearing unit (a lesson on its own may be below the 0.2 minimum).
 - `learning_objectives` is a non-empty array of `{ "id", "text" }` objects.
   Ids must be unique within the manifest; `questions.json` references them
   through `objective_ids`.
+
+### The canonical manifest bytes
+
+The manifest is part of the content the hash covers, for both kinds. It
+has to be: `word_count` is a credit input, a section `role` decides
+whether words are counted at all, and `field_of_study`,
+`knowledge_level`, `prerequisites`, `advance_preparation`,
+`learning_objectives`, `sources`, `glossary_terms` and media placements
+can all change in a re-export while every other file in the zip stays
+byte-identical. If the manifest were outside the hash, such a re-upload
+would be deduplicated and the change silently discarded.
+
+Two consequences follow, and both sides implement them identically:
+
+1. **The hash cannot cover its own field.** The `content_hash` key is
+   removed from the manifest object before hashing. The exporter
+   therefore computes the digest first and writes the finished
+   `manifest.json` second.
+2. **What is hashed is the parsed object, not the file's bytes.** Because
+   the exporter must hash before it can finish writing the file, the two
+   repos can only agree on a canonical serialization of the manifest:
+
+       json.dumps(manifest_without_content_hash,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=False).encode("utf-8")
+
+   Keys sorted, no spaces after `,` or `:`, UTF-8, non-ASCII characters
+   left as themselves. Indentation and key order in the written file are
+   free and move nothing.
+
+Everything after the manifest in the digest is the raw bytes of the files
+themselves, in the order each kind defines.
 
 ## transcript.md
 
@@ -370,12 +404,18 @@ authoring even though nothing in the format forbids it.
 ### content_hash
 
 For a text package, the lowercase hex sha256 digest of the concatenation
-of the raw bytes of: every `sections[].file` in manifest order, then
-`questions.json`, then every `media[].file` in manifest order. Recomputed
-on ingest and must match, with the same consequences as for a video
-package — a re-upload with the same hash is a no-op, a different hash
-creates a new lesson version and marks the course's credit and review
-stale.
+of the **canonical manifest bytes** (see "The canonical manifest bytes"
+under the video kind — the rule is identical), then the raw bytes of:
+every `sections[].file` in manifest order, then `questions.json`, then
+every `media[].file` in manifest order. Recomputed on ingest and must
+match, with the same consequences as for a video package — a re-upload
+with the same hash is a no-op, a different hash creates a new lesson
+version and marks the course's credit and review stale.
+
+The manifest is inside the hash for a reason this kind makes vivid: a
+section whose `role` flips from `appendix` to `body` changes the computed
+word count and therefore the credit, while every file in the zip stays
+byte-identical.
 
 ## The "How this course works" template
 

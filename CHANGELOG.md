@@ -2434,3 +2434,100 @@ The strategy this serves is recorded in
 - Deploy is the operator's: one Alembic migration, no new env vars, no
   new storage prefixes (media lands under the existing `packages/`, which
   013's backup policy already covers).
+
+## 023a — manifest.json joins the content hash
+
+Shipped: 2026-09-01
+
+**What changed**
+- `content_hash` now covers `manifest.json` first, for both package
+  kinds, then the sequence each kind already defined: video —
+  transcript.md, questions.json, video.mp4; text — the section files in
+  manifest order, questions.json, the media files in manifest order.
+  `manifest_hash_bytes` in `backend/app/services/packages.py` is the new
+  first ingredient of both digests.
+- The manifest is hashed **without its `content_hash` key** — the digest
+  cannot cover its own field — and over a **canonical serialization of
+  the parsed object** (`sort_keys=True`, `separators=(",", ":")`,
+  `ensure_ascii=False`, UTF-8), not the file's literal bytes. The literal
+  bytes are unusable here: the exporter has to know the digest before it
+  can finish writing the file, so the only form both repos can arrive at
+  is one that ignores the written file's indentation and key order. Both
+  properties are stated in `docs/course-package.md` under "The canonical
+  manifest bytes" and implemented identically by the test factories.
+- `docs/course-package.md`: one definition sentence rewritten per kind
+  plus the new shared section; the text kind points at it rather than
+  restating it, and names the case that makes it vivid (an
+  `appendix` → `body` role flip moves the credit with every file in the
+  zip byte-identical).
+- The two refusal messages now name manifest.json in the byte order they
+  report; rule numbers and everything else about them are unchanged.
+- `backend/tests/test_manifest_hash.py`: the feature's acceptance
+  criteria — a byte-identical re-upload of each kind is still a no-op; a
+  text role flip alone is a new version whose computed word count moved
+  by exactly the appendix's words (with a second test proving the two
+  zips differ in nothing but that one manifest word); a video
+  `word_count` change alone is a new version that moves a holding
+  course's stored credit; and the canonical bytes behave as the contract
+  says.
+
+**Standards touched**
+- 7.02.6 — the formula is untouched; its inputs are now inside the
+  identity of a package version, so a re-export that changes only
+  `word_count`, a section `role`, or `av_is_additional_learning` can no
+  longer be deduplicated away with the credit left standing on the old
+  number. COMPLIANCE.md carries the update row.
+- 7.02.5 — a section `role` decides whether its words are counted at all;
+  that decision now moves the hash.
+- 7.02.7 — `av_is_additional_learning` likewise.
+- 9.02.1(8) — what makes a retained package version distinct from its
+  predecessor now includes its descriptive record, not only its files.
+
+**Decisions**
+- **Canonical serialization, not raw manifest bytes.** current-feature.md
+  says "the raw bytes of `manifest.json`", and its own chicken-and-egg
+  guard rules that out: the exporter must remove `content_hash` to hash,
+  which means it is hashing something other than the file it eventually
+  writes. Raw-byte agreement would then depend on the exporter and the
+  ingester reproducing each other's whitespace and key order exactly.
+  Canonical bytes over the parsed object make the two agree by
+  construction, and cost the contract three lines to specify. This is the
+  one place the implementation departs from the spec's literal wording,
+  and the departure is what the spec's own guard requires.
+- Stored rows keep their historical hashes. They were computed under the
+  definition of their day and remain valid records of what was ingested;
+  nothing is re-hashed retroactively.
+- **Consequence, as the spec asks it be recorded:** the first re-upload
+  of a byte-identical pre-023a package after this deploys hashes
+  differently and creates version N+1 once. Harmless — a new version of
+  identical content — and on the current disposable database, invisible.
+- The walkthrough's message-accuracy finding is **resolved by
+  construction, not by rewording**. "Already ingested — nothing was
+  created. Lesson X vN is unchanged" was false when the manifest sat
+  outside the hash; with it inside, a hash match means the package really
+  is unchanged, so the frontend string in
+  `frontend/src/pages/AdminPackages/AdminPackages.jsx` is left exactly as
+  it is.
+- No schema change and no migration: `lesson_packages.content_hash` is
+  the same column holding the same kind of value.
+- A stale comment in `backend/tests/test_courses.py` ("the content hash
+  ignores the manifest") was corrected rather than left to mislead. The
+  per-version distinct transcripts it explains are now redundant but
+  harmless, and were not churned.
+
+**Known gaps**
+- **Mirroring into video-tool is not done** and is out of scope by the
+  spec: copying `docs/course-package.md` into that repo is the first step
+  of video-tool 05, which is why this feature ran first. Until then no
+  exporter implements the new definition — only the fixture factories
+  here do, which is what the tests exercise.
+- The 005 gap stands: a video package's `word_count` is still trusted
+  from the manifest. 023a only guarantees that a corrected number is
+  ingested rather than discarded. Text packages remain the format where
+  the count is computed (023).
+- No retro-rehashing of stored packages, by the spec's instruction. A
+  reader comparing an old row's hash against the current definition will
+  not be able to reproduce it; the definition it was computed under is in
+  this changelog and in COMPLIANCE.md.
+- Deploy is the operator's: no migration, no new env vars, no new storage
+  prefixes.

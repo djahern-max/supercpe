@@ -181,8 +181,40 @@ def _check_fields(obj: dict, fields: dict, prefix: str, errors: list[str]) -> bo
     return ok
 
 
-def compute_content_hash(transcript: bytes, questions: bytes, video: bytes) -> str:
+def manifest_hash_bytes(manifest: dict) -> bytes:
+    """The manifest's contribution to `content_hash`, for either kind.
+
+    Every hash starts here, because the manifest is content: `word_count`
+    is a credit input, a section `role` flip moves the computed count, and
+    `field_of_study`, `knowledge_level`, `prerequisites`,
+    `advance_preparation`, `learning_objectives`, `sources`, glossary
+    terms and media placements are all things a re-export can change while
+    the files beside it stand still. Before 023a they could change and be
+    deduplicated as "unchanged," which was false.
+
+    Two things this is not. It is not the file's literal bytes: an
+    exporter has to know the digest before it can finish writing
+    manifest.json, so the only form the exporter and the ingester can both
+    arrive at is a canonical one — sorted keys, no separator spaces,
+    UTF-8, non-ASCII left as itself — computed from the parsed object, so
+    neither side's indentation can move the hash. And it does not include
+    `content_hash`, which cannot cover itself; the key is dropped before
+    serializing, on both sides.
+    """
+    without_hash = {k: v for k, v in manifest.items() if k != "content_hash"}
+    return json.dumps(
+        without_hash, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+
+
+def compute_content_hash(
+    manifest: dict, transcript: bytes, questions: bytes, video: bytes
+) -> str:
+    """The video package's hash: the manifest (canonical, without its own
+    hash field), then transcript.md, then questions.json, then
+    video.mp4."""
     digest = hashlib.sha256()
+    digest.update(manifest_hash_bytes(manifest))
     digest.update(transcript)
     digest.update(questions)
     digest.update(video)
@@ -190,14 +222,16 @@ def compute_content_hash(transcript: bytes, questions: bytes, video: bytes) -> s
 
 
 def compute_text_content_hash(
-    sections: list[bytes], questions: bytes, media: list[bytes]
+    manifest: dict, sections: list[bytes], questions: bytes, media: list[bytes]
 ) -> str:
-    """The text package's hash: every section file in manifest order, then
+    """The text package's hash: the manifest (canonical, without its own
+    hash field), then every section file in manifest order, then
     questions.json, then every media file in manifest order. Same role as
     the video package's hash — a re-upload with the same digest is a
     no-op, a different one is a new lesson version that makes the course's
     credit and review stale."""
     digest = hashlib.sha256()
+    digest.update(manifest_hash_bytes(manifest))
     for chunk in sections:
         digest.update(chunk)
     digest.update(questions)
@@ -503,16 +537,18 @@ def _validate_video(package_dir: Path) -> ValidatedPackage | list[str]:
         if isinstance(video.get("blocks"), list):
             _validate_blocks(video, transcript, errors)
 
-    # Rule 6: content hash over transcript + questions + video bytes, in order.
+    # Rule 6: content hash over the manifest + transcript + questions +
+    # video bytes, in order.
     computed_hash = compute_content_hash(
-        transcript_bytes, questions_bytes, video_path.read_bytes()
+        manifest, transcript_bytes, questions_bytes, video_path.read_bytes()
     )
     declared_hash = manifest.get("content_hash")
     if _has_type(declared_hash, str) and declared_hash.lower() != computed_hash:
         errors.append(
-            "manifest.content_hash: does not match sha256 over transcript.md + "
-            f"questions.json + video.mp4 bytes; manifest says {declared_hash}, "
-            f"computed {computed_hash}. Package contents changed after export."
+            "manifest.content_hash: does not match sha256 over manifest.json + "
+            f"transcript.md + questions.json + video.mp4 bytes; manifest says "
+            f"{declared_hash}, computed {computed_hash}. Package contents "
+            "changed after export."
         )
 
     # Rule 7.
@@ -692,14 +728,14 @@ def _validate_text(package_dir: Path, inner: set[str]) -> ValidatedPackage | lis
         )
 
     computed_hash = compute_text_content_hash(
-        section_bytes, questions_bytes, media_bytes
+        manifest, section_bytes, questions_bytes, media_bytes
     )
     declared_hash = manifest.get("content_hash")
     if _has_type(declared_hash, str) and declared_hash.lower() != computed_hash:
         errors.append(
-            "manifest.content_hash: does not match sha256 over the section "
-            "files in manifest order + questions.json + the media files in "
-            f"manifest order; manifest says {declared_hash}, computed "
+            "manifest.content_hash: does not match sha256 over manifest.json + "
+            "the section files in manifest order + questions.json + the media "
+            f"files in manifest order; manifest says {declared_hash}, computed "
             f"{computed_hash}. Package contents changed after export."
         )
 
