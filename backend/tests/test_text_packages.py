@@ -19,7 +19,13 @@ from app.services import questions as questions_service
 from app.services.courses import DERIVED_FIELDS
 from app.services.word_count import count_words
 from app.storage import LocalStorage
-from tests.conftest import login, make_account, publish_test_policies
+from tests.conftest import (
+    ADMIN_EMAIL,
+    ADMIN_PASSWORD,
+    login,
+    make_account,
+    publish_test_policies,
+)
 from tests.factories.package import build_package
 from tests.factories.text_package import (
     APPENDIX,
@@ -1109,3 +1115,96 @@ def test_public_payload_says_study_guide_not_zero_minutes_of_video(
     [lesson] = detail["lessons"]
     assert lesson["kind"] == "text"
     assert lesson["section_count"] == len(default_sections())
+
+
+# --- 023c F2: a text lesson is read when its questions are answered ---------
+
+
+def test_a_text_lesson_is_not_read_until_every_question_is_answered(
+    client, reading_participant
+):
+    """Before 023c a study guide's zero duration made it "watched" from
+    the start. Display only: the assessment gate is `assessment_available`,
+    which this test also walks."""
+    enrollment, package, _ = reading_participant
+
+    [card] = client.get("/api/v1/my/courses").json()
+    assert card["lessons_kind"] == "text"
+    assert card["lessons_total"] == 1
+    assert card["lessons_done"] == 0
+    assert "lessons_watched" not in card
+
+    for key in ("q-r01", "q-r02", "q-r03", "q-r04"):
+        assert answer(client, enrollment, package, key).status_code == 200
+    [card] = client.get("/api/v1/my/courses").json()
+    assert card["lessons_done"] == 0
+    detail = client.get(f"/api/v1/my/enrollments/{enrollment.id}").json()
+    [lesson] = detail["lessons"]
+    assert lesson["done"] is False
+
+    assert answer(client, enrollment, package, "q-r05").status_code == 200
+    [card] = client.get("/api/v1/my/courses").json()
+    assert card["lessons_done"] == 1
+    detail = client.get(f"/api/v1/my/enrollments/{enrollment.id}").json()
+    [lesson] = detail["lessons"]
+    assert lesson["done"] is True
+
+
+def test_the_assessment_payload_says_the_program_is_read(
+    client, admin_account, reading_participant
+):
+    """023c F1: the failed-attempt advice is kind-aware, from this field."""
+    enrollment, _, course = reading_participant
+    info = client.get(f"/api/v1/my/enrollments/{enrollment.id}/assessment").json()
+    assert info["lessons_kind"] == "text"
+    login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
+    preview = client.get(f"/api/v1/courses/{course.course_code}/assessment")
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["lessons_kind"] == "text"
+
+
+def test_the_admin_enrollment_list_counts_read_lessons_the_same_way(
+    client, admin_account, reading_participant
+):
+    enrollment, package, course = reading_participant
+    for key in ("q-r01", "q-r02", "q-r03", "q-r04", "q-r05"):
+        assert answer(client, enrollment, package, key).status_code == 200
+    login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
+    [row] = client.get(
+        f"/api/v1/admin/courses/{course.course_code}/enrollments"
+    ).json()
+    assert row["lessons_kind"] == "text"
+    assert row["lessons_done"] == 1
+
+
+def test_a_mixed_course_is_labelled_mixed(db_session, storage_root, tmp_path):
+    """One text lesson and one video lesson: neither "read" nor "watched"
+    is the whole truth, and the label says so."""
+    from tests.test_credit import make_package_row
+
+    text_package, _ = ingest_text(db_session, storage_root, tmp_path)
+    video_package = make_package_row(
+        db_session, lesson_id=f"{DEFAULT_COURSE_CODE}-02", duration_seconds=600
+    )
+    assert courses_service.lessons_kind([text_package]) == "text"
+    assert courses_service.lessons_kind([video_package]) == "video"
+    assert courses_service.lessons_kind([text_package, video_package]) == "mixed"
+    assert courses_service.lessons_kind([]) == "video"
+
+
+# --- 023c F3: the reader's title de-duplication does not touch the count ---
+
+
+def test_the_h1_matching_the_section_title_is_counted_exactly_once():
+    """The reader (frontend) renders a section's title once when the
+    markdown opens with the same heading. The count is taken from the
+    shipped markdown alone — the manifest title is not text — so the
+    heading's words are in the count once, before and after 023c. BODY_ONE
+    opens with "# Identifying a Lease" under a section titled "Identifying
+    a Lease"; its 64 hand-counted words include those three."""
+    assert count_words(BODY_ONE) == BODY_ONE_WORDS
+    without_heading = BODY_ONE.split("\n", 1)[1]
+    assert count_words(without_heading) == BODY_ONE_WORDS - 3
+    # The manifest's copy of the title never enters the count: the section
+    # row stores the words of its file, nothing else.
+    assert count_words("# Identifying a Lease\n\nOne two three.") == 6

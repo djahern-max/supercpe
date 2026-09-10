@@ -30,4 +30,16 @@ const siteMeta = () => ({
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), siteMeta()],
+  // 023c: vitest, jsdom, and nothing else — the reader's feedback (D2)
+  // and title (F3) behaviour and the assessment's advice (F1) are tested
+  // by rendering the components into a DOM. Tests live beside the
+  // component as *.test.jsx.
+  test: {
+    environment: 'jsdom',
+    include: ['src/**/*.test.{js,jsx}'],
+  },
+  // vitest transforms JSX with esbuild rather than the React plugin's
+  // pipeline; tell it the automatic runtime so components need no
+  // `import React`.
+  esbuild: { jsx: 'automatic', jsxImportSource: 'react' },
 })

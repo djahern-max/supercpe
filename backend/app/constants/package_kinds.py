@@ -18,6 +18,12 @@ KIND_VIDEO = "video"
 KIND_TEXT = "text"
 PACKAGE_KINDS = (KIND_VIDEO, KIND_TEXT)
 
+# 023c: how a *course* of several lessons is described to the participant
+# when its lessons are not all one kind. Never a package kind — a package
+# is exactly one of PACKAGE_KINDS — only a label for wording that has to
+# say "read" or "watched" (the progress line, the failed-attempt advice).
+KIND_MIXED = "mixed"
+
 # Absent `kind` in a manifest means video: every package exported before
 # the 023 contract change stays valid and ingests unchanged.
 DEFAULT_KIND = KIND_VIDEO

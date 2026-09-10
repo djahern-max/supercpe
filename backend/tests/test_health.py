@@ -119,3 +119,65 @@ def test_media_route_is_absent_under_spaces(monkeypatch):
         assert any(
             route.path.startswith("/api/v1/media") for route in restored.app.routes
         )
+
+
+# --- 023c D3: a failing storage check says why ------------------------------
+
+
+def test_a_failing_storage_check_logs_the_exception_class(client, caplog):
+    app.dependency_overrides[get_storage] = lambda: BrokenStorage()
+    with caplog.at_level("ERROR", logger="app.health"):
+        assert client.get("/api/v1/health").status_code == 503
+    [record] = [r for r in caplog.records if r.name == "app.health"]
+    assert "health storage check failed" in record.getMessage()
+    assert "ConnectionError" in record.getMessage()
+    assert "no route to bucket" in record.getMessage()
+
+
+class SignedUrlLeakingStorage:
+    """A storage whose failure message carries a presigned URL, as a
+    botocore HTTP error can."""
+
+    def exists(self, key):
+        raise RuntimeError(
+            "GET https://bucket.nyc3.digitaloceanspaces.com/health/sentinel"
+            "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=DO00SECRETKEY"
+            "&X-Amz-Signature=deadbeef failed"
+        )
+
+    def open(self, key):
+        raise ConnectionError("no route to bucket")
+
+
+def test_the_storage_log_line_never_carries_a_signed_url(client, caplog):
+    app.dependency_overrides[get_storage] = lambda: SignedUrlLeakingStorage()
+    with caplog.at_level("ERROR", logger="app.health"):
+        client.get("/api/v1/health")
+    [record] = [r for r in caplog.records if r.name == "app.health"]
+    line = record.getMessage()
+    assert "RuntimeError" in line
+    assert "health/sentinel" in line
+    for secret_shaped in ("X-Amz", "Signature", "Credential", "DO00SECRETKEY"):
+        assert secret_shaped not in line
+
+
+def test_a_missing_sentinel_under_spaces_is_logged_too(client, caplog):
+    """The 'error' with no exception: the bucket answers but the sentinel
+    was never written (OPERATIONS.md first-deploy step 8)."""
+    with mock_aws():
+        spaces = SpacesStorage(
+            bucket="supercpe-test",
+            region="us-east-1",
+            endpoint="https://s3.amazonaws.com",
+            key="testing",
+            secret="testing",
+        )
+        spaces.client.create_bucket(Bucket="supercpe-test")
+        app.dependency_overrides[get_storage] = lambda: spaces
+        with caplog.at_level("ERROR", logger="app.health"):
+            body = client.get("/api/v1/health").json()
+    assert body["storage"] == "error"
+    [record] = [r for r in caplog.records if r.name == "app.health"]
+    assert "sentinel" in record.getMessage()
+    assert "write-sentinel" in record.getMessage()
+    assert "testing" not in record.getMessage()

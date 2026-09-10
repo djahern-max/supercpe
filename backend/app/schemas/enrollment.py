@@ -48,6 +48,8 @@ class MyLessonProgress(BaseModel):
     furthest_seconds: int
     review_answered: int
     review_total: int
+    # 023c: watched (video) or read (text) — see `lesson_done`.
+    done: bool
 
 
 class MyEnrollmentSummary(BaseModel):
@@ -60,7 +62,11 @@ class MyEnrollmentSummary(BaseModel):
     credit: str | None
     field_of_study: str | None
     lessons_total: int
-    lessons_watched: int
+    # 023c: was `lessons_watched`, which counted a text lesson from the
+    # start. Now the lessons watched (video) or read (text), and
+    # `lessons_kind` says which word applies: "video", "text", or "mixed".
+    lessons_done: int
+    lessons_kind: str
     review_answered: int
     review_total: int
     assessment_available: bool
@@ -111,7 +117,8 @@ class AdminEnrollmentOut(BaseModel):
     expires_at: datetime
     package_versions: dict
     lessons_total: int
-    lessons_watched: int
+    lessons_done: int
+    lessons_kind: str
     review_answered: int
     review_total: int
     failed_attempts: int

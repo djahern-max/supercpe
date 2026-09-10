@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
 import EvaluationForm from "../EvaluationForm/EvaluationForm.jsx";
 import styles from "./Assessment.module.css";
+import { retryAdvice } from "./retryAdvice.js";
 
 /**
  * The qualified assessment (6.01.2): a form submitted once, not a sequence
@@ -199,9 +200,7 @@ function Assessment({ api, certificateUrl }) {
           {result.correct_count !== null &&
             `${result.correct_count} of ${result.question_count} correct.`}
         </p>
-        <p className={styles.muted}>
-          Consider re-watching the lessons before trying again.
-        </p>
+        <p className={styles.muted}>{retryAdvice(info?.lessons_kind)}</p>
         {errorPanel}
         {result.retakes_remaining === 0 ? (
           <p className={styles.muted}>

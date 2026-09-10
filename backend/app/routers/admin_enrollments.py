@@ -48,10 +48,9 @@ def _enrollment_out(db: Session, enrollment: Enrollment) -> AdminEnrollmentOut:
         expires_at=enrollment.expires_at,
         package_versions=enrollment.package_versions,
         lessons_total=len(progress["lessons"]),
-        lessons_watched=sum(
-            1
-            for lesson in progress["lessons"]
-            if lesson["furthest_seconds"] >= lesson["duration_seconds"] - 1
+        lessons_done=enrollments.lessons_done(progress),
+        lessons_kind=courses.lessons_kind(
+            enrollments.packages_for(db, enrollment)
         ),
         review_answered=progress["review_answered"],
         review_total=progress["review_total"],

@@ -1085,8 +1085,14 @@ function AdminCourseDetail() {
                   <td>{new Date(enrollment.enrolled_at).toLocaleDateString()}</td>
                   <td>{new Date(enrollment.expires_at).toLocaleDateString()}</td>
                   <td>
-                    {enrollment.lessons_watched}/{enrollment.lessons_total}{" "}
-                    lessons · {enrollment.review_answered}/
+                    {enrollment.lessons_done}/{enrollment.lessons_total}{" "}
+                    lessons{" "}
+                    {enrollment.lessons_kind === "text"
+                      ? "read"
+                      : enrollment.lessons_kind === "video"
+                        ? "watched"
+                        : "done"}{" "}
+                    · {enrollment.review_answered}/
                     {enrollment.review_total} review answers
                     {enrollment.failed_attempts > 0 &&
                       ` · ${enrollment.failed_attempts} failed attempt${enrollment.failed_attempts === 1 ? "" : "s"}`}

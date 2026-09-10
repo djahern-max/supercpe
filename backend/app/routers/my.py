@@ -68,6 +68,7 @@ from app.services import (
     reader,
     search,
 )
+from app.services import courses as courses_service
 from app.services import questions as questions_service
 from app.routers import player as player_router
 from app.services.assessment import AssessmentRuleViolation
@@ -78,10 +79,6 @@ from app.storage import Storage, get_storage
 router = APIRouter(prefix="/my")
 
 participant = require_role("participant")
-
-# Watching to within a second of the end counts as watching the lesson;
-# timeupdate granularity means the very last tick may never be reported.
-_WATCHED_TOLERANCE_SECONDS = 1
 
 
 def _get_enrollment_or_404(
@@ -178,11 +175,9 @@ def _summary_fields(db: Session, enrollment: Enrollment) -> dict:
         else None,
         "field_of_study": course.field_of_study,
         "lessons_total": len(progress["lessons"]),
-        "lessons_watched": sum(
-            1
-            for lesson in progress["lessons"]
-            if lesson["furthest_seconds"]
-            >= lesson["duration_seconds"] - _WATCHED_TOLERANCE_SECONDS
+        "lessons_done": enrollments.lessons_done(progress),
+        "lessons_kind": courses_service.lessons_kind(
+            enrollments.packages_for(db, enrollment)
         ),
         "review_answered": progress["review_answered"],
         "review_total": progress["review_total"],
@@ -371,6 +366,9 @@ def get_assessment(
         retakes_allowed=RETAKES_ALLOWED,
         retakes_remaining=retakes,
         open_attempt_id=open_attempt.id if open_attempt else None,
+        lessons_kind=courses_service.lessons_kind(
+            enrollments.packages_for(db, enrollment)
+        ),
         available=progress["assessment_available"] and retakes > 0,
         unavailable_reasons=_unavailable_reasons(db, enrollment, progress),
         questions=[

@@ -1,9 +1,13 @@
 # superCPE.com
 
-A NASBA-aligned self-study CPE platform. A licensed CPA watches a narrated
-video course, answers review questions between segments, takes a qualified
-assessment, and on passing receives a certificate that satisfies Section 9 of
-the 2026 Statement on Standards for CPE Programs.
+A NASBA-aligned self-study CPE platform. A licensed CPA reads a study guide
+(text sections; words ÷ 180 drive credit under 7.02.6), answers review
+questions placed between sections, optionally watches supplemental video
+clips that count only as additional learning (7.02.7), takes a qualified
+assessment, and on passing receives a certificate that satisfies Section 9
+of the 2026 Statement on Standards for CPE Programs. Video-only packages are
+still supported, but text is the primary format; never assume a lesson has
+a video. See docs/decisions/2026-09-01-text-first.md.
 
 Courses are not authored here. They arrive as **course packages** exported by
 the separate `video-tool` repo (local, not deployed). superCPE ingests, reviews,
@@ -21,7 +25,7 @@ requirement here, not an inheritance.
 ## Stack
 - Backend: Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, Postgres 16
 - Frontend: React 18 + Vite, plain JavaScript (no TypeScript), CSS Modules
-- Video storage: DigitalOcean Spaces (S3-compatible) via boto3, presigned URLs
+- Object storage: DigitalOcean Spaces (S3-compatible) via boto3, presigned URLs
 - Local Postgres runs in Docker
 
 ## Layout

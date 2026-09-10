@@ -5,6 +5,8 @@ readable while the site is coming_soon.
 """
 
 import io
+import logging
+import re
 import shutil
 
 from fastapi import APIRouter, Depends
@@ -23,6 +25,23 @@ from app.schemas.health import HealthResponse
 from app.storage import LocalStorage, SpacesStorage, Storage, get_storage
 
 router = APIRouter()
+logger = logging.getLogger("app.health")
+
+# Anything after "?" in an exception message could be a signed URL's
+# query string (X-Amz-Signature=…), which must never reach a log line.
+_QUERY_STRING = re.compile(r"\?.*", re.S)
+
+
+def _log_storage_failure(error: Exception) -> None:
+    """One line, the exception class and its message, so the operator can
+    read why storage went red after a deploy (023c D3: production health
+    reported `storage: error` with nothing logged). Never the credentials
+    — botocore does not put them in messages — and never a signed URL:
+    query strings are cut before logging."""
+    message = _QUERY_STRING.sub("?<query string removed>", str(error))
+    logger.error(
+        "health storage check failed: %s: %s", type(error).__name__, message
+    )
 
 
 def _database_check(db: Session) -> str:
@@ -43,8 +62,14 @@ def _storage_check(storage: Storage) -> str:
         if isinstance(storage, LocalStorage):
             storage.put(HEALTH_SENTINEL_KEY, io.BytesIO(b"ok"))
             return "ok"
+        logger.error(
+            "health storage check failed: sentinel %s is absent from the "
+            "bucket (write it with `python -m app.cli write-sentinel`)",
+            HEALTH_SENTINEL_KEY,
+        )
         return "error"
-    except Exception:
+    except Exception as error:
+        _log_storage_failure(error)
         return "error"
 
 

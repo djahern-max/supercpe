@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { resolveMediaUrl } from "../../api/client";
 import SimpleMarkdown from "../SimpleMarkdown/SimpleMarkdown.jsx";
 import styles from "./Reader.module.css";
+import { stripLeadingTitle } from "./sectionTitle.js";
 
 const ROLE_LABELS = {
   front_matter: "How this course works",
@@ -36,18 +37,23 @@ const REFERENCE_ROLES = ["front_matter", "glossary", "appendix"];
  * player follows.
  */
 function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
-  const [results, setResults] = useState({});
+  // The per-question verdicts, tied to the lesson they were given in. A
+  // refetch of the *same* lesson — which is how the next section opens
+  // after an answer — keeps them, so the feedback stays on screen until
+  // the participant acts again (5.01.2.2; 023c D2: an effect keyed on
+  // the payload object cleared them under a second after every answer).
+  // A different lesson starts them over.
+  const [verdicts, setVerdicts] = useState({
+    lessonId: lesson.lesson_id,
+    results: {},
+  });
+  const results =
+    verdicts.lessonId === lesson.lesson_id ? verdicts.results : {};
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState(null);
   const [glossary, setGlossary] = useState(null);
   const [panel, setPanel] = useState(null);
   const sectionRefs = useRef({});
-
-  // A fresh lesson payload clears the per-question verdicts: they belong
-  // to the answers just given, not to the lesson.
-  useEffect(() => {
-    setResults({});
-  }, [lesson]);
 
   // Every review question placed after a section, in order. A list, not
   // one per section: a section may carry more than one, and all of them
@@ -77,9 +83,12 @@ function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
 
   const answer = (question, choiceKey) => {
     gradeAnswer(question.question_key, choiceKey).then((result) => {
-      setResults((prev) => ({
-        ...prev,
-        [question.question_key]: { ...result, choiceKey },
+      setVerdicts((prev) => ({
+        lessonId: lesson.lesson_id,
+        results: {
+          ...(prev.lessonId === lesson.lesson_id ? prev.results : {}),
+          [question.question_key]: { ...result, choiceKey },
+        },
       }));
       // The verdict is the participant's; reloading is how the next
       // section opens, and only the server decides that.
@@ -228,7 +237,9 @@ function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
             </p>
           ) : (
             <>
-              <SimpleMarkdown markdown={section.markdown} />
+              <SimpleMarkdown
+                markdown={stripLeadingTitle(section.markdown, section.title)}
+              />
               {(mediaFor[section.section_key] || []).map((item) => (
                 <figure key={item.media_key} className={styles.mediaFigure}>
                   <video

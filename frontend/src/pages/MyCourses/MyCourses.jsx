@@ -5,6 +5,7 @@ import { listMyCourses, myCertificateUrl } from "../../api/my";
 import EvaluationForm from "../../components/EvaluationForm/EvaluationForm.jsx";
 import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./MyCourses.module.css";
+import { lessonsProgressLabel } from "./progressLabel.js";
 
 function formatDate(iso) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -144,9 +145,8 @@ function MyCourses() {
               : `Complete by ${formatDate(enrollment.expires_at)}`}
           </p>
           <p className={styles.cardProgress}>
-            {enrollment.lessons_watched} of {enrollment.lessons_total} lessons
-            watched · {enrollment.review_answered} of{" "}
-            {enrollment.review_total} review questions answered
+            {lessonsProgressLabel(enrollment)} · {enrollment.review_answered}{" "}
+            of {enrollment.review_total} review questions answered
           </p>
           <PrimaryAction enrollment={enrollment} />
           {enrollment.completion?.evaluation_requested && (

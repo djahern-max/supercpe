@@ -6,7 +6,9 @@
 # Checks out the ref, builds images tagged with its sha (the previous
 # deploy's images stay on disk, so rollback.sh is a rebuild from cache),
 # runs migrations as a one-off container, restarts, and refuses to call
-# the deploy done until /api/v1/health reports the new sha.
+# the deploy done until /api/v1/health reports the new sha *and* a 2xx
+# (wait-for-health.sh tells "new version unhealthy" from "old version
+# still running").
 set -euo pipefail
 
 REF="${1:?usage: deploy.sh <tag-or-sha>}"
@@ -39,16 +41,9 @@ echo "Restarting ..."
 $COMPOSE up -d
 
 echo "Waiting for $HEALTH_URL to report $GIT_SHA ..."
-for _ in $(seq 1 30); do
-    BODY=$(curl -fsS "$HEALTH_URL" 2>/dev/null || true)
-    if [ -n "$BODY" ] && echo "$BODY" | grep -q "\"version\":\"$GIT_SHA\""; then
-        echo "Deployed $GIT_SHA"
-        echo "$BODY"
-        exit 0
-    fi
-    sleep 2
-done
-
-echo "Health never reported $GIT_SHA — the old version may still be running:" >&2
-curl -fsS "$HEALTH_URL" >&2 || true
-exit 1
+# Three outcomes, distinguished by wait-for-health.sh (023c D4): healthy
+# new version (0), new version running but unhealthy (1, with the failing
+# components named — read `docker compose -f deploy/docker-compose.yml
+# logs api` for the storage line), or the sha never seen (2, the old
+# version may still be running).
+exec "$REPO/deploy/wait-for-health.sh" "$GIT_SHA" "$HEALTH_URL" 30 2

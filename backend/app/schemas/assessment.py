@@ -32,6 +32,9 @@ class AssessmentInfo(BaseModel):
     # sponsor's 6.01.2 policy).
     retakes_allowed: int
     open_attempt_id: int | None
+    # 023c F1: "text", "video", or "mixed" — so the failed-attempt advice
+    # says re-read the guide, not re-watch, on a study-guide course.
+    lessons_kind: str
     questions: list[AssessmentQuestion]
 
 

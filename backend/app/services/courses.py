@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.constants.package_kinds import DEFAULT_KIND, KIND_MIXED
 from app.models.course import Course, CourseLesson
 from app.models.enrollment import Enrollment
 from app.models.lesson_package import LessonPackage
@@ -154,6 +155,18 @@ def delete_course(db: Session, course: Course) -> None:
 
 def _ordered(course: Course) -> list[CourseLesson]:
     return sorted(course.lessons, key=lambda cl: cl.position)
+
+
+def lessons_kind(packages: list[LessonPackage]) -> str:
+    """"text", "video", or KIND_MIXED: what a participant is told they
+    read or watched (023c F1/F2). A course with no lessons yet has
+    nothing to label and gets the default kind."""
+    kinds = {package.kind for package in packages}
+    if not kinds:
+        return DEFAULT_KIND
+    if len(kinds) == 1:
+        return kinds.pop()
+    return KIND_MIXED
 
 
 def _copy_derived(course: Course, package: LessonPackage) -> None:

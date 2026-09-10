@@ -16,6 +16,7 @@ named "Nguyễn" or "Michałowski" gets their own name on their certificate
 from pathlib import Path
 
 from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 
 _PAGE_WIDTH = 216  # letter, mm
 _MARGIN = 20
@@ -35,8 +36,22 @@ class _Certificate(FPDF):
         self.add_page()
 
     def line_out(self, text: str, size: int = 11, style: str = "", gap: int = 6):
+        """One centered line (wrapping if it must), and the cursor back at
+        the left margin for the next one. fpdf2's default after
+        `multi_cell` leaves x at the cell's right edge, so without
+        `new_x` every line not preceded by an explicit `ln()` starts
+        where the previous one ended and walks off the page (023c, D1:
+        certificate 2026-000001 drew most 9.01 items past x=612pt).
+        `test_every_text_run_lies_inside_the_page` guards this."""
         self.set_font("DejaVu", style, size)
-        self.multi_cell(_BODY_WIDTH, gap, text, align="C")
+        self.multi_cell(
+            _BODY_WIDTH,
+            gap,
+            text,
+            align="C",
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
+        )
 
     def spacer(self, height: int = 4):
         self.ln(height)

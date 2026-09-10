@@ -143,10 +143,19 @@ before DNS resolves).
 
 1. Push the tag from the laptop: `git tag v0NN && git push origin v0NN`.
 2. On the droplet: `/srv/supercpe/repo/deploy/deploy.sh v0NN`.
-3. The script is done only when `/api/v1/health` reports the new sha; it
-   prints the health body. If it exits non-zero, the old containers may
-   still be serving — check `docker compose -f deploy/docker-compose.yml
-   ps` and `logs api`.
+3. The script is done only when `/api/v1/health` reports the new sha
+   **with a 2xx**; it prints the health body. A non-zero exit is one of
+   two things, and the last line says which (023c, `deploy/wait-for-health.sh`):
+   - `New version <sha> running, unhealthy (HTTP 503): storage` — the
+     new containers are serving and a component is red; the names are
+     read from the health body. For `storage`, the API now logs why:
+     `docker compose -f deploy/docker-compose.yml logs api | grep "health storage check failed"`
+     prints the exception class and message (query strings are cut, so
+     no signed URL reaches the log). A missing sentinel names itself and
+     the `write-sentinel` command that fixes it. Exit code 1.
+   - `Health never reported <sha> — the old version may still be running`
+     — the sha was never seen in the 60-second window; check `docker
+     compose -f deploy/docker-compose.yml ps` and `logs api`. Exit code 2.
 
 **If the script stops at `Running preflight ...`** (014a): the new
 image ran every check that would refuse boot in prod — the config

@@ -283,3 +283,97 @@ def test_unpublish_leaves_an_active_enrollment_working(client, db_session):
     )
     assert play.status_code == 200
     assert play.json()["lesson_id"] == "GOLD-01"
+
+
+# --- 023c D1: placement, not presence --------------------------------------
+
+
+_PAGE_WIDTH_PT = 612
+_PAGE_HEIGHT_PT = 792
+_MARGIN_PT = 20 * 72 / 25.4  # the renderer's 20 mm margin
+
+
+def positioned_runs(pdf_bytes: bytes) -> list[dict]:
+    """Every text run on page one with its start x/y (from the text
+    matrix) and its end x, measured with the same font metrics the
+    renderer used. Text extraction alone ignores the page boundary — this
+    is what let 2026-000001 ship with most 9.01 items past x=612."""
+    from fpdf import FPDF
+
+    from app.services.certificates import _FONTS_DIR
+
+    ruler = FPDF()
+    ruler.add_font("DejaVu", "", _FONTS_DIR / "DejaVuSans.ttf")
+    ruler.add_font("DejaVu", "B", _FONTS_DIR / "DejaVuSans-Bold.ttf")
+    ruler.add_font("DejaVu", "I", _FONTS_DIR / "DejaVuSans-Oblique.ttf")
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    assert len(reader.pages) == 1
+    page = reader.pages[0]
+    assert [float(v) for v in page.mediabox] == [0, 0, _PAGE_WIDTH_PT, _PAGE_HEIGHT_PT]
+    runs = []
+
+    def visit(text, cm, tm, font_dict, font_size):
+        if not text.strip():
+            return
+        base_font = str(font_dict["/BaseFont"])
+        style = "B" if "Bold" in base_font else "I" if "Oblique" in base_font else ""
+        ruler.set_font("DejaVu", style, font_size)
+        width_pt = ruler.get_string_width(text) * 72 / 25.4
+        runs.append(
+            {
+                "text": text,
+                "x": float(tm[4]),
+                "y": float(tm[5]),
+                "end_x": float(tm[4]) + width_pt,
+            }
+        )
+
+    page.extract_text(visitor_text=visit)
+    return runs
+
+
+def test_every_text_run_lies_inside_the_page(db_session):
+    """Realistic snapshot: a course title that wraps, a legal entity name,
+    a sponsor ID, a state registration, and a verification code. Every run
+    starts and ends inside the margins, and every applicable 9.01 item is
+    among the in-page runs."""
+    _, enrollment, _ = make_completed(db_session)
+    snapshot = dict(enrollment.completion.certificate_snapshot)
+    snapshot["course_title"] = (
+        "Account Takeover: How Attackers Get In, How to Stop It, and Why "
+        "Every Firm With a Cloud Login Should Care"
+    )
+    snapshot["national_registry_id"] = "112233"
+    snapshot["state_registrations"] = [{"state": "NH", "number": "NH-42"}]
+    snapshot["other_statements"] = ["Retain this certificate."]
+
+    runs = positioned_runs(certificates.render(snapshot))
+    assert len(runs) >= 18
+    for run in runs:
+        assert _MARGIN_PT - 1 <= run["x"] <= _PAGE_WIDTH_PT - _MARGIN_PT, run
+        assert run["end_x"] <= _PAGE_WIDTH_PT - _MARGIN_PT + 1, run
+        assert _MARGIN_PT <= run["y"] <= _PAGE_HEIGHT_PT - _MARGIN_PT, run
+
+    in_page = "\n".join(run["text"] for run in runs)
+    assert "superCPE" in in_page  # item 1
+    assert "RYZE.AI LLC" in in_page  # 9.01.1
+    assert "Pat Smith" in in_page  # item 2
+    assert "Account Takeover: How Attackers Get In, How to Stop It," in in_page
+    assert "Every Firm With a Cloud Login Should Care" in in_page  # item 3, wrapped
+    assert f"Completion date: {snapshot['completed_at'][:10]}" in in_page  # 4
+    assert "Location: Not applicable (self study)" in in_page  # item 5
+    assert "Type of learning program: Self study" in in_page  # item 6
+    assert "CPE credit: 0.4 in Accounting" in in_page  # item 7
+    assert "National Registry of CPE Sponsors ID: 112233" in in_page  # 8
+    assert "NH sponsor registration number: NH-42" in in_page  # item 9
+    assert "CPE credits have been granted based on a 50-minute hour." in in_page
+    assert "Retain this certificate." in in_page  # item 11
+    assert "Developed by Dev CPA" in in_page and "Reviewed by Rev CPA" in in_page
+    assert f"Certificate number: {snapshot['certificate_number']}" in in_page
+    assert snapshot["verification_token"] in in_page  # 019
+
+    # Each line begins near the centre of the page, not at the previous
+    # line's right edge: the widest run is the wrapped title, and even it
+    # starts well right of the margin.
+    assert all(run["x"] > _MARGIN_PT for run in runs)

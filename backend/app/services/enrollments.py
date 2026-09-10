@@ -20,6 +20,7 @@ from app.constants.enrollment import ENROLLMENT_DAYS
 from app.models.account import Account
 from app.models.attempt import Attempt
 from app.models.course import Course
+from app.constants.package_kinds import KIND_TEXT
 from app.models.enrollment import Enrollment, LessonProgress, ReviewAnswer
 from app.models.lesson_package import LessonPackage
 from app.models.question import Question
@@ -297,11 +298,41 @@ def retakes_remaining(db: Session, enrollment: Enrollment) -> int:
     return max(1 + RETAKES_ALLOWED - failed_attempts(db, enrollment), 0)
 
 
+# A video lesson counts as watched within this many seconds of its end:
+# `timeupdate` does not fire at the exact last frame.
+WATCHED_TOLERANCE_SECONDS = 1
+
+
+def lesson_done(lesson: dict) -> bool:
+    """Whether one lesson of `progress()` has been watched (video) or read
+    (text). Display only — nothing that gates the assessment, records a
+    completion, or reaches a certificate or the audit bundle reads this;
+    the gate is `assessment_available`.
+
+    A text lesson is read when every review question placed in it is
+    answered: the last body section opens only when the questions before
+    it are answered, and the questions after it are the rest (023c F2 —
+    before this, a study guide's zero duration made it "watched" from
+    the start). A video lesson is watched when the furthest point reaches
+    its end."""
+    if lesson["kind"] == KIND_TEXT:
+        return lesson["review_answered"] == lesson["review_total"]
+    return (
+        lesson["furthest_seconds"]
+        >= lesson["duration_seconds"] - WATCHED_TOLERANCE_SECONDS
+    )
+
+
+def lessons_done(progress_dict: dict) -> int:
+    return sum(1 for lesson in progress_dict["lessons"] if lesson["done"])
+
+
 def progress(db: Session, enrollment: Enrollment) -> dict:
-    """Per pinned lesson: furthest seconds and review questions
-    answered/total. `assessment_available` is true iff every pinned review
-    question has an answer and the enrollment is active; `unanswered` names
-    the missing questions by lesson for refusal messages."""
+    """Per pinned lesson: furthest seconds, review questions answered/total,
+    and `done` (see `lesson_done`). `assessment_available` is true iff every
+    pinned review question has an answer and the enrollment is active;
+    `unanswered` names the missing questions by lesson for refusal
+    messages."""
     progress_rows = {
         row.package_id: row
         for row in db.scalars(
@@ -323,20 +354,20 @@ def progress(db: Session, enrollment: Enrollment) -> dict:
                 {"lesson_id": package.lesson_id, "question_keys": missing}
             )
         row = progress_rows.get(package.id)
-        lessons.append(
-            {
-                "package_id": package.id,
-                "lesson_id": package.lesson_id,
-                "kind": package.kind,
-                "version": package.version,
-                "position": position,
-                "title": package.title,
-                "duration_seconds": package.duration_seconds,
-                "furthest_seconds": row.furthest_seconds if row else 0,
-                "review_answered": len(questions) - len(missing),
-                "review_total": len(questions),
-            }
-        )
+        lesson = {
+            "package_id": package.id,
+            "lesson_id": package.lesson_id,
+            "kind": package.kind,
+            "version": package.version,
+            "position": position,
+            "title": package.title,
+            "duration_seconds": package.duration_seconds,
+            "furthest_seconds": row.furthest_seconds if row else 0,
+            "review_answered": len(questions) - len(missing),
+            "review_total": len(questions),
+        }
+        lesson["done"] = lesson_done(lesson)
+        lessons.append(lesson)
 
     return {
         "lessons": lessons,

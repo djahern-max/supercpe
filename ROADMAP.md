@@ -250,6 +250,20 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   (`impractical_basis` on `POST /api/v1/review/courses/{code}/reviews`).
   A decision, not a code change, until someone reads the paragraph against
   the delivery method and says which.
+- **Open question (023c, 2026-09-10): who may record a 4.02 review?** Any
+  admin or reviewer session can record a review naming any SME;
+  `recorded_by` stamps who typed it and the audit bundle shows it. The
+  Standards do not say who enters the record — 4.02 requires review by
+  someone other than the developer, 9.02.2(4) requires retaining the
+  reviewer's name and credentials — and recording on a reviewer's behalf
+  from a signed attestation is a legitimate sponsor practice. Restricting
+  it is a `docs/decisions/` entry, not a fix.
+- Pin the Caddy base images (023c, 2026-09-10). The 2026-09-10 deploy
+  spent 228 s rebuilding `xcaddy` because `caddy:2-builder` moved
+  upstream; `deploy/Dockerfile.web` should name a digest or exact
+  version for both the builder and runtime images so a deploy's build
+  time and its Caddy version do not depend on the registry's tag of the
+  day.
 
 ## Phase D — Text-first catalog
 Decided 2026-09-01, during the first end-to-end authoring run
