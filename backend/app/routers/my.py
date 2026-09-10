@@ -69,6 +69,7 @@ from app.services import (
     search,
 )
 from app.services import questions as questions_service
+from app.routers import player as player_router
 from app.services.assessment import AssessmentRuleViolation
 from app.services.completions import CreditStale, IssuanceBlocked
 from app.services.evaluations import EvaluationRuleViolation
@@ -234,6 +235,7 @@ def enrollment_detail(
 @router.get(
     "/enrollments/{enrollment_id}/lessons/{package_id}/play",
     response_model=MyPlayLesson,
+    responses={409: {"model": ValidationErrors}},
 )
 def play_lesson(
     enrollment_id: int,
@@ -242,10 +244,14 @@ def play_lesson(
     account: Account = Depends(participant),
     storage: Storage = Depends(get_storage),
 ):
-    """The 006 play payload, from the pinned package version."""
+    """The 006 play payload, from the pinned package version. A text
+    lesson (023) has no video to presign: 409, the same refusal the
+    preview route gives, never a crash on `video_key=None`."""
     enrollment = _get_enrollment_or_404(db, account, enrollment_id)
     _refuse_if_voided(enrollment)
     package = _get_pinned_package_or_404(db, enrollment, package_id)
+    if package.is_text:
+        return player_router.no_video_response()
     progress = enrollments.progress(db, enrollment)
     furthest = next(
         (

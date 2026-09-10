@@ -357,7 +357,14 @@ function CoursePage() {
           <li key={lesson.lesson_id} className={styles.lessonRow}>
             <span>{lesson.title}</span>
             <span className={styles.lessonDuration}>
-              {formatDuration(lesson.duration_seconds)}
+              {/* 023b: a study guide has sections, not a running time;
+                  its seconds are supplemental clips (7.02.7), and
+                  "0:00" would be wrong either way. */}
+              {lesson.kind === "text"
+                ? `Study guide · ${lesson.section_count} ${
+                    lesson.section_count === 1 ? "section" : "sections"
+                  }`
+                : formatDuration(lesson.duration_seconds)}
             </span>
           </li>
         ))}

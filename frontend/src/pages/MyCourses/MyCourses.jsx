@@ -120,7 +120,8 @@ function MyCourses() {
       )}
       {enrollments !== null && enrollments.length === 0 && (
         <p className={styles.muted}>
-          You are not enrolled in any course yet.
+          You are not enrolled in any course yet.{" "}
+          <Link to="/courses">See the courses.</Link>
         </p>
       )}
 

@@ -44,18 +44,22 @@ function AdminCoursePreview() {
     setLesson(null);
     setMedium(null);
     if (packageId) {
-      // A video lesson plays, a text lesson reads; each route 404s the
-      // other's lessons, so try the player and fall back to the reader.
-      getPlayLesson(code, packageId)
+      // A video lesson plays, a text lesson reads. The course detail says
+      // which (`kind`), so ask it first and open the right route — 023b:
+      // trying the player and catching its refusal is what left the
+      // reviewer unable to see a text course at all.
+      getReviewCourse(code)
         .then((data) => {
-          setLesson(data);
-          setMedium("video");
-        })
-        .catch((err) => {
-          if (!(err instanceof ApiError) || err.status !== 404) throw err;
-          return getReadLesson(code, packageId).then((data) => {
-            setLesson(data);
-            setMedium("text");
+          const entry = data.lessons.find(
+            (item) => String(item.package_id) === packageId
+          );
+          if (!entry) throw new ApiError(404, null);
+          const isText = entry.kind === "text";
+          return (
+            isText ? getReadLesson(code, packageId) : getPlayLesson(code, packageId)
+          ).then((payload) => {
+            setLesson(payload);
+            setMedium(isText ? "text" : "video");
           });
         })
         .catch((err) => {

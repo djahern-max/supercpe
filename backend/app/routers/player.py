@@ -55,7 +55,26 @@ def _get_lesson_package(
     return lesson.package
 
 
-@router.get("/{course_code}/lessons/{package_id}/play", response_model=PlayLesson)
+def no_video_response() -> JSONResponse:
+    """023b: a text package has no `video_key`, so presigning one is a
+    crash, not a payload. 409 — the lesson exists, it is just not in this
+    medium — with the `errors` shape every other refusal here uses."""
+    return JSONResponse(
+        status_code=409,
+        content={
+            "errors": [
+                "This lesson is a study guide, not a video; open it with "
+                "the read route"
+            ]
+        },
+    )
+
+
+@router.get(
+    "/{course_code}/lessons/{package_id}/play",
+    response_model=PlayLesson,
+    responses={409: {"model": ValidationErrors}},
+)
 def play_lesson(
     course_code: str,
     package_id: int,
@@ -63,6 +82,8 @@ def play_lesson(
     storage: Storage = Depends(get_storage),
 ):
     package = _get_lesson_package(db, course_code, package_id)
+    if package.is_text:
+        return no_video_response()
     return PlayLesson(
         lesson_id=package.lesson_id,
         title=package.title,

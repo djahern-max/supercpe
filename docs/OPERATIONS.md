@@ -679,7 +679,11 @@ The monitor alerts on non-200. Fields, in the order to check:
 - `database: error` — the API cannot reach the managed cluster. Check
   the cluster's status page in the control panel, then the trusted-source
   list (a rebuilt droplet has a new IP), then `DATABASE_URL` in
-  `/srv/supercpe/.env`. `docker compose logs api` shows the driver error.
+  `/srv/supercpe/.env`. The driver error is in the api container's log:
+  `docker logs --tail=50 $(docker ps -q --filter label=com.docker.compose.service=api)`
+  — `docker compose logs api` will not do here, because the compose file
+  requires `GIT_SHA` and a shell outside `deploy.sh` has not exported it
+  (see the note under Layout; the `docker logs` form needs no prefix).
 - `storage: error` — the sentinel HEAD failed: Spaces outage, deleted or
   rotated key, or someone deleted `health/sentinel`. Re-run
   `python -m app.cli write-sentinel` (inside the api container, with the

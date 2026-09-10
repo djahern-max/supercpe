@@ -254,7 +254,14 @@ class PublicLesson(BaseModel):
     lesson_id: str
     position: int
     title: str
+    # 023b: which medium the lesson is in decides what the course page
+    # says about its length — a duration for a video, a section count for
+    # a study guide (whose `duration_seconds` is 0 and must not render as
+    # "0:00"). No reading-time estimate: beside the computed credit it
+    # would read as a second credit figure.
+    kind: str
     duration_seconds: int
+    section_count: int
 
 
 class PublicObjectiveGroup(BaseModel):
@@ -286,6 +293,10 @@ class CoursePublicSummary(BaseModel):
     advance_preparation: str | None
     lesson_count: int
     total_duration_seconds: int
+    # 023b: sections across the course's text lessons, so the catalog can
+    # say "study guide · N sections" where a video course says "N minutes
+    # of video". Zero for a video-only course.
+    total_section_count: int
     # 018: integer cents, rendered as dollars. Null only for a course
     # published before the price rule existed (dev data); the publish
     # gate refuses without one. What is charged is stamped on the payment

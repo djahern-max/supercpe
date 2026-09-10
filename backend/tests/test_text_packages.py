@@ -19,7 +19,7 @@ from app.services import questions as questions_service
 from app.services.courses import DERIVED_FIELDS
 from app.services.word_count import count_words
 from app.storage import LocalStorage
-from tests.conftest import login, publish_test_policies
+from tests.conftest import login, make_account, publish_test_policies
 from tests.factories.package import build_package
 from tests.factories.text_package import (
     APPENDIX,
@@ -995,3 +995,117 @@ def test_the_audit_bundle_carries_the_guide_and_its_word_count(
     assert f"Counted (body sections only): {package.word_count}" in accounting
     assert "counted " in accounting and "excluded" in accounting
     assert "guide/91-appendix-a.md" in accounting
+
+
+# --- 023b. text lessons open the reader, not the player --------------------
+#
+# The production walkthrough found `/play` crashing on a text package
+# (`video_key` is None, so presigning it is a ParamValidationError, a 500)
+# — and because the lesson pages fell back to the reader only on 404, the
+# reader was never reached. These pin the refusal and the dispatch facts
+# the pages now rely on.
+
+
+def play(client, enrollment, package):
+    return client.get(
+        f"/api/v1/my/enrollments/{enrollment.id}/lessons/{package.id}/play"
+    )
+
+
+def test_play_refuses_a_text_lesson_with_409_not_500(
+    client, reading_participant
+):
+    enrollment, package, _ = reading_participant
+    response = play(client, enrollment, package)
+    assert response.status_code == 409, response.text
+    assert "study guide" in response.json()["errors"][0]
+    # ...and the reader is what serves it.
+    assert read(client, enrollment, package)["kind"] == "text"
+
+
+def test_preview_play_refuses_a_text_lesson_with_409_not_500(
+    client, db_session, storage_root, tmp_path, admin_headers
+):
+    package, _ = ingest_text(db_session, storage_root, tmp_path)
+    course = attach_text_course(db_session, package)
+    response = client.get(
+        f"/api/v1/courses/{course.course_code}/lessons/{package.id}/play"
+    )
+    assert response.status_code == 409, response.text
+    assert "study guide" in response.json()["errors"][0]
+
+
+def test_the_enrollment_detail_says_which_surface_opens_each_lesson(
+    client, reading_participant
+):
+    """The participant lesson page dispatches on this, not on a failed
+    play request."""
+    enrollment, package, _ = reading_participant
+    detail = client.get(f"/api/v1/my/enrollments/{enrollment.id}").json()
+    lesson = next(l for l in detail["lessons"] if l["package_id"] == package.id)
+    assert lesson["kind"] == "text"
+
+
+def test_four_of_five_reader_answers_do_not_open_the_assessment(
+    client, reading_participant
+):
+    """The reader records answers through the same route as the player,
+    and the gate counts them the same way: all five, not most."""
+    enrollment, package, _ = reading_participant
+    for key in ("q-r01", "q-r02", "q-r03", "q-r04"):
+        assert answer(client, enrollment, package, key).status_code == 200
+    detail = client.get(f"/api/v1/my/enrollments/{enrollment.id}").json()
+    assert detail["review_answered"] == 4
+    assert detail["review_total"] == 5
+    assert detail["assessment_available"] is False
+    assert any(
+        "q-r05" in reason for reason in detail["assessment_unavailable_reasons"]
+    )
+
+    assert answer(client, enrollment, package, "q-r05").status_code == 200
+    detail = client.get(f"/api/v1/my/enrollments/{enrollment.id}").json()
+    assert detail["review_answered"] == 5
+    assert detail["assessment_available"] is True
+    assert detail["assessment_unavailable_reasons"] == []
+
+
+def test_the_reviewer_session_reads_the_whole_guide_ungated(
+    client, db_session, storage_root, tmp_path
+):
+    """4.02: before 023b a reviewer could not display a text course at
+    all — the preview page hit `/play` and got a 500."""
+    package, _ = ingest_text(db_session, storage_root, tmp_path)
+    course = attach_text_course(db_session, package)
+    make_account(db_session, "rae@supercpe.test", "reviewer-pw-1234", "reviewer")
+    login(client, "rae@supercpe.test", "reviewer-pw-1234")
+    payload = client.get(
+        f"/api/v1/courses/{course.course_code}/lessons/{package.id}/read"
+    )
+    assert payload.status_code == 200, payload.text
+    sections = payload.json()["sections"]
+    assert len(sections) == len(default_sections())
+    assert all(s["locked"] is False and s["markdown"] for s in sections)
+
+
+def test_public_payload_says_study_guide_not_zero_minutes_of_video(
+    client, db_session, storage_root, tmp_path, admin_headers
+):
+    """The catalog and course page render length from these fields: a
+    text course has sections, not seconds, and says so. (`admin_headers`
+    logs the client in, which is what gets past the coming-soon gate.)"""
+    package, _ = ingest_text(db_session, storage_root, tmp_path)
+    course = make_publishable_text_course(db_session, package)
+    courses_service.publish(db_session, course)
+
+    listing = client.get("/api/v1/courses").json()
+    entry = next(c for c in listing if c["course_code"] == course.course_code)
+    # The seconds are the supplemental clip's (7.02.7), not the guide's
+    # length — which is why the catalog keys on the section count and
+    # not on the duration being zero.
+    assert entry["total_duration_seconds"] == 2
+    assert entry["total_section_count"] == len(default_sections())
+
+    detail = client.get(f"/api/v1/courses/{course.course_code}").json()
+    [lesson] = detail["lessons"]
+    assert lesson["kind"] == "text"
+    assert lesson["section_count"] == len(default_sections())

@@ -73,6 +73,7 @@ def _summary_fields(course: Course) -> dict:
         "total_duration_seconds": sum(
             cl.package.duration_seconds for cl in ordered
         ),
+        "total_section_count": sum(len(cl.package.sections) for cl in ordered),
         # 018: what the Registration section and catalog card render as
         # dollars.
         "price_cents": course.price_cents,
@@ -125,7 +126,9 @@ def public_detail(db: Session, course) -> CoursePublicDetail:
                 lesson_id=cl.package.lesson_id,
                 position=cl.position,
                 title=cl.package.title,
+                kind=cl.package.kind,
                 duration_seconds=cl.package.duration_seconds,
+                section_count=len(cl.package.sections),
             )
             for cl in ordered
         ],

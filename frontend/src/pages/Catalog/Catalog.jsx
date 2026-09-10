@@ -5,9 +5,26 @@ import { formatUsd } from "../../constants/money";
 import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./Catalog.module.css";
 
-function formatTotal(totalSeconds) {
-  const minutes = Math.round(totalSeconds / 60);
-  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+// 023b: how long the course is, in the medium it is in. A text course
+// is "study guide · N sections"; a video course is its minutes. The
+// seconds on a text course are its supplemental clips (7.02.7), so the
+// video part shows only when it rounds to a minute or more — never
+// "0 minutes of video" beside a study guide. No reading-time estimate:
+// beside the computed credit it would read as a second credit figure.
+function formatLength(course) {
+  const parts = [];
+  if (course.total_section_count > 0) {
+    parts.push(
+      `study guide · ${course.total_section_count} ${
+        course.total_section_count === 1 ? "section" : "sections"
+      }`
+    );
+  }
+  const minutes = Math.round(course.total_duration_seconds / 60);
+  if (minutes > 0) {
+    parts.push(minutes === 1 ? "1 minute of video" : `${minutes} minutes of video`);
+  }
+  return parts;
 }
 
 function Catalog() {
@@ -50,8 +67,8 @@ function Catalog() {
                   course.recommended_credit === "1.0" ? "" : "s"
                 }`}{" "}
               · {course.knowledge_level} · {course.lesson_count}{" "}
-              {course.lesson_count === 1 ? "lesson" : "lessons"} ·{" "}
-              {formatTotal(course.total_duration_seconds)} of video
+              {course.lesson_count === 1 ? "lesson" : "lessons"}
+              {formatLength(course).map((part) => ` · ${part}`)}
               {course.price_cents !== null &&
                 ` · ${formatUsd(course.price_cents)}`}
             </p>

@@ -243,6 +243,13 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   (`furthest_seconds`), which means nothing for a study guide. Nothing
   reads it and the participant page shows "Study guide" instead of a
   timecode; removing it would touch the 010 progress contract. 
+- **Open question (023b, 2026-09-10): should the 4.02.1 "advance review was
+  impractical" path exist for self study at all?** The paragraph rests the
+  exception on the instructor's or presenter's competence, and a self-study
+  program has neither; the reviewer form still offers the path
+  (`impractical_basis` on `POST /api/v1/review/courses/{code}/reviews`).
+  A decision, not a code change, until someone reads the paragraph against
+  the delivery method and says which.
 
 ## Phase D — Text-first catalog
 Decided 2026-09-01, during the first end-to-end authoring run

@@ -165,6 +165,8 @@ EXPECTED_DETAIL_KEYS = {
     "advance_preparation",
     "lesson_count",
     "total_duration_seconds",
+    # 023b: the study-guide length, beside the video length.
+    "total_section_count",
     # 018: the price, a commercial fact beside the 8.01 items.
     "price_cents",
     "recommended_credit",
