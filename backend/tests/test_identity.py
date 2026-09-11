@@ -37,7 +37,7 @@ def rendered_index_html() -> str:
     html = (
         html.replace("%SITE_ORIGIN%", site["origin"])
         .replace("%SITE_NAME%", site["name"])
-        .replace("%SITE_TITLE%", f"{site['name']} — {site['tagline']}")
+        .replace("%SITE_TITLE%", site["name"])
         .replace("%SITE_DESCRIPTION%", site["description"])
         .replace("%SITE_THEME_COLOR%", accent)
     )
@@ -58,6 +58,21 @@ def test_index_html_obeys_the_content_rules():
     assert "QAS" not in html
     assert not re.search(r"\d+(\.\d+)?\s*(CPE|credit|hour)", html, re.I)
     assert not re.search(r"\$\s*\d", html)
+
+
+def test_index_html_makes_no_program_claim_while_coming_soon():
+    """024: the title and every description say the name and "Coming
+    Soon" — nothing about CPE, CPAs, self-study, courses, or credit (8.01:
+    partial disclosure is worse than none; the eleven items publish with
+    the course)."""
+    # Vite ships the head comment too, so the whole file is held to it.
+    html = rendered_index_html()
+    assert "<title>superCPE</title>" in html
+    assert not re.search(r"self[ -]study|CPAs?\b|course|credit", html, re.I)
+    for name in ("description", "twitter:title", "twitter:description"):
+        assert re.search(rf'name="{name}" content="(superCPE|Coming Soon)"', html)
+    for name in ("og:title", "og:description"):
+        assert re.search(rf'property="{name}" content="(superCPE|Coming Soon)"', html)
 
 
 def test_index_html_carries_the_full_tag_set():
@@ -101,12 +116,12 @@ def test_index_html_json_ld_is_valid_and_minimal():
 def test_identity_assets_replace_every_vite_default():
     html = rendered_index_html()
     assert "vite.svg" not in html
-    # The SVG favicon is hashed by the build (it lives in src/); the
-    # fixed-name files scrapers and old browsers fetch blindly live in
-    # public/ — including og.png, whose URL is baked into a static tag.
-    assert (FRONTEND / "src" / "assets" / "identity" / "favicon.svg").exists()
-    assert not (PUBLIC / "favicon.svg").exists(), "the Vite default is back"
+    # 024: every icon is a fixed-name file in public/ — the SVG favicon
+    # too, since it is the source the other icons are rasterized from —
+    # including og.png, whose URL is baked into a static tag.
+    assert 'href="/favicon.svg' in html
     for name in (
+        "favicon.svg",
         "favicon.ico",
         "apple-touch-icon.png",
         "icon-192.png",

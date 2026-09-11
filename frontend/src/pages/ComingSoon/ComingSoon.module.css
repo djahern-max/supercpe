@@ -3,64 +3,33 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-lg);
-  padding: var(--space-xl) var(--space-md);
-}
-
-.hero {
+  padding: var(--space-lg) var(--space-md);
   text-align: center;
 }
 
 .wordmark {
   margin: 0;
-  font-size: 3rem;
+  font-size: clamp(2.5rem, 14vw, 4.5rem);
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1;
 }
 
-.accent {
-  color: var(--color-accent);
-}
-
-.tagline {
-  margin: var(--space-sm) 0 0;
-  font-size: 1.125rem;
-  color: var(--color-text-muted);
-}
-
-.section {
-  max-width: 40rem;
-}
-
-.sectionTitle {
-  margin: 0 0 var(--space-sm);
+.comingSoon {
+  margin: calc(-1 * var(--space-md)) 0 0;
   font-size: 1.25rem;
-}
-
-.body {
-  margin: 0 0 var(--space-md);
-  line-height: 1.6;
-}
-
-.muted {
-  margin: 0;
-  line-height: 1.6;
   color: var(--color-text-muted);
-}
-
-.card {
-  width: 100%;
-  max-width: 26rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-lg);
 }
 
 .form {
+  width: 100%;
+  max-width: 20rem;
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  text-align: left;
 }
 
 .label {
@@ -124,22 +93,4 @@
   border: 1px solid var(--color-success);
   border-radius: var(--radius-sm);
   color: var(--color-success);
-}
-
-.emailUse {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-}
-
-.footer {
-  margin-top: auto;
-  display: flex;
-  gap: var(--space-md);
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-}
-
-.footerLinks a {
-  color: var(--color-text-muted);
 }
