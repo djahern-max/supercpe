@@ -723,3 +723,24 @@ The monitor alerts on non-200. Fields, in the order to check:
 - Whole endpoint unreachable — Caddy or the droplet. `docker compose -f
   deploy/docker-compose.yml ps`, then `logs caddy`; then the droplet
   console in the control panel.
+
+## Pre-launch reset
+
+Until Opening day step 0, production holds test data — nothing in the
+database is a 9.02 record, and resetting it is a routine testing step.
+The exception is the waiting list (015): public signups are real people
+owed one invitation (021), so the reset carries their rows across.
+
+    ssh -t deploy@138.197.35.128 /srv/supercpe/repo/deploy/reset-db.sh
+
+It refuses unless `/api/v1/site` reports `coming_soon`, saves the
+waiting-list rows to a timestamped file, drops and recreates the
+`public` schema (not the database — see first-deploy step 6 on
+ownership), migrates to head, restores the waiting-list rows, starts
+the api, checks `/health`, and prompts for a new admin.
+
+After a reset: `site_mode` is `coming_soon`, the sponsor profile is
+blank (fill `/admin/sponsor` before any certificate), and packages must
+be re-uploaded (Re-ingest a course). Spaces is untouched — test objects
+under `packages/`, `certificates/`, and `audits/` remain. Resets end at
+Opening day step 0.
