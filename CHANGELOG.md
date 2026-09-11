@@ -2531,3 +2531,141 @@ Shipped: 2026-09-01
   this changelog and in COMPLIANCE.md.
 - Deploy is the operator's: no migration, no new env vars, no new storage
   prefixes.
+
+## 025 — Site header
+
+Shipped: 2026-09-11
+
+**What changed**
+- `SiteHeader` (`frontend/src/components/SiteHeader/`): one row above
+  every open surface — the `superCPE` wordmark (text only, linking to
+  `roleHome(account.role)` when signed in and `/` when not), the links
+  that belong to the viewer's role, the signed-in email, and Sign out.
+  Signed out: Courses, How it works, Sign in, Create account.
+  Participant: My courses, Courses, Account, email, Sign out. Reviewer:
+  Review, email, Sign out; admin gets the reviewer row if the null rule
+  below ever changes. It returns null while either the session or the
+  site read is unanswered, while the site's face is coming-soon, under
+  `/admin`, and on `/change-password`. Sign out calls `signOut()` and
+  navigates to `/`.
+- `frontend/src/site/SiteContext.jsx`: `SiteProvider` reads
+  `GET /api/v1/site` once on boot and exposes `{ site, loading, failed }`
+  with SiteGate's failure posture (a failed read is not fatal);
+  `useSite()`; and **`siteFace()` / `useSiteFace()`** — the one
+  coming-soon decision, answering `loading`, `coming_soon`, or `open`
+  in exactly the order the old SiteGate evaluated it (failed → open
+  first, then loading, then `site_mode === "open" || account`).
+- `SiteGate` now consumes `useSiteFace()` instead of owning the request.
+  Its decision is unchanged and its comment block kept; the one
+  `/api/v1/site` request is now shared with the header.
+- `App.jsx`: `SiteProvider` wraps `<SiteHeader />` and `<Routes>` inside
+  `SessionProvider`. Routes untouched.
+- `SessionContext.signOut` clears the account inside
+  `startTransition`. React Router 7 applies location changes as
+  transitions; as a normal update the emptied session rendered first, on
+  the old participant path, and `RequireRole` bounced it to `/login`
+  before the header's `navigate("/")` was reached (reproduced in the
+  test; deterministic, not a race). With both updates in the transition
+  lane they commit in one render. `AdminNav`, `MyCourses`, and
+  `ReviewHeader` still navigate to `/login` after signing out, which is
+  also where `RequireRole` sends them, so nothing there changes.
+- `frontend/src/components/SiteHeader/SiteHeader.test.jsx` renders the
+  real `App` in a `MemoryRouter` with `/site` and `/auth` mocked and
+  pins acceptance 1–6: four links and the wordmark href signed out at
+  open, with Sign in reaching the login form; **no `<header>` or `<nav>`
+  in the document** on `/`, `/courses`, `/courses/ATO`, and an unmatched
+  path while coming_soon and signed out; a participant in coming_soon
+  gets the header, and Sign out calls logout once and lands on the
+  coming-soon page; `/admin/courses` as admin has no site nav and exactly
+  one Sign out; a reviewer gets the header on both review pages; no
+  header on `/change-password`; the header's text contains no course
+  fact and no Registry string.
+- `docs/OPERATIONS.md`: one bullet on cookie-clearing versus Sign out.
+- Backend: no file touched. Suite 453 passed before and after.
+
+**Standards touched**
+- 8.01 / 8.01(11) — read in `docs/2026-Statement-on-Standards-for-CPE-
+  Programs.pdf` (page 20–21). The header is chrome and discloses
+  nothing, but a Courses link over the coming-soon page would be the
+  partial disclosure 024 ruled out. The header and SiteGate therefore
+  share `siteFace()` rather than each testing `site_mode`, so the
+  header cannot render where the landing page does; the test asserts on
+  the absence of header markup. The component contains no "National
+  Registry", no sponsor ID, no sponsor statement, no course fact, and
+  never reads `may_claim_registry` or `sponsor_name`.
+- 4.05.3(1), (4) — read on page 7–8. Recon: `/how-it-works` was already
+  linked from `/my/courses` ("How a course works") and the course page
+  ("How this course works"), as 011's COMPLIANCE row says. The header
+  adds a link from every open signed-out surface; a small reachability
+  improvement, not a new way of satisfying the paragraph. COMPLIANCE.md
+  is unchanged — the header satisfies nothing itself.
+
+**Decisions**
+- Task 2 took the provider, not the duplicate-request fallback. It broke
+  no test; the existing SiteGate comment is still accurate and kept.
+- 015's "/login is deliberately not linked from any page" rule was about
+  the coming-soon landing page, which must not advertise what is behind
+  it. It was never a rule against a Sign in link on the open site. The
+  header does not render in coming_soon, so the landing page still links
+  nothing; the rule is untouched, not reversed. Login.jsx's own comment
+  still says "not linked from any page" and is now true only of the
+  landing page; left as is.
+- Sign out lands on `/`, not `/login`: the public face of the site. In
+  coming_soon that is the landing page, which is correct. AdminNav keeps
+  its `/login`.
+- `/admin` null rule matches `/admin` and `/admin/...` exactly, not any
+  path merely beginning with the letters.
+- Recon (task 1), reported as found:
+  - `/policies` is linked from the course page (each `PolicyLink` from
+    the 016 payload) and from `/register` (the registration/attendance
+    policy beside the submit button, 017). Nothing else links it.
+  - `Login.jsx` offers no create-account link, and renders the form even
+    when a session already exists. `Register.jsx` links `/login`.
+  - `AdminNav` is rendered by the twelve `Admin*` pages only, all under
+    `/admin/*`; `AdminCoursePreview` renders it only for the admin role,
+    so a reviewer on `/admin/courses/:code/preview` sees neither
+    `AdminNav` (role) nor the site header (path). Recorded below.
+  - Breadcrumbs exist on `CoursePage`, `Account`, `HowItWorks`,
+    `Policies`, `MyCourse`, `MyLesson`, `MyAssessment`, and
+    `ReviewCourse`; all kept — a breadcrumb and a header are different
+    things. `Login` and `Register` render their own large wordmark above
+    the form; also kept.
+  - `MyCourses` already had its own page header with the email, an
+    Account link, and a Sign out button; `ReviewHome`/`ReviewCourse`
+    share `ReviewHeader` with a wordmark, the email, and Sign out. So a
+    participant on `/my/courses` did have a way out; the spec's "no way
+    to sign out" holds for every other participant surface (`/account`,
+    the course page, the reader, the player, the assessment). Both
+    page-level headers were left in place — the spec says report, and
+    neither file is in scope — but they now duplicate the site header.
+    Recorded as a gap.
+  - `usePageTitle` only sets `document.title`; nothing assumes it is the
+    only thing above `<main>`.
+- 320px was verified with a headless-Chrome screenshot of the built app
+  in a 320px iframe (Chrome's minimum window is ~500px, so a bare
+  `--window-size=320` lies): the nav drops below the wordmark and its
+  links wrap right-aligned; no horizontal overflow.
+
+**Known gaps**
+- Duplicate chrome: `/my/courses` shows two Sign out buttons and the
+  email twice; `/review` and `/review/courses/:code` likewise. Removing
+  the page-level rows from `MyCourses` and `ReviewHeader` is a small
+  follow-up.
+- Deleting the session cookie signs the browser out but leaves the
+  `sessions` row valid until idle or absolute expiry; only
+  `POST /auth/logout` (Sign out) revokes it. Noted in OPERATIONS.md.
+- No footer. `/policies` is linked from the course page and the register
+  page and from nowhere else; 8.01.1's "available" is met where a
+  purchaser sees it, but a footer would be better. Separate decision.
+- `/login` has no create-account link and no "signed in as" affordance;
+  a tester with a live participant session who opens `/login` sees the
+  form. The header now shows Create account on `/login`, which covers
+  the first half.
+- A reviewer on `/admin/courses/:code/preview` has no chrome at all
+  (`AdminNav` is admin-only there, the site header is null under
+  `/admin`). Pre-existing for `AdminNav`; the header's `/admin` rule
+  keeps it that way.
+- `siteFace()` still relies on `SessionProvider` being above
+  `SiteProvider`; nothing enforces the order beyond `App.jsx`.
+- No frontend change to `frontend/dist/`; the build for the screenshot
+  went to a scratch directory.

@@ -1,5 +1,6 @@
 import {
   createContext,
+  startTransition,
   useCallback,
   useContext,
   useEffect,
@@ -40,7 +41,11 @@ export function SessionProvider({ children }) {
     } catch {
       // The cookie may already be dead; signed out either way.
     }
-    setAccount(null);
+    // 025: a transition, like the router's own location updates, so a
+    // caller's `signOut(); navigate(to)` commits in one render. As a
+    // normal update the emptied session renders first, on the old path,
+    // and RequireRole bounces it to /login before `to` is reached.
+    startTransition(() => setAccount(null));
   }, []);
 
   const value = useMemo(

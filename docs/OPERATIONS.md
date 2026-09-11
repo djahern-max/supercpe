@@ -14,6 +14,11 @@ Spaces bucket, and these procedures are how they stay alive.
   argon2id (009). Sessions are server-side random tokens — there is no
   signing SECRET_KEY in this application; revoking sessions means
   deleting rows, not rotating a key.
+- Clearing the session cookie in a browser signs that browser out but
+  leaves its `sessions` row valid until the idle or absolute expiry. The
+  Sign out button (025, in the site header and the admin nav) posts to
+  `POST /api/v1/auth/logout`, which revokes the row; a tester who has
+  been clearing cookies instead has left live rows behind.
 - Login is rate limited at the proxy: 10 `POST /api/v1/auth/login` per
   minute per client IP (Caddy's rate-limit plugin).
 - The Spaces bucket is private. Nothing is served from it directly: video

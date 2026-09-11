@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
-import { getSite } from "../../api/site";
-import { useSession } from "../../auth/SessionContext.jsx";
 import ComingSoon from "../../pages/ComingSoon/ComingSoon.jsx";
+import { SITE_FACE, useSiteFace } from "../../site/SiteContext.jsx";
 
 /**
  * Wraps the public pages, and the catch-all route. While site_mode is
@@ -11,21 +9,12 @@ import ComingSoon from "../../pages/ComingSoon/ComingSoon.jsx";
  * /api/v1/site and /api/v1/landing).
  */
 function SiteGate({ children }) {
-  const { account, loading } = useSession();
-  const [site, setSite] = useState(null);
-  const [failed, setFailed] = useState(false);
+  const face = useSiteFace();
 
-  useEffect(() => {
-    getSite()
-      .then(setSite)
-      .catch(() => setFailed(true));
-  }, []);
-
-  // On a failed /site read, fall through to the page; it reports backend
-  // trouble in its own words.
-  if (failed) return children;
-  if (loading || site === null) return null;
-  if (site.site_mode === "open" || account) return children;
+  // On a failed /site read, `siteFace` answers OPEN and we fall through
+  // to the page; it reports backend trouble in its own words.
+  if (face === SITE_FACE.LOADING) return null;
+  if (face === SITE_FACE.OPEN) return children;
 
   return <ComingSoon />;
 }

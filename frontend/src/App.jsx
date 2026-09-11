@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import RequireRole from "./auth/RequireRole.jsx";
 import { SessionProvider } from "./auth/SessionContext.jsx";
 import SiteGate from "./components/SiteGate/SiteGate.jsx";
+import SiteHeader from "./components/SiteHeader/SiteHeader.jsx";
 import usePageTitle from "./hooks/usePageTitle";
 import AdminAccounts from "./pages/AdminAccounts/AdminAccounts.jsx";
 import AdminAssessmentPreview from "./pages/AdminAssessmentPreview/AdminAssessmentPreview.jsx";
@@ -31,6 +32,7 @@ import Register from "./pages/Register/Register.jsx";
 import ResendVerification from "./pages/ResendVerification/ResendVerification.jsx";
 import ReviewCourse from "./pages/ReviewCourse/ReviewCourse.jsx";
 import ReviewHome from "./pages/ReviewHome/ReviewHome.jsx";
+import { SiteProvider } from "./site/SiteContext.jsx";
 import Verify from "./pages/Verify/Verify.jsx";
 import VerifyCertificate from "./pages/VerifyCertificate/VerifyCertificate.jsx";
 import styles from "./App.module.css";
@@ -59,101 +61,107 @@ const participant = (page) => (
 function App() {
   return (
     <SessionProvider>
-      <Routes>
-        {/* 016: at open the public face of the site is the catalog, so
-            the root path renders it (in coming_soon, SiteGate still
-            serves the 015 landing page to anonymous visitors). */}
-        <Route path="/" element={<SiteGate><Catalog /></SiteGate>} />
-        <Route path="/courses" element={<SiteGate><Catalog /></SiteGate>} />
-        <Route
-          path="/courses/:code"
-          element={<SiteGate><CoursePage /></SiteGate>}
-        />
-        <Route path="/policies" element={<SiteGate><Policies /></SiteGate>} />
-        <Route
-          path="/how-it-works"
-          element={<SiteGate><HowItWorks /></SiteGate>}
-        />
-        {/* 017: behind SiteGate like the catalog — in coming_soon these
-            paths render the landing page; the API routes 404 too. */}
-        <Route path="/register" element={<SiteGate><Register /></SiteGate>} />
-        <Route path="/verify" element={<SiteGate><Verify /></SiteGate>} />
-        <Route
-          path="/resend-verification"
-          element={<SiteGate><ResendVerification /></SiteGate>}
-        />
-        {/* 019: public certificate verification. The namespace
-            deliberately avoids 017's /verify (email verification, just
-            above); both resolve to their own pages. */}
-        <Route
-          path="/certificates/verify"
-          element={<SiteGate><VerifyCertificate /></SiteGate>}
-        />
-        <Route
-          path="/certificates/verify/:code"
-          element={<SiteGate><VerifyCertificate /></SiteGate>}
-        />
-        {/* Reachable but unlinked; staff and testers know the address. */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/change-password" element={<ChangePassword />} />
-        {/* 018: where Stripe sends the participant back; the page polls
-            for the webhook-created enrollment. */}
-        <Route
-          path="/purchase/success"
-          element={participant(<PurchaseSuccess />)}
-        />
-        {/* 020: the account page — today just the state of licensure. */}
-        <Route path="/account" element={participant(<Account />)} />
-        <Route path="/my/courses" element={participant(<MyCourses />)} />
-        <Route
-          path="/my/courses/:enrollmentId"
-          element={participant(<MyCourse />)}
-        />
-        <Route
-          path="/my/courses/:enrollmentId/lessons/:packageId"
-          element={participant(<MyLesson />)}
-        />
-        <Route
-          path="/my/courses/:enrollmentId/assessment"
-          element={participant(<MyAssessment />)}
-        />
-        <Route path="/review" element={preview(<ReviewHome />)} />
-        <Route path="/review/courses/:code" element={preview(<ReviewCourse />)} />
-        <Route path="/admin/courses" element={admin(<AdminCourses />)} />
-        <Route path="/admin/courses/:code" element={admin(<AdminCourseDetail />)} />
-        <Route
-          path="/admin/courses/:code/attempts"
-          element={admin(<AdminCourseAttempts />)}
-        />
-        <Route
-          path="/admin/courses/:code/preview"
-          element={preview(<AdminCoursePreview />)}
-        />
-        <Route
-          path="/admin/courses/:code/preview/assessment"
-          element={preview(<AdminAssessmentPreview />)}
-        />
-        <Route
-          path="/admin/courses/:code/preview/:packageId"
-          element={preview(<AdminCoursePreview />)}
-        />
-        <Route
-          path="/admin/jurisdictions"
-          element={admin(<AdminJurisdictions />)}
-        />
-        <Route path="/admin/packages" element={admin(<AdminPackages />)} />
-        <Route path="/admin/payments" element={admin(<AdminPayments />)} />
-        <Route path="/admin/smes" element={admin(<AdminSmes />)} />
-        <Route path="/admin/sponsor" element={admin(<AdminSponsor />)} />
-        <Route path="/admin/accounts" element={admin(<AdminAccounts />)} />
-        <Route
-          path="/admin/waiting-list"
-          element={admin(<AdminWaitingList />)}
-        />
-        {/* Unmatched paths pass the gate too: in coming_soon they serve
-            the landing page, not a 404 (015). */}
-        <Route path="*" element={<SiteGate><NotFound /></SiteGate>} />
-      </Routes>
+      <SiteProvider>
+        {/* 025: one header above every surface except the coming-soon
+            page (8.01, see siteFace) and /admin (AdminNav). It renders
+            null itself in those cases, so no route has to opt out. */}
+        <SiteHeader />
+        <Routes>
+          {/* 016: at open the public face of the site is the catalog, so
+              the root path renders it (in coming_soon, SiteGate still
+              serves the 015 landing page to anonymous visitors). */}
+          <Route path="/" element={<SiteGate><Catalog /></SiteGate>} />
+          <Route path="/courses" element={<SiteGate><Catalog /></SiteGate>} />
+          <Route
+            path="/courses/:code"
+            element={<SiteGate><CoursePage /></SiteGate>}
+          />
+          <Route path="/policies" element={<SiteGate><Policies /></SiteGate>} />
+          <Route
+            path="/how-it-works"
+            element={<SiteGate><HowItWorks /></SiteGate>}
+          />
+          {/* 017: behind SiteGate like the catalog — in coming_soon these
+              paths render the landing page; the API routes 404 too. */}
+          <Route path="/register" element={<SiteGate><Register /></SiteGate>} />
+          <Route path="/verify" element={<SiteGate><Verify /></SiteGate>} />
+          <Route
+            path="/resend-verification"
+            element={<SiteGate><ResendVerification /></SiteGate>}
+          />
+          {/* 019: public certificate verification. The namespace
+              deliberately avoids 017's /verify (email verification, just
+              above); both resolve to their own pages. */}
+          <Route
+            path="/certificates/verify"
+            element={<SiteGate><VerifyCertificate /></SiteGate>}
+          />
+          <Route
+            path="/certificates/verify/:code"
+            element={<SiteGate><VerifyCertificate /></SiteGate>}
+          />
+          {/* Reachable but unlinked; staff and testers know the address. */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/change-password" element={<ChangePassword />} />
+          {/* 018: where Stripe sends the participant back; the page polls
+              for the webhook-created enrollment. */}
+          <Route
+            path="/purchase/success"
+            element={participant(<PurchaseSuccess />)}
+          />
+          {/* 020: the account page — today just the state of licensure. */}
+          <Route path="/account" element={participant(<Account />)} />
+          <Route path="/my/courses" element={participant(<MyCourses />)} />
+          <Route
+            path="/my/courses/:enrollmentId"
+            element={participant(<MyCourse />)}
+          />
+          <Route
+            path="/my/courses/:enrollmentId/lessons/:packageId"
+            element={participant(<MyLesson />)}
+          />
+          <Route
+            path="/my/courses/:enrollmentId/assessment"
+            element={participant(<MyAssessment />)}
+          />
+          <Route path="/review" element={preview(<ReviewHome />)} />
+          <Route path="/review/courses/:code" element={preview(<ReviewCourse />)} />
+          <Route path="/admin/courses" element={admin(<AdminCourses />)} />
+          <Route path="/admin/courses/:code" element={admin(<AdminCourseDetail />)} />
+          <Route
+            path="/admin/courses/:code/attempts"
+            element={admin(<AdminCourseAttempts />)}
+          />
+          <Route
+            path="/admin/courses/:code/preview"
+            element={preview(<AdminCoursePreview />)}
+          />
+          <Route
+            path="/admin/courses/:code/preview/assessment"
+            element={preview(<AdminAssessmentPreview />)}
+          />
+          <Route
+            path="/admin/courses/:code/preview/:packageId"
+            element={preview(<AdminCoursePreview />)}
+          />
+          <Route
+            path="/admin/jurisdictions"
+            element={admin(<AdminJurisdictions />)}
+          />
+          <Route path="/admin/packages" element={admin(<AdminPackages />)} />
+          <Route path="/admin/payments" element={admin(<AdminPayments />)} />
+          <Route path="/admin/smes" element={admin(<AdminSmes />)} />
+          <Route path="/admin/sponsor" element={admin(<AdminSponsor />)} />
+          <Route path="/admin/accounts" element={admin(<AdminAccounts />)} />
+          <Route
+            path="/admin/waiting-list"
+            element={admin(<AdminWaitingList />)}
+          />
+          {/* Unmatched paths pass the gate too: in coming_soon they serve
+              the landing page, not a 404 (015). */}
+          <Route path="*" element={<SiteGate><NotFound /></SiteGate>} />
+        </Routes>
+      </SiteProvider>
     </SessionProvider>
   );
 }
