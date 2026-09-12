@@ -1,245 +1,345 @@
-# current-feature.md — Prove Stripe against production before the flip
+# Feature 027 — Participant flow: every screen names the next step
 
-Feature number: next in the CHANGELOG.md sequence (assign when writing the
-entry; 025 was the site header).
+Corrective feature from the 2026-09-12 participant walkthrough of `ATO`
+(a participant account, self-created, reading the study guide, watching
+the clips, answering all review questions, and failing the assessment
+to exhaustion). Presentation and navigation only. No data model, no
+change to what is gated or how, no change to credit, questions, or
+certificates. Anything that turns out to need a design decision is
+reported, not built.
+
+## The findings
+
+**W1. The reader is a wall of text.** Unlocked sections render as one
+long page. A participant cannot tell where they are, how much is left,
+or that a question is waiting at the bottom.
+
+**W2. No direction after the last review question.** When the final
+gate clears, nothing changes on screen. The participant found "Take
+assessment" only by navigating back to the course page.
+
+**W3. No direction when a video ends.** The clip stops; the page does
+nothing. Nothing says "continue reading" or "next lesson".
+
+**W4. No rewind or fast-forward on video.** The participant could not
+move within a clip. (Task 0 must establish which player this was; see
+below — the two players have different rules.)
+
+**W5. No direction after a failed assessment.** The failed result says
+"no retakes left, consider retaking the course"; the course page then
+says "The assessment is not available yet: No re-takes left on this
+enrollment." Two messages, no next step. The *exit* from this state is
+028 (exhausted enrollments); the honest wording is 027.
+
+**W6. 025's recorded chrome gaps** on the same surfaces: duplicate
+Sign out and email on `/my/courses` and the review pages; `/login` has
+no create-account link; no footer, so `/policies` is reachable only
+from the course page and `/register`.
 
 ## Goal
 
-Make it possible to run a complete Stripe checkout against the live production
-server — real DNS, real TLS, real Caddy routing, real signature verification —
-while `site_mode` is still `coming_soon` and the keys are still test keys. And
-make it impossible to open the site with those test keys still installed.
+A participant never has to guess what to do next. The reader shows one
+section at a time with a table of contents and a Continue affordance;
+the gate question sits where the section ends; clearing the last gate
+puts "Take the assessment" in front of the participant; a finished clip
+says where to go; a failed result says exactly what the sitting count
+means; the chrome has one Sign out, a create-account link, and a footer.
 
-Two changes, and they pull in opposite directions on purpose: relax the gate on
-the one route where it buys nothing, and tighten the gate on the one condition
-it never checked.
+## Read before building
 
-## Why
+- `docs/decisions/2026-09-01-text-first.md` and the `reader.py`
+  docstring. Two rules are not negotiable here: **the gate is
+  server-side** (a locked section's markdown is not in the payload at
+  all), and **no answer key reaches the browser**. Every change in this
+  feature is client presentation of a payload the backend already
+  serves. If a task seems to need a new read endpoint or a change to
+  `reader.build`, stop and report.
+- The 023 decision on seeking: supplemental clips in the reader carry
+  **no seek lock**. The video-only course player keeps its forward-seek
+  lock; changing that is a separate decision and out of scope.
+- 010's rule that progress never decreases. Nothing here writes
+  progress; the section the participant is looking at is browser
+  state, not a record.
+- 023c's D2 fix (review feedback must persist, not flash). Do not
+  reintroduce it by restructuring the reader.
 
-021's opening-day checklist has the first real Stripe transaction happening at
-step 8, after the flip. Everything that can go wrong in the transport — a Caddy
-route that doesn't reach the API, a signing secret pasted with a trailing
-newline, a webhook endpoint Stripe disabled weeks ago for failing — would be
-discovered there, on the open site, with the waiting list about to be mailed.
-That is the wrong place to find out.
+## Locators — read these paragraphs in the 2026 Standards PDF before writing code
 
-Nothing about that transport requires live money. Everything except the money
-can be proven months earlier, if the webhook can reach the handler.
+Pages are the printed page numbers in
+`docs/2026-Statement-on-Standards-for-CPE-Programs.pdf`.
 
-## What this reverses, and the argument for it
-
-018's acceptance item 5 says: "router walk green, allowlist untouched." This
-feature touches the allowlist. That is a deliberate reversal of a deliberate
-decision and the changelog must say so in those words.
-
-The argument. 009 gave the reason for the gate: the refusal is 404 rather than
-401 "so the closed site does not advertise what is behind it." That property is
-about not disclosing course facts, prices, or the existence of a catalog to an
-anonymous visitor — the same instinct 015 and 024 acted on.
-
-`POST /api/v1/stripe/webhook` discloses none of that. It accepts a signed
-payload and returns an acknowledgement. It reveals no course, no price, no
-participant, no credit figure. An unsigned request is refused by signature
-verification, which is a stronger gate than site mode, not a weaker one. The
-only thing the exemption reveals is that supercpe.com has a Stripe integration,
-which the checkout redirect will announce to every customer anyway.
-
-So the exemption does not weaken the property the gate exists to protect. Verify
-this claim rather than trusting this paragraph: read 009's
-`require_site_open_or_session` and 015's router-walk test before writing code,
-and if the mechanism turns out to protect something this argument missed, stop
-and say so instead of proceeding.
-
-Note also what does **not** need exempting: `POST /api/v1/checkout` already
-works in `coming_soon` for a signed-in participant, because the gate passes on
-"site open **or** a valid session of any role." Only Stripe is sessionless. One
-route, one allowlist entry.
+- **4.05.3** (pages 7–8), items 4 and 5: instructional materials must
+  include "instructions to participants regarding navigation through
+  the course, course components, and course completion" and review
+  questions "with feedback". The reader's front-matter "How this course
+  works" block is how item 4 is met today; the stepper must show it
+  first and must not hide it.
+- **5.01.2.1** (page 9): review questions "placed throughout the
+  program in sufficient intervals". The stepper places each question
+  where the package placed it (`after_section`); it does not move,
+  batch, or defer questions.
+- **5.01.2.2** (page 10): feedback must at minimum say "correct" or
+  "incorrect". The inline question keeps 023c's persistent feedback.
+- **6.01.2** (page 13): "The number of re-takes a participant is
+  permitted to take is at the sponsor's discretion." (page 14) on a
+  failed assessment the sponsor "may not provide feedback". The failed
+  result page may say how many sittings remain and what the policy is;
+  it still shows nothing per question.
+- **8.01.1** (page 20): policies "formalized, published, and made
+  available". The footer adds a second path to `/policies`; it does not
+  change what the policies say.
 
 ## In scope
 
-1. Webhook route exempt from the coming-soon 404.
-2. A live-key requirement on the site-open gate, and on preflight.
-3. Recording Stripe's `livemode` on the payment row.
-4. OPERATIONS.md "Payments (018)" — the section 018 specified and never got.
+### 1. Task 0 — establish, then decide scope
 
-## Out of scope — flag, don't build
+Answer each in the changelog before writing code:
 
-- Any change to checkout refusal logic, the refund rule, enrollment creation, or
-  webhook idempotency. 018's decisions stand, including the deliberate one that
-  a refund does not void an enrollment.
-- Live keys, account activation, bank account, Stripe Tax, invoices, Products
-  catalog, coupons.
-- Exempting any other 018 route. Checkout and the status endpoint stay behind
-  the session-or-open gate.
-- A "test mode" flag, a seeded test participant, or any code path that behaves
-  differently because a transaction is a test. `livemode` is recorded and
-  displayed, never branched on.
-- Deleting or hiding test rows. Payments and completions have no delete path and
-  this feature does not add one.
+1. Which video did the walkthrough watch — a supplemental clip inside
+   the reader (`media[]`, `placement.afterSection`), or the video-only
+   course player? Do supplemental clips render in the reader today
+   (023b listed them out of scope; 023c may have added them)? If they
+   do not render at all, W3/W4 apply only to the video-only player.
+2. On the video-only player, is *backward* seeking allowed today, or
+   does the lock block both directions? 023 describes a forward-seek
+   lock. If rewind is blocked, that is a defect to fix here; nothing
+   in the Standards or the recorded decision asks for it.
+3. How does the reader component receive sections — one array with
+   `locked`/`markdown: null` per section? Confirm the stepper can be
+   built on that payload unchanged.
+4. Where does the frontend learn `assessment_available` and the
+   unanswered list — the course page payload, the reader payload, or
+   both? The "take the assessment" call to action needs it inside the
+   reader.
+5. What does the failed-result payload carry about sittings —
+   `retakes_remaining`, a boolean, or only the refusal message from
+   `start_for_enrollment`?
+6. Does `/policies` render the derived `retake_policy_text()`? The
+   failed result should link to it, not restate it.
 
-## Locators
+### 2. Reader as a section stepper (W1)
 
-- 009's `require_site_open_or_session` (`app/deps.py` or nearby) and the
-  `INTENTIONALLY_PUBLIC` allowlist 015 introduced
-- 015's router-walk test — the one that asserts every route 404s anonymously in
-  `coming_soon` unless allowlisted
-- `app/services/stripe_gateway.py` (or whatever 018 named the boundary module)
-- `app/services/site.py` — `site_open_blockers()` / `launch_findings`
-- `app/cli.py` — the `preflight` command `deploy.sh` runs before migrations
-- 012's prod config validation, wherever `payments_not_configured` was added
-- `backend/alembic/versions/a9d21c5b7e30_stripe_checkout.py` — the payments table
-- `frontend/src/pages/AdminPayments/`
+- One section on screen at a time, in manifest order. A persistent
+  table of contents (sidebar on wide viewports, collapsible on narrow)
+  lists every section with its state: read, current, unlocked-unread,
+  locked. Locked entries show the title only (the title is already in
+  the payload; the markdown is not, and stays not).
+- Front matter renders first, always, including the "How this course
+  works" block. Glossary and appendix sections are listed in the table
+  of contents under a "Reference" heading and open at any time, as
+  today.
+- Continue: at the end of a section with no question after it, a
+  Continue button opens the next section. At the end of a section
+  with questions after it, the questions render inline beneath the
+  text (all of them, in package order) and Continue is disabled until
+  every one is answered — then it reads "Continue" and opens the newly
+  unlocked section. This is presentation of the server's gate, not a
+  second gate: the button asks for the payload again and shows what
+  the server unlocked.
+- Progress line above the section: "Section 4 of 14" and a thin bar.
+  Counts every body section; reference sections are excluded and say
+  "Reference" instead of a number.
+- Position is remembered in the URL (`?section=<key>` or a hash) so
+  reload and back/forward work; nothing is written to the server.
+  Opening the lesson with no section in the URL lands on the first
+  section not yet read if that can be derived from the payload
+  (locked state and answered questions), otherwise on front matter.
+- Search results and glossary links continue to open the reader at
+  the target section; verify they set the URL position.
+- Keyboard: left/right arrows or the buttons; no new dependency.
+
+### 3. Completion call to action (W2)
+
+- When the payload reports every review question answered and the
+  qualified assessment available, the reader shows a completion card
+  after the last body section: "You've finished the study guide" with
+  a primary "Take the qualified assessment" link to the existing
+  assessment route, and a secondary link back to the course page.
+- If the course has more than one lesson, the card names the next
+  lesson instead when one remains, and the assessment only when the
+  whole course is read. Use whatever the course payload already
+  exposes; do not add a field.
+- The course page shows the same state without hunting: the
+  Registration/progress section's next action is a primary button —
+  "Continue reading (Section 4 of 14)", "Take the qualified
+  assessment", or "View your certificate" — never only a status line.
+- `/my/courses` cards carry the same next-action button.
+
+### 4. Video direction and controls (W3, W4)
+
+Supplemental clips in the reader (if Task 0.1 finds them rendered):
+
+- Native controls on (`controls` attribute), no seek restriction of
+  any kind. This is the recorded 2026-09-01 decision; the spec
+  restates it so nobody re-adds a lock "for consistency".
+- On `ended`, an overlay or line beneath the clip: "Continue reading"
+  that scrolls to or opens the following content (the next section
+  or the question placed after it).
+
+Video-only course player:
+
+- Backward seeking allowed. If Task 0.2 finds it blocked, fix it and
+  say so in the changelog. Forward-seek lock untouched.
+- Play/pause and a rewind-15-seconds control if the player has no
+  native controls exposed. Fast-forward stays blocked by the lock;
+  the control set must not imply otherwise.
+- On `ended`: the next step — the review questions for this lesson if
+  any are unanswered, else the next lesson, else the assessment (same
+  derivation as section 3).
+
+### 5. Failed-result and exhausted wording (W5)
+
+Wording only. The exit from exhaustion is 028; do not build a
+re-purchase path, a reset, or an admin action here.
+
+- Failed result with sittings remaining: score, the passing threshold,
+  "You have N re-takes left on this enrollment", a primary "Re-take
+  the assessment" button, and a link to the study guide. Nothing per
+  question (6.01.2).
+- Failed result with none remaining: score, the threshold, "You have
+  used all N re-takes on this enrollment", a link to the retake policy
+  on `/policies` (Task 0.6), and the sponsor's contact address from
+  the sponsor profile with one sentence: "Contact us about re-enrolling."
+  The study guide stays readable (the enrollment is not expired or
+  voided); say so.
+- Course page in the same state: one message, not two. Replace "The
+  assessment is not available yet: No re-takes left on this
+  enrollment" with the same three-part wording as the result page.
+  The "not available yet" phrasing is reserved for unanswered review
+  questions, which is the only case where "yet" is true.
+- Remove any remaining video wording on text courses that 023c's F1
+  missed (grep the frontend for "watch", "re-watch", "video" on
+  participant surfaces and list what was found).
+
+### 6. Chrome (W6)
+
+- Remove the page-level email/Sign out rows from `MyCourses` and
+  `ReviewHeader`; the 025 site header is the one place. Keep
+  breadcrumbs.
+- `/login`: a "Create account" link below the form, rendered only at
+  `open` or with a session — the same `siteFace()` decision the header
+  uses, so the coming-soon landing page still advertises nothing.
+- A site footer under the same render rule as the header (null while
+  coming-soon, null under `/admin`): links to `/policies`,
+  `/how-it-works`, and the sponsor's contact address. No course fact,
+  no "National Registry", no sponsor statement, never reads
+  `may_claim_registry` — the same test 025 pins for the header.
+
+## Out of scope (report, do not build)
+
+- Any exit from the exhausted state: derived `exhausted` status,
+  re-purchase, goodwill re-enrollment, resetting counts (028).
+- Removing or changing the video-only player's forward-seek lock.
+- Subscription billing, the header "Subscribe" affordance (029);
+  Google sign-in (030).
+- Server-side reading position or "last read" records. If it seems
+  necessary, report why — it would be a new participant record and
+  needs a retention decision.
+- Reading-time estimates anywhere (023b's rule: it would read as a
+  second credit figure).
+- Review-question placement density in `ATO` (content, video-tool
+  side).
+- Anything in the site-open gate, email, or Stripe.
+
+## Locators — code
+
+Find by grep and record the actual paths in the changelog:
+
+- Frontend: participant reader (`/my/courses/:id/lessons/:id`, the
+  023 reader component), video player component, `MyCourse`,
+  `MyCourses`, `MyAssessment` result view, `Login`, `SiteHeader`,
+  `SiteContext.jsx` (`siteFace()`), `ReviewHeader`, `Policies`.
+- Backend (read only, to confirm payload shapes): `reader.build`,
+  `schemas/reader.py`, `enrollments.progress` and
+  `retakes_remaining`, `assessment.result`, the course-page payload,
+  `policies.retake_policy_text`.
 
 ## Data model
 
-One migration: `payments.livemode` boolean, nullable (existing rows predate the
-column and there are none in production; do not backfill a guess).
+None. If a migration appears necessary, stop and report.
 
-Set from the Stripe object as reported, never inferred from the key prefix — the
-same rule 018 applied to amount and currency. A test transaction is then
-permanently and honestly distinguishable in the record without anything being
-deleted, which is what 9.02's never-delete posture requires of us. Docstring says
-exactly that.
+## Tests
 
-## Tasks
+Frontend (vitest, baseline 30):
 
-### 1. Recon — report before editing
+- Stepper: renders exactly one body section's markdown at a time; a
+  locked entry in the table of contents shows a title and never a
+  body; Continue is disabled while any inline question is unanswered
+  and enabled after all are answered (mock the payload before and
+  after); progress line counts body sections only; URL position
+  round-trips.
+- No answer key: walk the rendered DOM and the mocked payload
+  assertions from 006/023 — `is_correct` and feedback absent until
+  the grading response.
+- Feedback persists after the payload refetch (re-assert 023c D2
+  through the new component).
+- Completion card appears only when the payload says every question is
+  answered and the assessment is available; names the next lesson when
+  one remains.
+- Video: reader clip has `controls` and no seek handler; on `ended` the
+  continue affordance appears. Video-only player: backward seek
+  allowed, forward seek still refused, `ended` shows the derived next
+  step.
+- Failed result: N-remaining and none-remaining variants render the
+  specified wording; neither renders per-question data.
+- Chrome: one Sign out on `/my/courses` and `/review`; `/login` shows
+  Create account at open and not in coming-soon signed out; footer
+  absent in coming-soon signed out, absent under `/admin`, present at
+  open; footer text contains no course fact and no Registry string.
 
-- How the webhook route is gated today: the dependency, and whether it is applied
-  per-route or to a whole router.
-- Where `INTENTIONALLY_PUBLIC` lives, what is in it, and what the router-walk
-  test asserts about entries in it.
-- What status and body the webhook returns for an unsigned request today.
-- Whether `preflight` can reach the database — does it read any DB value now, or
-  only the env file?
-- Whether the gateway already captures `livemode` from the Stripe object.
-- How `/admin/payments` builds its dashboard links, and whether a test-mode id
-  would link to the wrong dashboard URL.
+Backend: no change expected. Suite stays at 464; if a backend test
+changes, say why.
 
-### 2. Webhook exemption
+## COMPLIANCE.md rows
 
-- Add the webhook route to `INTENTIONALLY_PUBLIC` with a comment giving the
-  argument above in two sentences, not a cross-reference.
-- Its behavior is otherwise unchanged: unsigned is refused with the **same status
-  and the same body as today**. Do not add a hint, a reason, or a route name to
-  that response.
-- New test: in `coming_soon`, an unsigned POST is refused exactly as it is at
-  `open`, and a signed event is processed exactly as it is at `open`. Assert the
-  two mode cases are byte-identical.
-- New test, in the spirit of 003/015/016: no webhook response body in either mode
-  contains a course title, code, price, credit figure, or the string "National
-  Registry".
-
-### 3. Live keys required to open
-
-Two checks, two places, because they answer two different questions.
-
-**The gate.** `site_open_blockers()` gains a finding: `coming_soon → open` is
-refused when `STRIPE_SECRET_KEY` or `STRIPE_PUBLISHABLE_KEY` is not a live key.
-Message names both the finding and the offending variable, in the existing 422
-`{"errors": [...]}` shape. This is the check that matters — the flip is the
-moment test keys become dangerous.
-
-**Preflight.** When `site_mode` is already `open` and the configured keys are not
-live, preflight fails, naming the variable. This catches the regression of
-someone deploying test keys onto an already-open site. `deploy.sh` runs preflight
-before migrations with the old version still serving, so the failure mode is a
-refused deploy, not an outage. If recon finds preflight cannot reach the database,
-say so and put this check at API boot instead, and explain the choice in the
-changelog.
-
-Detection is by key prefix (`sk_live_` / `pk_live_`) and nothing else. Do not call
-Stripe to ask. A network call in a config validator is a new failure mode for no
-gain.
-
-`STRIPE_WEBHOOK_SECRET` has no live/test prefix distinction — it cannot be checked
-this way, and the runbook's swap step (task 5) is the control instead. Say so in
-the finding's comment so the asymmetry does not read as an oversight.
-
-**Test env.** Conftest currently satisfies `payments_not_configured` with dummy
-keys. Those dummies must now be `sk_live_`/`pk_live_`-shaped for the open-mode
-fixtures, and a test asserting the refusal must use test-shaped ones. Do not
-weaken the check to keep the fixtures as they are.
-
-### 4. Admin surface
-
-- `/admin/payments` shows `livemode` per row — a quiet "Test" marker on
-  `livemode = false`, not a badge that shouts.
-- If recon shows dashboard links are built for live mode only, make the URL
-  respect `livemode` so a test id opens the sandbox dashboard rather than 404ing
-  in the live one.
-
-### 5. OPERATIONS.md — "Payments (018)"
-
-018 specified this section and it was deferred as not build-blocking. Write it
-now, as steps that were actually executed during this feature:
-
-1. Creating the Stripe account: LLC, EIN, address, industry.
-2. Statement descriptor set to match `sponsor_profile.name`, and why — a CPA who
-   does not recognize the charge disputes it.
-3. Sandbox keys, and the restricted-key scopes the live secret will need
-   (Checkout Sessions write; Payment Intents, Charges, Refunds read). Name them
-   concretely so launch day is copy-work.
-4. **Registering the webhook endpoint twice.** A sandbox endpoint pointing at
-   `https://supercpe.com/api/v1/stripe/webhook` for this feature's verification,
-   and a separate live endpoint at the same URL at flip time. **They have
-   different signing secrets.** `STRIPE_WEBHOOK_SECRET` must be swapped in the
-   same edit as the two keys, or every live event fails signature verification
-   while the dashboard shows delivery attempts and the site shows nothing. Put
-   this in bold in the runbook; it is the single most likely launch-day failure.
-5. The production verification run (task 6).
-6. The refund runbook 018 asked for: do the refund in Stripe, watch the
-   refunded-with-active-enrollment flag appear, decide about the enrollment per
-   the published policy. State plainly that the flag is not a bug.
-7. What preflight and the open gate each refuse, and the message each gives.
-
-Update 021's opening-day checklist step 4 to say the transport was proven in
-advance and what remains is the key swap plus one live smoke purchase.
-
-### 6. The verification run — do this, then write down what happened
-
-Not a test; an operator procedure this feature exists to enable. Run it on
-production before writing the changelog, and record the date and the result.
-
-1. `/srv/supercpe/.env` gains the three sandbox values. Site stays `coming_soon`.
-2. Deploy. Preflight passes — site is not open, so the live-key check is silent.
-3. Register the sandbox webhook endpoint at the production URL. Send a test event
-   from the dashboard. It should be accepted, not 404.
-4. Sign in as a participant, buy a published course with `4242 4242 4242 4242`.
-5. Confirm: the payment row goes `pending → paid` with `livemode = false`, exactly
-   one enrollment exists with a one-year expiry, `/purchase/success` stops polling
-   and links to the player.
-6. Replay the event from the dashboard. Nothing changes.
-7. Refund in Stripe. The payment goes `refunded`, the enrollment survives, the
-   admin flag appears.
-8. Void the test enrollment through the admin action. The payment row stays —
-   that is correct, it is an honest record of a test transaction and `livemode`
-   says so.
-9. Attempt `coming_soon → open`. It must refuse, naming the test keys.
-10. Remove the three values from `.env`, deploy, confirm `/health` green.
-
-Step 9 is the one that proves this feature did both of its jobs.
+- 4.05.3(4): append to the existing row — the reader now presents the
+  navigation instructions first in a stepper and the course page and
+  `/my/courses` show the next action; the paragraph is satisfied by the
+  same content as before, reached more reliably. Not a new way of
+  meeting it.
+- 5.01.2.1: append — question placement in the stepper is the
+  package's `after_section`, unchanged; the stepper presents the
+  server's gate and adds none of its own.
+- 6.01.2 (re-takes): append — the failed result and course page now
+  state the sitting count and link the published policy; still no
+  per-question feedback on a failed attempt.
+- 8.01.1: append — `/policies` gains the footer link on every open
+  surface.
 
 ## Acceptance
 
-1. Router walk green with exactly one allowlist addition; the test names it.
-2. Unsigned webhook request: identical refusal in both modes. Signed event:
-   identical processing in both modes.
-3. No course fact and no Registry string in any webhook response, either mode.
-4. `coming_soon → open` refused with test keys, naming the variable; succeeds with
-   live-shaped keys in the test env.
-5. Preflight fails on an open site with test keys, naming the variable.
-6. `livemode` recorded from the Stripe object and rendered in `/admin/payments`.
-7. Full suite green; count reported and higher than 025's.
-8. The task 6 run completed on production, with its date and outcome in the
-   changelog and OPERATIONS.md.
+1. Local: enroll a participant in `ATO`, open lesson 2. The reader
+   shows front matter, then one section at a time with the table of
+   contents; a locked section cannot be reached and its text is not in
+   the network response; the question after sec-01 renders inline and
+   Continue enables only after it is answered; feedback stays on
+   screen.
+2. Answer all five review questions; the completion card appears with
+   "Take the qualified assessment"; the course page and `/my/courses`
+   show the same button.
+3. A supplemental clip (if rendered) has native controls, seeks both
+   ways, and shows "Continue reading" on end. The video-only player
+   (on `ASC842-PCX` or the fixture) rewinds, still refuses forward
+   seek, and shows the next step on end.
+4. Fail the assessment four times. After each failure the result names
+   the sittings left; after the fourth, the result and the course page
+   show the same exhausted wording with the policy link and contact
+   address, and the study guide still opens.
+5. Signed out at `open`: `/login` shows Create account; every open page
+   has one header, one footer, one Sign out when signed in. In
+   `coming_soon` signed out: no header, no footer, no create-account
+   link on `/login`.
+6. Typecheck and check pass; frontend and backend suites green.
+7. Production (operator): deploy with the sha from
+   `git rev-parse --short origin/main`; repeat 1, 2, and 4 as the test
+   participant.
 
-## Known gaps to expect
+## When done
 
-- Stripe disables webhook endpoints after sustained delivery failures. The
-  sandbox endpoint registered here may be disabled by flip time if it sits idle
-  and failing; the runbook should say to check it rather than assume it.
-- Nothing verifies that `STRIPE_WEBHOOK_SECRET` belongs to the same mode as the
-  keys. The runbook's swap step is the only control. If a cheap check exists —
-  comparing `livemode` on the first received event against the key prefix, and
-  logging loudly on mismatch — note it as a candidate, do not build it here.
+Write the changelog entry only after acceptance 7 passes on
+production. Include the Task 0 answers, the actual file paths, the
+grep list from section 5, and whether rewind on the video-only player
+was a fix or already worked. Append only. Add to ROADMAP.md improvement
+notes: "028 — exhausted enrollments: derived status, re-purchase or
+goodwill re-enrollment (sponsor decision), `retake_policy_text()`
+updated" so the exit W5 needs is recorded where the next spec will look.
