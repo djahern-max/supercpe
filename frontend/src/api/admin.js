@@ -321,3 +321,8 @@ export function updateJurisdiction(code, body) {
     body: JSON.stringify(body),
   });
 }
+
+// 029: the Billing paper trail with its two loud flags.
+export function listSubscriptions() {
+  return request("/api/v1/admin/subscriptions");
+}

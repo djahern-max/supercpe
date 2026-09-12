@@ -67,6 +67,15 @@ class Payment(Base):
     # requires of us. Recorded and displayed, never branched on. Null
     # only on rows that predate the column (none exist in production).
     livemode: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # 029: set when this course payment's amount was applied, dollar for
+    # dollar, as credit on a subscription's first invoice — so it is
+    # never credited twice. A stored fact about a financial event (the
+    # discount Stripe reported on a specific invoice), not derived state;
+    # written only by the webhook that confirmed the discounted invoice,
+    # never at session creation, so an abandoned session burns nothing.
+    credited_to_subscription_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="RESTRICT"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -79,6 +88,7 @@ class Payment(Base):
 
     account = relationship("Account")
     course = relationship("Course")
+    credited_to_subscription = relationship("Subscription")
 
     __table_args__ = (
         CheckConstraint(

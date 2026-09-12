@@ -184,6 +184,41 @@
   font-size: 1.25rem;
 }
 
+/* 029: the two choices, side by side; stacked when narrow. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.choice {
+  flex: 1 1 14rem;
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.choiceTitle {
+  margin: 0 0 var(--space-xs);
+  font-size: 1rem;
+}
+
+.perYear {
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.subscribeLink {
+  display: inline-block;
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: 6px;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .statement {
   margin: var(--space-lg) 0 0;
   font-size: 0.875rem;

@@ -609,11 +609,19 @@ def test_stripe_config_is_all_or_nothing_at_boot():
     assert any("STRIPE_PUBLISHABLE_KEY" in v for v in violations)
     assert any("STRIPE_WEBHOOK_SECRET" in v for v in violations)
     assert boot_violations_for() == []
+    # 029: the subscription Price id is the fourth member of the group.
+    three = boot_violations_for(
+        stripe_secret_key="sk_test_x",
+        stripe_publishable_key="pk_test_x",
+        stripe_webhook_secret="whsec_x",
+    )
+    assert any("STRIPE_SUBSCRIPTION_PRICE_ID" in v for v in three)
     assert (
         boot_violations_for(
             stripe_secret_key="sk_test_x",
             stripe_publishable_key="pk_test_x",
             stripe_webhook_secret="whsec_x",
+            stripe_subscription_price_id="price_x",
         )
         == []
     )

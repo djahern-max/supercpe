@@ -5,7 +5,9 @@ import { ApiError } from "../../api/client";
 import { getJurisdictionNote, getPublicCourse } from "../../api/courses";
 import { listMyCourses } from "../../api/my";
 import { useSession } from "../../auth/SessionContext.jsx";
+import { getSubscribeOffer } from "../../api/subscribe";
 import RenewEnrollment from "../../components/RenewEnrollment/RenewEnrollment.jsx";
+import SubscriptionEnroll from "../../components/SubscriptionEnroll/SubscriptionEnroll.jsx";
 import { formatUsd } from "../../constants/money";
 import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./CoursePage.module.css";
@@ -99,13 +101,20 @@ function JurisdictionNote({ course }) {
 // never transits superCPE. 028: an expired enrollment the payload marks
 // `renewable` (paid, never completed) gets "Start a new enrollment (no
 // charge)" instead of the price; checkout is for a first purchase only.
+// 029: a signed-in non-subscriber sees two choices side by side — buy
+// this course, or subscribe (the credit line under it when > 0); a
+// current subscriber sees one button, "Enroll (included in your
+// subscription)"; an expired course a subscriber started is "Enroll
+// again (included)", which takes precedence over 028's renewal.
 function Registration({ course }) {
   const { account, loading } = useSession();
   const [enrollment, setEnrollment] = useState(null);
+  const [offer, setOffer] = useState(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [errors, setErrors] = useState(null);
 
   const isParticipant = account?.role === "participant";
+  const subscribed = account?.subscription_current === true;
 
   useEffect(() => {
     if (!isParticipant) return undefined;
@@ -120,7 +129,11 @@ function Registration({ course }) {
           onThisCourse.find(
             (e) => e.status === "active" || e.status === "completed"
           ) ??
-            onThisCourse.find((e) => e.status === "expired" && e.renewable) ??
+            onThisCourse.find(
+              (e) =>
+                e.status === "expired" &&
+                (e.subscription_enrollable || e.renewable)
+            ) ??
             null
         );
       })
@@ -129,6 +142,21 @@ function Registration({ course }) {
       cancelled = true;
     };
   }, [isParticipant, course.course_code]);
+
+  // The subscription's own price and this participant's credit, for the
+  // second choice; absent for subscribers and visitors.
+  useEffect(() => {
+    if (!isParticipant || subscribed) return undefined;
+    let cancelled = false;
+    getSubscribeOffer()
+      .then((data) => {
+        if (!cancelled) setOffer(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isParticipant, subscribed]);
 
   const handleEnroll = async () => {
     setErrors(null);
@@ -162,11 +190,20 @@ function Registration({ course }) {
             Your enrollment in this course expired on{" "}
             {formatDate(enrollment.expires_at.slice(0, 10))}.
           </p>
-          <RenewEnrollment
-            courseCode={course.course_code}
-            className={styles.enrollButton}
-            onRenewed={setEnrollment}
-          />
+          {enrollment.subscription_enrollable ? (
+            <SubscriptionEnroll
+              courseCode={course.course_code}
+              className={styles.enrollButton}
+              again
+              onEnrolled={setEnrollment}
+            />
+          ) : (
+            <RenewEnrollment
+              courseCode={course.course_code}
+              className={styles.enrollButton}
+              onRenewed={setEnrollment}
+            />
+          )}
         </>
       ) : enrollment ? (
         <p>
@@ -177,29 +214,56 @@ function Registration({ course }) {
               : "Continue the course."}
           </Link>
         </p>
+      ) : isParticipant && subscribed ? (
+        <SubscriptionEnroll
+          courseCode={course.course_code}
+          className={styles.enrollButton}
+          onEnrolled={setEnrollment}
+        />
       ) : isParticipant ? (
-        <>
-          {price && <p className={styles.price}>{price}</p>}
-          <button
-            className={styles.enrollButton}
-            type="button"
-            disabled={checkingOut}
-            onClick={handleEnroll}
-          >
-            {checkingOut ? "Opening checkout…" : "Enroll"}
-          </button>
-          <p className={styles.muted}>
-            Payment opens on Stripe's secure checkout page. Your one-year
-            enrollment starts when the payment succeeds.
-          </p>
-          {errors && (
-            <ul className={styles.errorList}>
-              {errors.map((error) => (
-                <li key={error}>{error}</li>
-              ))}
-            </ul>
-          )}
-        </>
+        <div className={styles.choices}>
+          <div className={styles.choice}>
+            <h3 className={styles.choiceTitle}>Buy this course</h3>
+            {price && <p className={styles.price}>{price}</p>}
+            <button
+              className={styles.enrollButton}
+              type="button"
+              disabled={checkingOut}
+              onClick={handleEnroll}
+            >
+              {checkingOut ? "Opening checkout…" : "Enroll"}
+            </button>
+            <p className={styles.muted}>
+              Payment opens on Stripe's secure checkout page. Your one-year
+              enrollment starts when the payment succeeds.
+            </p>
+            {errors && (
+              <ul className={styles.errorList}>
+                {errors.map((error) => (
+                  <li key={error}>{error}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className={styles.choice}>
+            <h3 className={styles.choiceTitle}>Subscribe</h3>
+            {offer && (
+              <p className={styles.price}>
+                {formatUsd(offer.price_cents)}
+                <span className={styles.perYear}>/yr</span>
+              </p>
+            )}
+            <Link className={styles.subscribeLink} to="/subscribe">
+              Subscribe — unlimited courses
+            </Link>
+            {offer && offer.credit_cents > 0 && (
+              <p className={styles.muted}>
+                Your {formatUsd(offer.credit_cents)} in course purchases is
+                credited: you pay {formatUsd(offer.pay_today_cents)} today.
+              </p>
+            )}
+          </div>
+        </div>
       ) : account ? (
         <p className={styles.muted}>
           {price && <strong className={styles.price}>{price}. </strong>}

@@ -51,6 +51,9 @@ class AdminPaymentOut(BaseModel):
     enrollment_id: int | None
     enrollment_status: str | None
     refunded_with_active_enrollment: bool
+    # 029: the subscription this course payment was credited against, once
+    # the webhook confirmed the discounted first invoice; null otherwise.
+    credited_to_subscription_id: int | None
 
 
 class VoidedEnrollmentOut(BaseModel):

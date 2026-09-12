@@ -69,6 +69,7 @@ from app.services import (
     search,
 )
 from app.services import courses as courses_service
+from app.services import subscriptions as subscriptions_service
 from app.services import questions as questions_service
 from app.routers import player as player_router
 from app.services.assessment import AssessmentRuleViolation
@@ -165,6 +166,9 @@ def _summary_fields(db: Session, enrollment: Enrollment) -> dict:
     # 028: None under the unlimited policy — `!= 0` keeps the finite gate
     # and lets None through.
     retakes = enrollments.retakes_remaining(db, enrollment)
+    subscription_enrollable = subscriptions_service.subscription_enrollable(
+        db, enrollment
+    )
     return {
         "enrollment_id": enrollment.id,
         "course_code": course.course_code,
@@ -190,7 +194,12 @@ def _summary_fields(db: Session, enrollment: Enrollment) -> dict:
         "failed_attempts": enrollments.failed_attempts(db, enrollment),
         "open_attempt_id": open_attempt.id if open_attempt else None,
         "completion": _completion_out(db, enrollment),
-        "renewable": enrollments.renewable(db, enrollment),
+        # 029: a current subscriber's expired course is started again with
+        # the subscriber's enroll, which takes precedence over 028's
+        # renewal; the two are never both offered.
+        "renewable": enrollments.renewable(db, enrollment)
+        and not subscription_enrollable,
+        "subscription_enrollable": subscription_enrollable,
         "_progress": progress,
     }
 

@@ -26,6 +26,7 @@ from app.schemas.auth import (
 )
 from app.schemas.package import ValidationErrors
 from app.services import auth as auth_service
+from app.services import subscriptions as subscriptions_service
 from app.services.auth import AuthenticationFailed, AuthRuleViolation
 
 router = APIRouter(prefix="/auth")
@@ -39,13 +40,17 @@ def require_json(request: Request) -> None:
         )
 
 
-def _me(account: Account) -> MeOut:
+def _me(db: Session, account: Account) -> MeOut:
     return MeOut(
         id=account.id,
         email=account.email,
         role=account.role,
         display_name=account.display_name,
         must_change_password=account.must_change_password,
+        subscription_current=(
+            account.role == "participant"
+            and subscriptions_service.current(db, account) is not None
+        ),
     )
 
 
@@ -81,7 +86,7 @@ def login(
         ip=request.client.host if request.client else "",
     )
     _set_session_cookie(response, raw_token)
-    return _me(account)
+    return _me(db, account)
 
 
 @router.post("/logout", status_code=204, dependencies=[Depends(require_json)])
@@ -106,8 +111,11 @@ def logout_all(
 
 
 @router.get("/me", response_model=MeOut)
-def me(account: Account = Depends(current_account)):
-    return _me(account)
+def me(
+    db: Session = Depends(get_db),
+    account: Account = Depends(current_account),
+):
+    return _me(db, account)
 
 
 @router.get("/me/state", response_model=MyStateOut)
@@ -170,4 +178,4 @@ def change_password(
         )
     except AuthRuleViolation as violation:
         return JSONResponse(status_code=422, content={"errors": violation.errors})
-    return _me(account)
+    return _me(db, account)

@@ -17,6 +17,13 @@ const api = vi.hoisted(() => ({
   renewCourse: vi.fn(),
   listMyCourses: vi.fn(),
   startCheckout: vi.fn(),
+  getSubscribeOffer: vi.fn(),
+  enrollWithSubscription: vi.fn(),
+}));
+
+// 029: the session varies per test (subscriber or not).
+const session = vi.hoisted(() => ({
+  account: { id: 3, email: "pat@supercpe.test", role: "participant" },
 }));
 
 vi.mock("../../api/courses", () => ({
@@ -29,14 +36,29 @@ vi.mock("../../api/my", async (importOriginal) => ({
   listMyCourses: api.listMyCourses,
 }));
 vi.mock("../../api/checkout", () => ({ startCheckout: api.startCheckout }));
+vi.mock("../../api/subscribe", () => ({
+  getSubscribeOffer: api.getSubscribeOffer,
+  enrollWithSubscription: api.enrollWithSubscription,
+}));
 vi.mock("../../auth/SessionContext.jsx", () => ({
   useSession: () => ({
-    account: { id: 3, email: "pat@supercpe.test", role: "participant" },
+    account: session.account,
     loading: false,
     refresh: vi.fn(),
     signOut: vi.fn(),
   }),
 }));
+
+const OFFER = {
+  price_cents: 14900,
+  currency: "usd",
+  period_days: 365,
+  credit_cents: 0,
+  pay_today_cents: 14900,
+  subscribed: false,
+  registration_policy: null,
+  refund_policy: null,
+};
 
 const COURSE = {
   program_type: "QAS Self Study",
@@ -73,6 +95,7 @@ function enrollment(overrides = {}) {
     status: "expired",
     expires_at: "2026-09-01T00:00:00Z",
     renewable: false,
+    subscription_enrollable: false,
     ...overrides,
   };
 }
@@ -102,6 +125,9 @@ describe("CoursePage registration renewal (028)", () => {
     api.getJurisdictionNote.mockRejectedValue(new Error("404"));
     api.renewCourse.mockReset();
     api.startCheckout.mockReset();
+    api.enrollWithSubscription.mockReset();
+    api.getSubscribeOffer.mockReset().mockResolvedValue(OFFER);
+    session.account = { id: 3, email: "pat@supercpe.test", role: "participant" };
   });
 
   afterEach(() => {
@@ -167,5 +193,108 @@ describe("CoursePage registration renewal (028)", () => {
     });
     await flush();
     expect(container.textContent).toContain("still active");
+  });
+});
+
+// 029: the two-choice section, the included enroll, the credit line.
+describe("CoursePage registration under subscriptions (029)", () => {
+  let container;
+  let root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    api.getPublicCourse.mockResolvedValue(COURSE);
+    api.getJurisdictionNote.mockRejectedValue(new Error("404"));
+    api.startCheckout.mockReset();
+    api.enrollWithSubscription.mockReset();
+    api.getSubscribeOffer.mockReset().mockResolvedValue(OFFER);
+    session.account = { id: 3, email: "pat@supercpe.test", role: "participant" };
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  async function mount(mine) {
+    api.listMyCourses.mockResolvedValue(mine);
+    act(() => {
+      root.render(
+        <MemoryRouter initialEntries={["/courses/ATO"]}>
+          <Routes>
+            <Route path="/courses/:code" element={<CoursePage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+    });
+    await flush();
+    await flush();
+  }
+
+  it("a non-subscriber sees two choices: buy at the course price, or subscribe", async () => {
+    session.account = { ...session.account, subscription_current: false };
+    await mount([]);
+    expect(container.textContent).toContain("Buy this course");
+    expect(container.textContent).toContain("$49.00");
+    expect(button("Enroll")).toBeDefined();
+    const link = container.querySelector('a[href="/subscribe"]');
+    expect(link.textContent).toContain("Subscribe");
+    expect(container.textContent).toContain("$149.00");
+    expect(container.textContent).not.toContain("credited");
+    expect(api.getSubscribeOffer).toHaveBeenCalledTimes(1);
+  });
+
+  it("the credit line renders under the subscribe choice only when > 0", async () => {
+    session.account = { ...session.account, subscription_current: false };
+    api.getSubscribeOffer.mockResolvedValue({
+      ...OFFER,
+      credit_cents: 5800,
+      pay_today_cents: 9100,
+    });
+    await mount([]);
+    expect(container.textContent).toContain(
+      "Your $58.00 in course purchases is credited: you pay $91.00 today."
+    );
+  });
+
+  it("a current subscriber sees one included-enroll button and no prices", async () => {
+    session.account = { ...session.account, subscription_current: true };
+    await mount([]);
+    const enroll = button("Enroll (included in your subscription)");
+    expect(enroll).toBeDefined();
+    expect(button("Enroll")).toBe(enroll);
+    expect(container.textContent).not.toContain("$49.00");
+    expect(container.textContent).not.toContain("Buy this course");
+    expect(container.querySelector('a[href="/subscribe"]')).toBeNull();
+    expect(api.getSubscribeOffer).not.toHaveBeenCalled();
+
+    api.enrollWithSubscription.mockResolvedValue(
+      enrollment({ enrollment_id: 11, status: "active" })
+    );
+    act(() => {
+      enroll.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    expect(api.enrollWithSubscription).toHaveBeenCalledWith("ATO");
+    expect(api.startCheckout).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("You're enrolled in this course.");
+    expect(container.querySelector('a[href="/my/courses/11"]')).not.toBeNull();
+  });
+
+  it("a subscriber's expired course offers Enroll again (included), not the 028 renewal", async () => {
+    session.account = { ...session.account, subscription_current: true };
+    await mount([enrollment({ subscription_enrollable: true, renewable: false })]);
+    expect(button("Enroll again (included in your subscription)")).toBeDefined();
+    expect(button("Start a new enrollment")).toBeUndefined();
+    expect(container.textContent).toContain("expired on");
+  });
+
+  it("a lapsed subscriber's expired course offers the 028 renewal and the two choices are gone", async () => {
+    session.account = { ...session.account, subscription_current: false };
+    await mount([enrollment({ subscription_enrollable: false, renewable: true })]);
+    expect(button("Start a new enrollment (no charge)")).toBeDefined();
+    expect(button("Enroll again")).toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { roleHome } from "../../auth/RequireRole.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
-import { SITE_FACE, useSiteFace } from "../../site/SiteContext.jsx";
+import { SITE_FACE, useSite, useSiteFace } from "../../site/SiteContext.jsx";
 import styles from "./SiteHeader.module.css";
 
 const linkClass = ({ isActive }) => (isActive ? styles.linkActive : styles.link);
@@ -18,10 +18,17 @@ const linkClass = ({ isActive }) => (isActive ? styles.linkActive : styles.link)
  *  3. under /admin, where AdminNav owns the chrome;
  *  4. on /change-password — an account forced through a password change
  *     is offered no way around it (RequireRole would only bounce it back).
+ *
+ * 029: a signed-in participant without a current subscription gets one
+ * more link, Subscribe — only while the site is actually open (a signed-in
+ * participant on a coming_soon site sees the header but not the offer).
+ * The link states no price; the offer page does.
  */
 function SiteHeader() {
   const { account, signOut } = useSession();
   const face = useSiteFace();
+  const { site } = useSite();
+  const siteOpen = site?.site_mode === "open";
   const { pathname } = useLocation();
   const navigate = useNavigate();
 
@@ -68,6 +75,11 @@ function SiteHeader() {
             <NavLink to="/courses" className={linkClass}>
               Courses
             </NavLink>
+            {siteOpen && account.subscription_current !== true && (
+              <NavLink to="/subscribe" className={linkClass}>
+                Subscribe
+              </NavLink>
+            )}
             <NavLink to="/account" className={linkClass}>
               Account
             </NavLink>

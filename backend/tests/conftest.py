@@ -40,6 +40,8 @@ settings.email_from = "no-reply@supercpe.test"
 settings.stripe_secret_key = "sk_live_dummy"
 settings.stripe_publishable_key = "pk_live_dummy"
 settings.stripe_webhook_secret = "whsec_dummy"
+# 029: the yearly Price id joined the all-or-nothing group.
+settings.stripe_subscription_price_id = "price_dummy"
 
 
 @pytest.fixture(scope="session")
@@ -76,7 +78,8 @@ def db_session(test_engine):
                 "TRUNCATE evaluations, evaluation_reviews, audit_exports, "
                 "policy_versions, completions, certificate_sequences, "
                 "review_answers, lesson_progress, attempt_answers, "
-                "attempts, payments, stripe_webhook_events, enrollments, "
+                "attempts, subscription_invoices, payments, subscriptions, "
+                "stripe_webhook_events, enrollments, "
                 "choices, questions, "
                 "package_sections, package_media, glossary_terms, "
                 "course_reviews, course_lessons, courses, lesson_packages, "

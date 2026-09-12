@@ -2,9 +2,13 @@
 
 Stripe holds the card; superCPE holds one `payments` row per checkout
 attempt that reached Stripe. The webhook is the sole creator of
-enrollments: a browser landing on the success URL proves nothing, so
-`handle_event` — fed only signature-verified events — is where a payment
-becomes an enrollment, via 010's one constructor. Rule violations raise
+*purchased* enrollments: a browser landing on the success URL proves
+nothing, so `handle_event` — fed only signature-verified events — is
+where a payment becomes an enrollment, via 010's one constructor. (029
+narrowed 018's "sole creator of enrollments": a current subscriber's
+enroll is a click with no Stripe call — `services.subscriptions`.)
+`handle_event` is also the one dispatch point for every Stripe event
+type, the Billing ones included. Rule violations raise
 `PaymentRuleViolation` for the router to wrap in a 422
 `{"errors": [...]}`, the same shape as everywhere else.
 """
@@ -26,6 +30,7 @@ from app.models.enrollment import Enrollment
 from app.models.payment import Payment, StripeWebhookEvent
 from app.services import enrollments as enrollments_service
 from app.services import stripe_gateway
+from app.services import subscriptions as subscriptions_service
 from app.services.enrollments import EnrollmentRuleViolation
 
 logger = logging.getLogger(__name__)
@@ -115,6 +120,14 @@ def start_checkout(db: Session, account: Account, course: Course) -> Payment:
         errors.append(
             "you have already purchased this course; renew it from the "
             "course page instead of paying again"
+        )
+    # 029: a current subscriber never buys a course — the subscription
+    # covers it, and a purchase while subscribed would be money for
+    # nothing. One more line in the refusal matrix.
+    if subscriptions_service.current(db, account) is not None:
+        errors.append(
+            "your subscription covers this course; enroll directly from "
+            "the course page instead of paying"
         )
     if errors:
         raise PaymentRuleViolation(errors)
@@ -235,7 +248,31 @@ def handle_event(db: Session, event: dict) -> None:
         logger.info("stripe event %s (%s) replayed; ignoring", event_id, event_type)
         return
 
-    if event_type == "checkout.session.completed":
+    # 029: the Billing events. Each handler mutates and returns; the
+    # event is recorded and the transaction committed here, so the
+    # subscription facts and the event record land together.
+    if event_type == "checkout.session.completed" and (
+        event["data"]["object"].get("mode") == "subscription"
+    ):
+        subscriptions_service.handle_checkout_completed(db, event)
+        _record_event(db, event)
+        db.commit()
+    elif event_type in (
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+    ):
+        subscriptions_service.handle_subscription_event(db, event)
+        _record_event(db, event)
+        db.commit()
+    elif event_type == "invoice.paid":
+        subscriptions_service.handle_invoice_paid(db, event)
+        _record_event(db, event)
+        db.commit()
+    elif event_type == "invoice.payment_failed":
+        subscriptions_service.handle_invoice_payment_failed(db, event)
+        _record_event(db, event)
+        db.commit()
+    elif event_type == "checkout.session.completed":
         _handle_completed(db, event)
     elif event_type == "checkout.session.expired":
         _handle_expired(db, event)
@@ -338,7 +375,10 @@ def _handle_expired(db: Session, event: dict) -> None:
 def _handle_refunded(db: Session, event: dict) -> None:
     """Mark the payment refunded and stop. Whether a refund unwinds
     access is the published refund policy's question and an admin's
-    answer (the guarded void action) — never this handler's."""
+    answer (the guarded void action) — never this handler's. 029: the
+    charge may belong to a subscription invoice instead; that row is
+    marked `refunded` on the same terms (the admin view flags it, the
+    admin cancels in Stripe and voids per the policy)."""
     charge = event["data"]["object"]
     intent_id = charge.get("payment_intent")
     payment = (
@@ -350,13 +390,13 @@ def _handle_refunded(db: Session, event: dict) -> None:
         if intent_id
         else None
     )
-    if payment is None:
+    if payment is not None:
+        payment.status = "refunded"
+    elif not subscriptions_service.mark_invoice_refunded(db, charge):
         logger.error(
             "stripe event %s: refund for unknown payment intent %s",
             event["id"],
             intent_id,
         )
-    else:
-        payment.status = "refunded"
     _record_event(db, event)
     db.commit()

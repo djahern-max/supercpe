@@ -32,6 +32,16 @@ PROD_OK = dict(
 
 
 @pytest.fixture(autouse=True)
+def stripe_price(monkeypatch):
+    """029: preflight retrieves the subscription Price through the
+    boundary; stubbed to match the constant so no test touches the
+    network. The mismatch tests override it."""
+    monkeypatch.setattr(
+        cli.stripe_gateway, "retrieve_price", lambda price_id: (14900, "usd")
+    )
+
+
+@pytest.fixture(autouse=True)
 def cli_db(monkeypatch, test_engine, db_session):
     """026: preflight reads site_mode through the CLI's own session
     factory; point it at the test database (and truncate after, via
@@ -188,3 +198,62 @@ def test_preflight_skips_the_live_key_check_when_site_mode_is_unreadable(
     monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
     assert cli.preflight() == 0
     assert "site_mode could not be read" in capsys.readouterr().out
+
+
+# --- 029: the subscription price must match the constant ---------------------
+
+
+def test_preflight_refuses_an_open_site_on_a_price_mismatch(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    """029 acceptance 5: the displayed price is the constant, the charged
+    price is Stripe's; on an open site they must agree, and the refusal
+    names both numbers."""
+    enable_versioning(spaces)
+    set_site_mode(db_session, "open")
+    monkeypatch.setattr(
+        cli.stripe_gateway, "retrieve_price", lambda price_id: (9900, "usd")
+    )
+    assert cli.preflight() == 1
+    err = capsys.readouterr().err
+    assert "STRIPE_SUBSCRIPTION_PRICE_ID" in err
+    assert "9900" in err and "14900" in err
+
+
+def test_preflight_passes_an_open_site_on_a_matching_price(
+    prod_settings, spaces, db_session, capsys
+):
+    enable_versioning(spaces)
+    set_site_mode(db_session, "open")
+    assert cli.preflight() == 0
+    assert "preflight ok" in capsys.readouterr().out
+
+
+def test_preflight_notes_a_price_mismatch_while_coming_soon(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    enable_versioning(spaces)
+    set_site_mode(db_session, "coming_soon")
+    monkeypatch.setattr(
+        cli.stripe_gateway, "retrieve_price", lambda price_id: (9900, "usd")
+    )
+    assert cli.preflight() == 0
+    out = capsys.readouterr()
+    assert "note:" in out.out and "9900" in out.out
+    assert "STRIPE_SUBSCRIPTION_PRICE_ID" not in out.err
+
+
+def test_preflight_refuses_an_open_site_when_the_price_cannot_be_read(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    from app.services.stripe_gateway import StripeGatewayError
+
+    enable_versioning(spaces)
+    set_site_mode(db_session, "open")
+
+    def unreachable(price_id):
+        raise StripeGatewayError("connection refused")
+
+    monkeypatch.setattr(cli.stripe_gateway, "retrieve_price", unreachable)
+    assert cli.preflight() == 1
+    assert "could not be retrieved" in capsys.readouterr().err

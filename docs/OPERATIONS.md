@@ -532,13 +532,18 @@ the log at the end of this section when done.
    creation with a permissions error naming Products or Prices, add
    Products **Write** — inline `price_data` creates them. The
    publishable key (`pk_…`) is not secret and has no scopes.
+   **029 adds the Billing scopes** — see "Subscriptions (029)" below;
+   the same key carries both sets.
 4. **Register the webhook endpoint — twice.** URL
    `https://supercpe.com/api/v1/stripe/webhook`; events
    `checkout.session.completed`, `checkout.session.expired`,
-   `charge.refunded`. Register it once in the **sandbox** (for the
-   verification run below) and again, separately, in **live mode** at
-   flip time. **They have different signing secrets. `STRIPE_WEBHOOK_SECRET`
-   must be swapped in the same edit as the two keys.** With live keys
+   `charge.refunded`, plus the four Billing events 029 added
+   (`customer.subscription.updated`, `customer.subscription.deleted`,
+   `invoice.paid`, `invoice.payment_failed`). Register it once in the
+   **sandbox** (for the verification run below) and again, separately,
+   in **live mode** at flip time. **They have different signing secrets.
+   `STRIPE_WEBHOOK_SECRET` must be swapped in the same edit as the two
+   keys and the price id.** With live keys
    and the sandbox secret, every live event fails signature
    verification: the Stripe dashboard shows delivery attempts answered
    400, the site shows nothing, and people who paid have no enrollment.
@@ -549,14 +554,16 @@ the log at the end of this section when done.
    failures, and one that sat idle-and-failing is the warning that the
    live one can go the same way. The status is on the endpoint's
    dashboard page; do not assume it.
-5. **Set the three variables** in `/srv/supercpe/.env`:
-   `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`.
-   All-or-nothing: a partial set refuses to boot (preflight catches
-   it). Absent entirely is valid only while coming-soon. Sandbox values
-   are valid while coming-soon; live values are required to open.
+5. **Set the four variables** in `/srv/supercpe/.env`:
+   `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`,
+   and (029) `STRIPE_SUBSCRIPTION_PRICE_ID`. All-or-nothing: a partial
+   set refuses to boot (preflight catches it). Absent entirely is valid
+   only while coming-soon. Sandbox values are valid while coming-soon;
+   live values are required to open. Price ids differ between sandbox
+   and live mode exactly as the keys do.
 6. **Run the production verification** (below) with the sandbox values,
    before the flip.
-7. **At the flip**, swap all three values to live in one edit, deploy,
+7. **At the flip**, swap all four values to live in one edit, deploy,
    open the site, and make the one live smoke purchase (Opening day
    step 8).
 
@@ -572,12 +579,12 @@ Two checks, two questions. Detection is by key prefix only
   One message per offending variable:
 
       STRIPE_SECRET_KEY is not a live Stripe key (expected the sk_live_
-      prefix); an open site must charge real cards (026). Swap all three
+      prefix); an open site must charge real cards (026). Swap all four
       STRIPE_* settings to the live values in one edit, the webhook
-      signing secret included.
+      signing secret and the subscription price id included.
 
   018's `payments_not_configured` finding still fires instead when any
-  of the three is unset. This is the check that matters: the flip is
+  of the four is unset. This is the check that matters: the flip is
   the moment test keys become dangerous.
 - **Preflight.** `python -m app.cli preflight` — run by `deploy.sh`
   before migrations, old version still serving — fails when the site is
@@ -585,8 +592,9 @@ Two checks, two questions. Detection is by key prefix only
 
       STRIPE_SECRET_KEY is not a live Stripe key (expected the sk_live_
       prefix) and the site is open: this deploy would put test keys on a
-      live catalog. Swap all three STRIPE_* settings to the live values
-      in one edit, the webhook signing secret included.
+      live catalog. Swap all four STRIPE_* settings to the live values
+      in one edit, the webhook signing secret and the subscription price
+      id included.
 
   So the failure mode is a refused deploy, not an outage. While
   coming-soon it says nothing about keys. If it cannot read `site_mode`
@@ -596,6 +604,12 @@ Two checks, two questions. Detection is by key prefix only
   prefix; step 4's swap rule is the control. A cheap future check would
   compare `livemode` on the first received event against the key
   prefix and log loudly on mismatch; noted, not built.
+- **Preflight also checks the subscription price (029).** One
+  `Price.retrieve` of `STRIPE_SUBSCRIPTION_PRICE_ID`: on an open site a
+  Price whose amount or currency differs from `SUBSCRIPTION_PRICE_CENTS`
+  (or a Price that cannot be read) refuses the deploy, naming both
+  numbers; while coming-soon it prints a note. See "Subscriptions
+  (029)".
 
 ### Production verification run (026)
 
@@ -657,6 +671,133 @@ Payments rows are financial records: never deleted, not subject to the
 five-year CPE retention floor — they outlive it. Test-mode rows
 (`livemode = false`, the quiet **Test** marker, dashboard link into the
 sandbox) are kept on the same terms; nothing hides or removes them.
+
+## Subscriptions (029)
+
+The annual subscription: $149 (`SUBSCRIPTION_PRICE_CENTS`), a Stripe
+Billing subscription started through Checkout in `subscription` mode,
+auto-renewing yearly, unlimited course enrollments while current. Stripe
+owns the schedule and the card; superCPE owns the paper trail
+(`subscriptions`, `subscription_invoices`, `payments.credited_to_subscription_id`)
+and the entitlement (`services/subscriptions.py:current` — status
+`active` and now before `current_period_end`, both as Stripe last
+reported them; `past_due` is **not** current, and there is no grace
+period). It rides the same account, keys, and webhook endpoint as 018.
+**Prerequisite:** the 026 production verification run (above) logged
+as passed before this is deployed.
+
+### Setup
+
+Recorded as the steps to execute, in order; tick each in the log at the
+end of this section.
+
+1. **Create the Product and the yearly Price** in the dashboard (once
+   in the sandbox, once in live mode): Product "superCPE annual
+   subscription", one recurring Price, **yearly**, **USD 149.00**,
+   currency `usd`. The Price amount must equal `SUBSCRIPTION_PRICE_CENTS`
+   in `backend/app/constants/subscription.py` — the page displays the
+   constant, Stripe charges the Price, and preflight refuses an open
+   site where they differ (naming both numbers). Set
+   `STRIPE_SUBSCRIPTION_PRICE_ID=price_…` in `/srv/supercpe/.env`; it
+   is the fourth member of the all-or-nothing STRIPE_* group and is
+   swapped to the live value in the same edit as the keys.
+2. **Add the Billing scopes to the restricted key** (both modes), on
+   top of 018's: Customers — **Write** (one Customer per account,
+   created on the first subscribe); Subscriptions — **Read** (one
+   retrieve per completed session); Coupons — **Write** (the
+   per-account credit coupon); Billing Portal — **Write** (sessions);
+   Invoices — **Read**; Prices/Products — **Read** (preflight's
+   `Price.retrieve`). As the dashboard names them; if a call is refused
+   with a permissions error naming a resource, add that one.
+3. **Register the four new event types on both webhook endpoints**
+   (sandbox and live): `customer.subscription.updated`,
+   `customer.subscription.deleted`, `invoice.paid`,
+   `invoice.payment_failed`. `checkout.session.completed` and
+   `charge.refunded` are already registered and now carry subscription
+   sessions and invoice refunds too. `customer.subscription.created` is
+   deliberately not needed: the completed-session handler retrieves the
+   subscription once and copies status and period from it.
+4. **Configure the Customer Portal** (Settings → Billing → Customer
+   portal), both modes: cancellation **allowed, at period end**
+   (immediate cancellation off); payment method update **allowed**;
+   invoice history **on**; plan switching **off**; quantity changes
+   **off**. Return URL is set per session by the app (`/account`).
+   Cancellation, card update, and invoice history live in the portal;
+   superCPE builds none of them.
+5. **Enable Stripe's dunning emails** (Settings → Billing →
+   Subscriptions and emails): failed-payment emails to the customer on,
+   with Stripe's default retry schedule. superCPE sends no billing
+   email of its own — the same posture as 018's receipt email. On a
+   failed renewal Stripe moves the subscription to `past_due`; the
+   participant's `/account` says "update your payment method" and the
+   entitlement is off until `invoice.paid` lands and Stripe moves it
+   back to `active`.
+6. **Stripe Tax** applies to subscriptions exactly as the 018 ROADMAP
+   note describes for courses: if it is enabled on the account, enable
+   automatic tax on the Checkout Session (a code change; not built).
+
+### Test-mode walkthrough (Stripe CLI)
+
+With the sandbox values in `.env` and `stripe listen --forward-to
+localhost:8000/api/v1/stripe/webhook` running (its signing secret in
+`STRIPE_WEBHOOK_SECRET`):
+
+1. **Subscribe with credit.** Sign in as a participant who bought two
+   courses (018's walkthrough, twice). Open `/subscribe`: it says
+   "$58 credited: you pay $91 today" (two $29 courses) or the amounts
+   at hand. Subscribe with `4242 4242 4242 4242`. `/subscribe/success`
+   stops polling once `checkout.session.completed` lands; `/account`
+   shows the renewal date and the credit consumed; `/admin/subscriptions`
+   shows the row `active` with `credit_applied_cents` equal to the
+   discount Stripe reported, and `/admin/payments` marks both course
+   payments "credited to subscription #N".
+2. **Subscribe without credit** (a fresh participant): pays the full
+   price, no coupon. Confirm a second `/subscribe` while the first
+   session is still open returns the same session URL.
+3. **Enroll.** On a course page the subscriber sees one button, "Enroll
+   (included in your subscription)". Click: the enrollment appears on
+   `/my/courses` with a one-year expiry, with no Stripe activity. Buying
+   another course is refused ("your subscription covers this course").
+4. **Renew.** `stripe trigger invoice.paid` (or advance the test clock
+   on the subscription in the dashboard): a second row under Invoices on
+   `/admin/subscriptions`, and the period end moves.
+5. **Cancel via the portal.** `/account` → Manage subscription → cancel.
+   `/account` says "cancels on <date>"; at period end (test clock) the
+   status goes `canceled`, the entitlement ends, and the enrollment
+   started under it is untouched and still active.
+6. **Refund.** Refund the first invoice's charge in the dashboard. The
+   invoice row goes `refunded`; `/admin/subscriptions` raises both
+   flags. Nothing is voided or cancelled. See the runbook below.
+
+Log — one line per run, newest last:
+
+| Date | Who | Outcome |
+| --- | --- | --- |
+| 2026-09-12 | — | **Not yet run.** 029 shipped the code and this procedure; the run needs the sandbox keys, the dashboard, the CLI, and a browser. Record the first run here and in a new CHANGELOG entry. |
+
+### Refund runbook (subscriptions)
+
+Full refund, no questions asked, never pro-rata. In order:
+
+1. **Refund the invoice** in the Stripe dashboard (the charge behind
+   the current period's invoice). `charge.refunded` marks the invoice
+   row `refunded` and **stops** — no status change, no voiding.
+2. **Cancel the subscription** in the Stripe dashboard (immediately,
+   not at period end — the money is back). `customer.subscription.deleted`
+   syncs the status to `canceled` here and the entitlement ends; the
+   "refunded with current subscription" flag clears.
+3. **Watch the second flag**: "refunded with active enrollments" lists
+   the enrollments started under the subscription that are still
+   active. Per the published refund policy, access to in-progress
+   enrollments ends on a refund: press **Void enrollment** on each
+   (018's action — logged, deactivate-never-delete). Completed
+   enrollments and issued certificates are immutable 9.02 records a
+   refund cannot unmake; they stay, and that is an accepted sponsor
+   exposure recorded in the 029 changelog entry.
+4. Rows stay: the subscription, its invoices, the credit marks on the
+   course payments, and the voided enrollments are all financial or
+   participant records, never deleted. **The flags are not bugs**; they
+   are the queue of decisions this runbook answers.
 
 ## Certificate delivery (019)
 
@@ -755,10 +896,10 @@ its own section; this list only sequences them.
    signature verification, the handler itself — was proven in advance
    by the production verification run in Payments (018), on sandbox
    keys, while still coming-soon; check its log has a dated pass. What
-   remains here is the key swap: all three `STRIPE_*` values to live in
+   remains here is the key swap: all four `STRIPE_*` values to live in
    **one edit** (the live endpoint's signing secret, not the sandbox
-   one), deploy, and a look at the sandbox endpoint's status for the
-   disabled warning. Step 8 is the one live smoke purchase. Preflight
+   one; the live Price id, not the sandbox one — 029), deploy, and a
+   look at the sandbox endpoint's status for the disabled warning. Step 8 is the one live smoke purchase. Preflight
    and the open gate both refuse test keys, so a missed swap is a
    refused flip, not a silent one.
 5. **Jurisdiction rows verified (020, optional)**: as far as intended —

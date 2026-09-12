@@ -138,10 +138,23 @@ describe("Chrome after 027", () => {
     expect(container.querySelectorAll("footer")).toHaveLength(1);
   });
 
-  it("footer without the sponsor read: the two links, no address", async () => {
+  it("footer without the sponsor read: the links, no address", async () => {
     siteMode("open");
     signedOut();
     await mount("/");
+    const nav = footerNav(container);
+    // 029: Subscribe joins the footer at open.
+    expect([...nav.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
+      "Policies",
+      "How it works",
+      "Subscribe",
+    ]);
+  });
+
+  it("footer for a signed-in participant in coming_soon: no Subscribe link", async () => {
+    siteMode("coming_soon");
+    signedIn(PARTICIPANT);
+    await mount("/my/courses");
     const nav = footerNav(container);
     expect([...nav.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
       "Policies",

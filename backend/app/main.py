@@ -15,6 +15,7 @@ from app.routers import (
     admin_payments,
     admin_smes,
     admin_sponsor,
+    admin_subscriptions,
     admin_waiting_list,
     assessment,
     auth,
@@ -32,6 +33,7 @@ from app.routers import (
     site,
     sponsor,
     stripe_webhook,
+    subscribe,
 )
 from app.services.ffprobe import ensure_ffprobe_available
 from app.storage import ensure_bucket_versioning, get_storage
@@ -73,6 +75,7 @@ app.include_router(admin_packages.router, prefix="/api/v1")
 app.include_router(admin_payments.router, prefix="/api/v1")
 app.include_router(admin_smes.router, prefix="/api/v1")
 app.include_router(admin_sponsor.router, prefix="/api/v1")
+app.include_router(admin_subscriptions.router, prefix="/api/v1")
 app.include_router(admin_waiting_list.router, prefix="/api/v1")
 app.include_router(assessment.router, prefix="/api/v1")
 app.include_router(assessment.admin_router, prefix="/api/v1")
@@ -92,3 +95,4 @@ app.include_router(register.router, prefix="/api/v1")
 app.include_router(register.admin_router, prefix="/api/v1")
 app.include_router(sponsor.router, prefix="/api/v1")
 app.include_router(stripe_webhook.router, prefix="/api/v1")
+app.include_router(subscribe.router, prefix="/api/v1")

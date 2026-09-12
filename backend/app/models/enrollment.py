@@ -20,8 +20,12 @@ from app.db import Base
 
 # 028: "renewal" is the no-charge enrollment a participant who paid and did
 # not complete may start after the year runs out; derived from payment and
-# enrollment rows, never linked to either by a key.
-ENROLLMENT_SOURCES = ("admin", "purchase", "renewal")
+# enrollment rows, never linked to either by a key. 029: "subscription" is
+# the enrollment a current subscriber starts with a click — no Stripe
+# call, no payment row, its own one-year clock (9.02.2(3)); the
+# subscription that covered it is not linked by a key either, and its
+# ending never touches the enrollment.
+ENROLLMENT_SOURCES = ("admin", "purchase", "renewal", "subscription")
 
 
 class Enrollment(Base):
@@ -77,7 +81,7 @@ class Enrollment(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "source IN ('admin', 'purchase', 'renewal')",
+            "source IN ('admin', 'purchase', 'renewal', 'subscription')",
             name="ck_enrollments_source",
         ),
         # A void always records who did it.

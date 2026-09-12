@@ -45,20 +45,26 @@ EMAIL_VARS = (
 )
 
 # Stripe checkout (018). Absent entirely is valid config while the site
-# is coming-soon; the coming_soon -> open flip refuses without all three
-# (readiness.launch_findings, `payments_not_configured`), never boot.
+# is coming-soon; the coming_soon -> open flip refuses without all of
+# them (readiness.launch_findings, `payments_not_configured`), never
+# boot. 029 added the subscription Price id to the all-or-nothing group:
+# an open site offers the subscription, and a Subscribe button that
+# cannot name its Price is the same lie as a catalog that cannot reach
+# Stripe. Price ids differ between test and live mode like the keys do.
 STRIPE_VARS = (
     "STRIPE_SECRET_KEY",
     "STRIPE_PUBLISHABLE_KEY",
     "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_SUBSCRIPTION_PRICE_ID",
 )
 
 # 026: what a live Stripe key looks like. Detection is by prefix and
 # nothing else — asking Stripe from inside a config validator would be
 # a new failure mode for no gain. `STRIPE_WEBHOOK_SECRET` is absent on
 # purpose: signing secrets carry no live/test prefix (`whsec_` either
-# way), so the runbook's "swap all three in one edit" step is the only
-# control for it (docs/OPERATIONS.md, "Payments (018)").
+# way), so the runbook's "swap all four in one edit" step is the only
+# control for it (docs/OPERATIONS.md, "Payments (018)"). The same goes
+# for `STRIPE_SUBSCRIPTION_PRICE_ID` (029): `price_…` either way.
 STRIPE_LIVE_KEY_PREFIXES = {
     "STRIPE_SECRET_KEY": "sk_live_",
     "STRIPE_PUBLISHABLE_KEY": "pk_live_",
@@ -106,10 +112,12 @@ class Settings(BaseSettings):
     email_password: str = ""
     email_from: str = ""
     # Stripe checkout (018): the restricted secret key, the publishable
-    # key, and the webhook endpoint's signing secret. All three or none.
+    # key, and the webhook endpoint's signing secret; 029 added the
+    # yearly subscription Price id. All four or none.
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_subscription_price_id: str = ""
 
     @property
     def stripe_configured(self) -> bool:

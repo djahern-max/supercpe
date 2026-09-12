@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { getPublicSponsor } from "../../api/sponsor";
-import { SITE_FACE, useSiteFace } from "../../site/SiteContext.jsx";
+import { SITE_FACE, useSite, useSiteFace } from "../../site/SiteContext.jsx";
 import styles from "./SiteFooter.module.css";
 
 /**
@@ -15,10 +15,12 @@ import styles from "./SiteFooter.module.css";
  *
  * The contact address comes from the public sponsor payload, which sits
  * behind the same open-or-session gate as the catalog; when that read
- * fails the links render without it.
+ * fails the links render without it. 029: a Subscribe link, only while
+ * the site is actually open — the offer is not reachable in coming_soon.
  */
 function SiteFooter() {
   const face = useSiteFace();
+  const { site } = useSite();
   const { pathname } = useLocation();
   const [contact, setContact] = useState(null);
 
@@ -52,6 +54,11 @@ function SiteFooter() {
         <Link className={styles.link} to="/how-it-works">
           How it works
         </Link>
+        {site?.site_mode === "open" && (
+          <Link className={styles.link} to="/subscribe">
+            Subscribe
+          </Link>
+        )}
         {contact && (
           <a className={styles.link} href={`mailto:${contact}`}>
             {contact}

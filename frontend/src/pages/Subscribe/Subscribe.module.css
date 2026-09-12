@@ -1,0 +1,83 @@
+.page {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.heading {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.offer {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.price {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 600;
+}
+
+.per {
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.terms {
+  margin: 0;
+  padding-left: var(--space-lg);
+  line-height: 1.7;
+}
+
+.credit {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.button {
+  align-self: flex-start;
+  padding: var(--space-sm) var(--space-lg);
+  border: none;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.policyList {
+  margin: 0;
+  padding-left: var(--space-lg);
+  line-height: 1.7;
+}
+
+.errorList {
+  margin: 0;
+  padding-left: var(--space-lg);
+  color: var(--color-error);
+}

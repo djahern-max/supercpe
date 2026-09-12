@@ -17,6 +17,11 @@ class MeOut(BaseModel):
     role: str
     display_name: str
     must_change_password: bool
+    # 029: whether a participant holds a current subscription, derived
+    # on every read (never stored); false for every other role. The site
+    # header's Subscribe link and the course page's enroll section key
+    # on it. A fact about the viewer's own account, nothing about a course.
+    subscription_current: bool = False
 
 
 class ChangePasswordRequest(BaseModel):

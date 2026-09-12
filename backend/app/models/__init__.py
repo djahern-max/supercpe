@@ -20,6 +20,7 @@ from app.models.review import CourseReview
 from app.models.site import SiteModeChange
 from app.models.sme import SubjectMatterExpert
 from app.models.sponsor import SponsorProfile, SponsorStateRegistration
+from app.models.subscription import Subscription, SubscriptionInvoice
 from app.models.waiting_list import WaitingListEntry
 
 __all__ = [
@@ -51,5 +52,7 @@ __all__ = [
     "SponsorStateRegistration",
     "StripeWebhookEvent",
     "SubjectMatterExpert",
+    "Subscription",
+    "SubscriptionInvoice",
     "WaitingListEntry",
 ]

@@ -50,6 +50,15 @@ class Account(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    # 029: the one durable Stripe Customer for this account, created on
+    # the first subscription checkout and reused by every later one and
+    # by the Customer Portal. Set once, never rewritten. 018's course
+    # checkouts used Stripe guest customers (`customer_email`, no
+    # Customer object) and are not backfilled: a guest is not a Customer
+    # and inventing one would not be a record of anything.
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, unique=True
+    )
     failed_logins: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )

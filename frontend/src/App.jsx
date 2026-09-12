@@ -16,6 +16,7 @@ import AdminPackages from "./pages/AdminPackages/AdminPackages.jsx";
 import AdminPayments from "./pages/AdminPayments/AdminPayments.jsx";
 import AdminSmes from "./pages/AdminSmes/AdminSmes.jsx";
 import AdminSponsor from "./pages/AdminSponsor/AdminSponsor.jsx";
+import AdminSubscriptions from "./pages/AdminSubscriptions/AdminSubscriptions.jsx";
 import AdminWaitingList from "./pages/AdminWaitingList/AdminWaitingList.jsx";
 import Account from "./pages/Account/Account.jsx";
 import Catalog from "./pages/Catalog/Catalog.jsx";
@@ -33,6 +34,8 @@ import Register from "./pages/Register/Register.jsx";
 import ResendVerification from "./pages/ResendVerification/ResendVerification.jsx";
 import ReviewCourse from "./pages/ReviewCourse/ReviewCourse.jsx";
 import ReviewHome from "./pages/ReviewHome/ReviewHome.jsx";
+import Subscribe from "./pages/Subscribe/Subscribe.jsx";
+import SubscribeSuccess from "./pages/SubscribeSuccess/SubscribeSuccess.jsx";
 import { SiteProvider } from "./site/SiteContext.jsx";
 import Verify from "./pages/Verify/Verify.jsx";
 import VerifyCertificate from "./pages/VerifyCertificate/VerifyCertificate.jsx";
@@ -81,6 +84,14 @@ function App() {
           <Route
             path="/how-it-works"
             element={<SiteGate><HowItWorks /></SiteGate>}
+          />
+          {/* 029: the subscription offer — public at open like the
+              catalog (a visitor sees sign-in links), the landing page in
+              coming_soon; the success page polls for the webhook. */}
+          <Route path="/subscribe" element={<SiteGate><Subscribe /></SiteGate>} />
+          <Route
+            path="/subscribe/success"
+            element={participant(<SubscribeSuccess />)}
           />
           {/* 017: behind SiteGate like the catalog — in coming_soon these
               paths render the landing page; the API routes 404 too. */}
@@ -151,6 +162,10 @@ function App() {
           />
           <Route path="/admin/packages" element={admin(<AdminPackages />)} />
           <Route path="/admin/payments" element={admin(<AdminPayments />)} />
+          <Route
+            path="/admin/subscriptions"
+            element={admin(<AdminSubscriptions />)}
+          />
           <Route path="/admin/smes" element={admin(<AdminSmes />)} />
           <Route path="/admin/sponsor" element={admin(<AdminSponsor />)} />
           <Route path="/admin/accounts" element={admin(<AdminAccounts />)} />

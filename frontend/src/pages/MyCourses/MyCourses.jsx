@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { listMyCourses, myCertificateUrl } from "../../api/my";
 import EvaluationForm from "../../components/EvaluationForm/EvaluationForm.jsx";
 import RenewEnrollment from "../../components/RenewEnrollment/RenewEnrollment.jsx";
+import SubscriptionEnroll from "../../components/SubscriptionEnroll/SubscriptionEnroll.jsx";
 import usePageTitle from "../../hooks/usePageTitle";
 import { retakeLabel } from "../MyLesson/nextStep.js";
 import styles from "./MyCourses.module.css";
@@ -46,8 +47,22 @@ function PrimaryAction({ enrollment }) {
     );
   }
   if (enrollment.status === "expired") {
-    // 028: paid and not completed — a new enrollment at no charge, then
-    // straight to its course page.
+    // 029: a current subscriber starts the course again with a click
+    // (checked first — it takes precedence over 028's renewal). 028:
+    // paid and not completed — a new enrollment at no charge. Either way
+    // straight to the new enrollment's course page.
+    if (enrollment.subscription_enrollable) {
+      return (
+        <SubscriptionEnroll
+          courseCode={enrollment.course_code}
+          className={styles.actionButton}
+          again
+          onEnrolled={(enrolled) =>
+            navigate(`/my/courses/${enrolled.enrollment_id}`)
+          }
+        />
+      );
+    }
     return enrollment.renewable ? (
       <RenewEnrollment
         courseCode={enrollment.course_code}

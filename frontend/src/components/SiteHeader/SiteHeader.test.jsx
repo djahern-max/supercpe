@@ -192,6 +192,38 @@ describe("SiteHeader", () => {
     expect(siteNav(container)).toBeNull();
   });
 
+  // 029: the Subscribe link.
+  it("participant at open without a subscription: Subscribe link to /subscribe", async () => {
+    siteMode("open");
+    signedIn({ ...PARTICIPANT, subscription_current: false });
+    await mount("/courses");
+    const nav = siteNav(container);
+    expect(linkTexts(nav)).toEqual(["My courses", "Courses", "Subscribe", "Account"]);
+    expect(nav.querySelector('a[href="/subscribe"]').textContent).toBe("Subscribe");
+  });
+
+  it("subscriber at open: no Subscribe link", async () => {
+    siteMode("open");
+    signedIn({ ...PARTICIPANT, subscription_current: true });
+    await mount("/courses");
+    expect(linkTexts(siteNav(container))).toEqual(["My courses", "Courses", "Account"]);
+  });
+
+  it("participant in coming_soon: no Subscribe link even though the header renders", async () => {
+    siteMode("coming_soon");
+    signedIn({ ...PARTICIPANT, subscription_current: false });
+    await mount("/courses");
+    expect(linkTexts(siteNav(container))).toEqual(["My courses", "Courses", "Account"]);
+  });
+
+  it("under /admin: no header, so no Subscribe link", async () => {
+    siteMode("open");
+    signedIn({ ...PARTICIPANT, role: "admin", subscription_current: false });
+    await mount("/admin/payments");
+    expect(siteNav(container)).toBeNull();
+    expect(container.querySelector('a[href="/subscribe"]')).toBeNull();
+  });
+
   it("states no course fact and nothing about the Registry", async () => {
     siteMode("open");
     signedIn(PARTICIPANT);

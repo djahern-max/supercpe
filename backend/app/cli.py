@@ -69,11 +69,15 @@ from app.constants.storage import (
     MIRRORED_PREFIXES,
     OFFSITE_STAMP_KEY,
 )
+from app.constants.payments import PAYMENT_CURRENCY
+from app.constants.subscription import SUBSCRIPTION_PRICE_CENTS
 from app.db import SessionLocal
 from app.models.account import Account
 from app.services import auth as auth_service
 from app.services import site as site_service
+from app.services import stripe_gateway
 from app.services.auth import AuthRuleViolation
+from app.services.stripe_gateway import StripeGatewayError
 from app.services.ffprobe import FfprobeNotFoundError, ensure_ffprobe_available
 from app.storage import SpacesStorage, ensure_bucket_versioning, get_storage
 
@@ -370,9 +374,41 @@ def preflight() -> int:
                 f"{var} is not a live Stripe key (expected the "
                 f"{STRIPE_LIVE_KEY_PREFIXES[var]} prefix) and the site "
                 "is open: this deploy would put test keys on a live "
-                "catalog. Swap all three STRIPE_* settings to the live "
-                "values in one edit, the webhook signing secret included."
+                "catalog. Swap all four STRIPE_* settings to the live "
+                "values in one edit, the webhook signing secret and the "
+                "subscription price id included."
             )
+
+    # 029: the displayed subscription price is the constant; the charged
+    # price is Stripe's Price object. One Price.retrieve compares them.
+    # On an open site a mismatch (or a Price that cannot be read) refuses
+    # the deploy, naming both numbers; while coming-soon it is a note.
+    # Not configured at all is valid while coming-soon and refused at the
+    # flip by the open gate, so it is silent here.
+    if settings.stripe_configured:
+        price_id = settings.stripe_subscription_price_id
+        try:
+            amount, currency = stripe_gateway.retrieve_price(price_id)
+        except StripeGatewayError as error:
+            problem = (
+                f"STRIPE_SUBSCRIPTION_PRICE_ID ({price_id}) could not be "
+                f"retrieved from Stripe: {error}"
+            )
+        else:
+            problem = None
+            if amount != SUBSCRIPTION_PRICE_CENTS or currency != PAYMENT_CURRENCY:
+                problem = (
+                    f"STRIPE_SUBSCRIPTION_PRICE_ID ({price_id}) charges "
+                    f"{amount} {currency} but SUBSCRIPTION_PRICE_CENTS displays "
+                    f"{SUBSCRIPTION_PRICE_CENTS} {PAYMENT_CURRENCY}; the page "
+                    "and the charge must agree. Fix the Price in the Stripe "
+                    "dashboard or the constant, never the page."
+                )
+        if problem is not None:
+            if site_mode == "open":
+                violations.append(problem + " The site is open.")
+            else:
+                print(f"note: {problem}")
 
     if violations:
         print("preflight FAILED — the app would refuse to boot:", file=sys.stderr)

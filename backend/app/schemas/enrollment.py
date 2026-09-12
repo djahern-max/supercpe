@@ -81,6 +81,11 @@ class MyEnrollmentSummary(BaseModel):
     # no charge (paid, never completed, this is the most recent one) —
     # derived from payment and enrollment rows, never stored.
     renewable: bool
+    # 029: true only on an expired enrollment (the most recent on its
+    # course, nothing active or completed) whose participant holds a
+    # current subscription — "Enroll again (included)". Checked before
+    # `renewable`, which stays for non-subscribers. Derived, never stored.
+    subscription_enrollable: bool
 
 
 class MyEnrollmentDetail(MyEnrollmentSummary):

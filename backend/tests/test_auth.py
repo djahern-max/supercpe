@@ -63,6 +63,8 @@ def test_login_me_logout(client, admin_account, db_session):
         "role": "admin",
         "display_name": "",
         "must_change_password": False,
+        # 029: derived per read; never true for an admin.
+        "subscription_current": False,
     }
 
     assert client.post("/api/v1/auth/logout", json={}).status_code == 204

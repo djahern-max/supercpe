@@ -115,7 +115,19 @@ function AdminPayments() {
                     {payment.currency !== "usd" &&
                       payment.currency.toUpperCase()}
                   </td>
-                  <td>{payment.status}</td>
+                  <td>
+                    {payment.status}
+                    {/* 029: consumed as credit on a subscription's first
+                        invoice — a fact the webhook recorded. */}
+                    {payment.credited_to_subscription_id != null && (
+                      <span
+                        className={styles.testMarker}
+                        title="Applied as credit against a subscription's first payment"
+                      >
+                        credited to subscription #{payment.credited_to_subscription_id}
+                      </span>
+                    )}
+                  </td>
                   <td>
                     {payment.enrollment_id !== null
                       ? `#${payment.enrollment_id} (${payment.enrollment_status})`

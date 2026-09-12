@@ -341,18 +341,24 @@ def has_paid(db: Session, account: Account, course: Course) -> bool:
 def renewal_refusals(db: Session, account: Account, course: Course) -> list[str]:
     """Why this participant may not renew this course now; empty means
     eligible. Derived from payment and enrollment rows every time, never
-    stored (the house rule): a participant who paid for the course, holds
-    no active or completed enrollment on it, and whose most recent
-    enrollment on it expired. One line per failed condition, each a
-    distinct 422 for the router. A subscription source (029) will be a
-    second qualifying condition beside `has_paid`, nothing more."""
+    stored (the house rule): a participant who paid for the course (or,
+    029, started it under a subscription), holds no active or completed
+    enrollment on it, and whose most recent enrollment on it expired.
+    One line per failed condition, each a distinct 422 for the router."""
     errors = []
-    if not has_paid(db, account, course):
-        errors.append(
-            f"you have not purchased {course.course_code}; a renewal is "
-            "for a course you paid for and did not complete"
-        )
     rows = enrollments_for(db, account, course)
+    # 029: the second qualifying condition beside `has_paid` — a lapsed
+    # subscriber who started the course under the subscription renews
+    # it free after expiry, as a purchaser would.
+    if not (
+        has_paid(db, account, course)
+        or any(e.source == "subscription" for e in rows)
+    ):
+        errors.append(
+            f"you have not purchased {course.course_code} or started it "
+            "under a subscription; a renewal is for a course you paid for "
+            "and did not complete"
+        )
     statuses = {status(e) for e in rows}
     if "completed" in statuses:
         errors.append(

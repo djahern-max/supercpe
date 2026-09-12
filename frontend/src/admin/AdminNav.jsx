@@ -32,6 +32,12 @@ function AdminNav() {
         Payments
       </NavLink>
       <NavLink
+        to="/admin/subscriptions"
+        className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
+      >
+        Subscriptions
+      </NavLink>
+      <NavLink
         to="/admin/smes"
         className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
       >

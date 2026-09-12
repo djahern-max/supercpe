@@ -35,7 +35,9 @@ from app.services import courses, credit, development
 from app.services import enrollments as enrollments_service
 from app.services import jurisdictions as jurisdictions_service
 from app.services import policies as policies_service
+from app.services import subscriptions as subscriptions_service
 from app.services.enrollments import EnrollmentRuleViolation
+from app.services.subscriptions import SubscriptionRuleViolation
 
 router = APIRouter(
     prefix="/courses",
@@ -101,7 +103,7 @@ def list_courses(db: Session = Depends(get_db)):
     ]
 
 
-def _policy_link(db: Session, kind: str) -> PolicyLink | None:
+def policy_link(db: Session, kind: str) -> PolicyLink | None:
     version = policies_service.current_version(db, kind)
     if version is None:
         return None
@@ -121,9 +123,9 @@ def public_detail(db: Session, course) -> CoursePublicDetail:
     title_of = {cl.package.lesson_id: cl.package.title for cl in ordered}
     return CoursePublicDetail(
         **_summary_fields(course),
-        registration_policy=_policy_link(db, "registration"),
-        refund_policy=_policy_link(db, "refund"),
-        complaint_policy=_policy_link(db, "complaint"),
+        registration_policy=policy_link(db, "registration"),
+        refund_policy=policy_link(db, "refund"),
+        complaint_policy=policy_link(db, "complaint"),
         sponsor_statement=policies_service.sponsor_statement(db),
         objectives=[
             PublicObjectiveGroup(
@@ -215,9 +217,51 @@ def renew_course(
     course = courses.get_course(db, course_code)
     if course is None:
         raise HTTPException(status_code=404, detail="Course not found")
+    # 029: a current subscriber starts the course again through the
+    # subscriber's enroll route, which takes precedence; this route stays
+    # for non-subscribers (a lapsed subscriber included).
+    if subscriptions_service.current(db, account) is not None:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "errors": [
+                    "your subscription covers this course; enroll again "
+                    "from the course page instead of renewing"
+                ]
+            },
+        )
     try:
         enrollment = enrollments_service.renew(db, account, course)
     except EnrollmentRuleViolation as violation:
+        return JSONResponse(
+            status_code=422, content={"errors": violation.errors}
+        )
+    return my_router.enrollment_summary(db, enrollment)
+
+
+@router.post(
+    "/{course_code}/enroll",
+    response_model=MyEnrollmentSummary,
+    status_code=201,
+    responses={422: {"model": ValidationErrors}},
+)
+def enroll_subscriber(
+    course_code: str,
+    db: Session = Depends(get_db),
+    account: Account = Depends(participant),
+):
+    """029: a current subscriber's enrollment in a published course —
+    no Stripe call, no payment row, 010's one constructor with
+    `source="subscription"` and its own one-year clock. Refused, one 422
+    line each, without a current subscription, on an unpublished course,
+    and while an active or completed enrollment exists; an expired one
+    is the subscriber's renewal path. Unknown course: 404."""
+    course = courses.get_course(db, course_code)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    try:
+        enrollment = subscriptions_service.enroll_subscriber(db, account, course)
+    except (SubscriptionRuleViolation, EnrollmentRuleViolation) as violation:
         return JSONResponse(
             status_code=422, content={"errors": violation.errors}
         )

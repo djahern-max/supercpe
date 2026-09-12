@@ -50,6 +50,7 @@ def _payment_out(db: Session, payment: Payment) -> AdminPaymentOut:
         refunded_with_active_enrollment=(
             payment.status == "refunded" and enrollment_status == "active"
         ),
+        credited_to_subscription_id=payment.credited_to_subscription_id,
     )
 
 

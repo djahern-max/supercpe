@@ -124,8 +124,9 @@ def launch_findings(db: Session) -> list[Finding]:
                 message=(
                     "Stripe is not configured "
                     f"({', '.join(missing_stripe)} unset); an open site "
-                    "must be able to sell its published courses (018). "
-                    "Set all three STRIPE_* settings."
+                    "must be able to sell its published courses (018) "
+                    "and offer the subscription (029). Set all four "
+                    "STRIPE_* settings."
                 ),
             )
         )
@@ -145,9 +146,9 @@ def launch_findings(db: Session) -> list[Finding]:
                         f"{var} is not a live Stripe key "
                         f"(expected the {STRIPE_LIVE_KEY_PREFIXES[var]} "
                         "prefix); an open site must charge real cards "
-                        "(026). Swap all three STRIPE_* settings to the "
+                        "(026). Swap all four STRIPE_* settings to the "
                         "live values in one edit, the webhook signing "
-                        "secret included."
+                        "secret and the subscription price id included."
                     ),
                 )
             )
