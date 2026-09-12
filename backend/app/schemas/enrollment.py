@@ -10,7 +10,8 @@ class MyAssessmentInfo(AssessmentInfo):
     """The assessment as the enrolled participant sees it: the pinned
     questions, plus availability and the sittings left."""
 
-    retakes_remaining: int
+    # 028: None under the unlimited policy.
+    retakes_remaining: int | None
     available: bool
     unavailable_reasons: list[str]
 
@@ -70,10 +71,16 @@ class MyEnrollmentSummary(BaseModel):
     review_answered: int
     review_total: int
     assessment_available: bool
-    retakes_remaining: int
+    # 028: None under the unlimited policy; `retakes_unlimited` beside it.
+    retakes_remaining: int | None
+    retakes_unlimited: bool
     failed_attempts: int
     open_attempt_id: int | None
     completion: MyCompletionOut | None
+    # 028: true only on an expired enrollment the participant may renew at
+    # no charge (paid, never completed, this is the most recent one) —
+    # derived from payment and enrollment rows, never stored.
+    renewable: bool
 
 
 class MyEnrollmentDetail(MyEnrollmentSummary):

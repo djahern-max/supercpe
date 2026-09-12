@@ -5,6 +5,7 @@ import { ApiError } from "../../api/client";
 import { getJurisdictionNote, getPublicCourse } from "../../api/courses";
 import { listMyCourses } from "../../api/my";
 import { useSession } from "../../auth/SessionContext.jsx";
+import RenewEnrollment from "../../components/RenewEnrollment/RenewEnrollment.jsx";
 import { formatUsd } from "../../constants/money";
 import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./CoursePage.module.css";
@@ -95,7 +96,9 @@ function JurisdictionNote({ course }) {
 // sign-in/register links for visitors, price and an Enroll button for a
 // participant, "you're enrolled" with a player link once they are. The
 // Enroll button redirects to Stripe's hosted Checkout page — card data
-// never transits superCPE.
+// never transits superCPE. 028: an expired enrollment the payload marks
+// `renewable` (paid, never completed) gets "Start a new enrollment (no
+// charge)" instead of the price; checkout is for a first purchase only.
 function Registration({ course }) {
   const { account, loading } = useSession();
   const [enrollment, setEnrollment] = useState(null);
@@ -110,12 +113,15 @@ function Registration({ course }) {
     listMyCourses()
       .then((mine) => {
         if (cancelled) return;
+        const onThisCourse = mine.filter(
+          (e) => e.course_code === course.course_code
+        );
         setEnrollment(
-          mine.find(
-            (e) =>
-              e.course_code === course.course_code &&
-              (e.status === "active" || e.status === "completed")
-          ) ?? null
+          onThisCourse.find(
+            (e) => e.status === "active" || e.status === "completed"
+          ) ??
+            onThisCourse.find((e) => e.status === "expired" && e.renewable) ??
+            null
         );
       })
       .catch(() => {});
@@ -150,7 +156,19 @@ function Registration({ course }) {
   return (
     <section className={styles.registration}>
       <h2 className={styles.registrationTitle}>Registration</h2>
-      {loading ? null : enrollment ? (
+      {loading ? null : enrollment && enrollment.status === "expired" ? (
+        <>
+          <p className={styles.muted}>
+            Your enrollment in this course expired on{" "}
+            {formatDate(enrollment.expires_at.slice(0, 10))}.
+          </p>
+          <RenewEnrollment
+            courseCode={course.course_code}
+            className={styles.enrollButton}
+            onRenewed={setEnrollment}
+          />
+        </>
+      ) : enrollment ? (
         <p>
           You're enrolled in this course.{" "}
           <Link to={`/my/courses/${enrollment.enrollment_id}`}>

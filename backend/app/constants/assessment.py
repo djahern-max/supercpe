@@ -17,9 +17,12 @@ PASSING_PCT = Decimal("70")
 OBJECTIVE_COVERAGE_PCT = Decimal("75")
 
 # 6.01.2: "The number of re-takes a participant is permitted to take is at
-# the sponsor's discretion." The number of re-takes after the first sitting,
-# per enrollment (010; 007 chose unlimited before an enrollment existed to
-# count against). A policy choice, not a Standards requirement; every
-# attempt is retained regardless, preview attempts are never counted, and
-# feature 011 must disclose this policy on the course page.
-RETAKES_ALLOWED = 3
+# the sponsor's discretion." A policy choice, not a Standards requirement.
+# `None` is unlimited (ours, decided 2026-09-12: a participant who paid
+# never pays again and is never locked out of the assessment); an integer
+# is the number of re-takes after the first sitting, per enrollment (010's
+# finite policy, kept working and tested under a monkeypatched value).
+# Every attempt is retained whatever the value, preview attempts are never
+# counted, and 011's `retake_policy_text()` renders whichever it is so the
+# published policy cannot disagree with the code.
+RETAKES_ALLOWED: int | None = None

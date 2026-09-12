@@ -2,7 +2,7 @@
  * 027: what comes after a lesson, from the enrollment detail alone.
  */
 import { describe, expect, it } from "vitest";
-import { deriveNextStep, reviewRemaining } from "./nextStep.js";
+import { deriveNextStep, retakeLabel, reviewRemaining } from "./nextStep.js";
 
 function enrollment(overrides = {}) {
   return {
@@ -50,6 +50,13 @@ describe("deriveNextStep", () => {
         "13"
       ).label
     ).toBe("Re-take the qualified assessment (3 left)");
+    // 028: no count under the unlimited policy.
+    expect(
+      deriveNextStep(
+        enrollment({ lessons, assessment_available: true, failed_attempts: 2, retakes_remaining: null }),
+        "13"
+      ).label
+    ).toBe("Re-take the qualified assessment");
   });
 
   it("resumes an open attempt before anything else", () => {
@@ -71,5 +78,17 @@ describe("reviewRemaining", () => {
     expect(reviewRemaining(enrollment(), "12")).toBe(2);
     expect(reviewRemaining(enrollment(), "11")).toBe(0);
     expect(reviewRemaining(enrollment(), "99")).toBe(0);
+  });
+});
+
+describe("retakeLabel (028)", () => {
+  it("counts sittings only under a finite policy", () => {
+    expect(retakeLabel(enrollment())).toBe("Take the qualified assessment");
+    expect(retakeLabel(enrollment({ failed_attempts: 1, retakes_remaining: 2 }))).toBe(
+      "Re-take the qualified assessment (2 left)"
+    );
+    expect(retakeLabel(enrollment({ failed_attempts: 4, retakes_remaining: null }))).toBe(
+      "Re-take the qualified assessment"
+    );
   });
 });

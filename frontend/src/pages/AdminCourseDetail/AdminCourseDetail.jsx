@@ -1072,6 +1072,7 @@ function AdminCourseDetail() {
               <tr>
                 <th>Participant</th>
                 <th>Status</th>
+                <th>Source</th>
                 <th>Enrolled</th>
                 <th>Expires</th>
                 <th>Progress</th>
@@ -1082,6 +1083,8 @@ function AdminCourseDetail() {
                 <tr key={enrollment.id}>
                   <td>{enrollment.email}</td>
                   <td>{enrollment.status}</td>
+                  {/* 028: admin, purchase, or renewal (no charge). */}
+                  <td>{enrollment.source}</td>
                   <td>{new Date(enrollment.enrolled_at).toLocaleDateString()}</td>
                   <td>{new Date(enrollment.expires_at).toLocaleDateString()}</td>
                   <td>

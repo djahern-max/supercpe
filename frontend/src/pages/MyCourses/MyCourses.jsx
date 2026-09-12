@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { listMyCourses, myCertificateUrl } from "../../api/my";
 import EvaluationForm from "../../components/EvaluationForm/EvaluationForm.jsx";
+import RenewEnrollment from "../../components/RenewEnrollment/RenewEnrollment.jsx";
 import usePageTitle from "../../hooks/usePageTitle";
+import { retakeLabel } from "../MyLesson/nextStep.js";
 import styles from "./MyCourses.module.css";
 import { lessonsProgressLabel } from "./progressLabel.js";
 
@@ -23,6 +25,7 @@ function formatDate(iso) {
  */
 function PrimaryAction({ enrollment }) {
   const to = `/my/courses/${enrollment.enrollment_id}`;
+  const navigate = useNavigate();
   if (enrollment.status === "completed") {
     if (enrollment.completion?.certificate_ready) {
       return (
@@ -43,7 +46,19 @@ function PrimaryAction({ enrollment }) {
     );
   }
   if (enrollment.status === "expired") {
-    return <span className={styles.mutedAction}>Expired</span>;
+    // 028: paid and not completed — a new enrollment at no charge, then
+    // straight to its course page.
+    return enrollment.renewable ? (
+      <RenewEnrollment
+        courseCode={enrollment.course_code}
+        className={styles.actionButton}
+        onRenewed={(renewed) =>
+          navigate(`/my/courses/${renewed.enrollment_id}`)
+        }
+      />
+    ) : (
+      <span className={styles.mutedAction}>Expired</span>
+    );
   }
   if (enrollment.open_attempt_id) {
     return (
@@ -53,13 +68,9 @@ function PrimaryAction({ enrollment }) {
     );
   }
   if (enrollment.assessment_available) {
-    const label =
-      enrollment.failed_attempts > 0
-        ? `Re-take the qualified assessment (${enrollment.retakes_remaining} left)`
-        : "Take the qualified assessment";
     return (
       <Link className={styles.action} to={`${to}/assessment`}>
-        {label}
+        {retakeLabel(enrollment)}
       </Link>
     );
   }

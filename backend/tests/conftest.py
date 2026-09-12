@@ -163,3 +163,28 @@ def admin_headers(client, admin_account):
     and exists so `headers=admin_headers` call sites keep working."""
     login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
     return {}
+
+
+# 028: every module that binds RETAKES_ALLOWED by name. The shipped policy
+# is unlimited (None); the finite tests patch all of them at once so the
+# refusal, the count, the payloads, and the policy text agree.
+RETAKES_ALLOWED_MODULES = (
+    "app.constants.assessment",
+    "app.services.assessment",
+    "app.services.enrollments",
+    "app.services.instructions",
+    "app.services.policies",
+    "app.routers.assessment",
+    "app.routers.my",
+)
+
+
+def set_retakes_allowed(monkeypatch, value):
+    """Switch the sponsor's re-take policy for one test: an integer is the
+    finite per-enrollment count, None the unlimited policy."""
+    import importlib
+
+    for name in RETAKES_ALLOWED_MODULES:
+        monkeypatch.setattr(
+            importlib.import_module(name), "RETAKES_ALLOWED", value
+        )

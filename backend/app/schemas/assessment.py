@@ -29,8 +29,10 @@ class AssessmentInfo(BaseModel):
     question_count: int
     passing_pct: str
     # The number of re-takes allowed after the first sitting (010; the
-    # sponsor's 6.01.2 policy).
-    retakes_allowed: int
+    # sponsor's 6.01.2 policy). 028: None when unlimited, and
+    # `retakes_unlimited` says so outright.
+    retakes_allowed: int | None
+    retakes_unlimited: bool
     open_attempt_id: int | None
     # 023c F1: "text", "video", or "mixed" — so the failed-attempt advice
     # says re-read the guide, not re-watch, on a study-guide course.

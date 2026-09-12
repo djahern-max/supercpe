@@ -12,7 +12,16 @@ from app.constants.assessment import PASSING_PCT, RETAKES_ALLOWED
 from app.constants.enrollment import ENROLLMENT_DAYS
 
 
+def _retake_clause() -> str:
+    """028: `None` is unlimited; an integer is the finite per-enrollment
+    policy. Same branch as `policies.retake_policy_text()`."""
+    if RETAKES_ALLOWED is None:
+        return "**as many times as needed** within your enrollment"
+    return f"up to **{RETAKES_ALLOWED} times** per enrollment"
+
+
 def how_it_works_markdown() -> str:
+    retake_clause = _retake_clause()
     return f"""# How a superCPE course works
 
 superCPE offers self study CPE programs in two formats, with review
@@ -65,13 +74,15 @@ saved as you go, so a closed browser loses nothing.
 
 - A cumulative grade of at least **{PASSING_PCT} percent** is required to
   pass.
-- If you do not pass, you may re-take the assessment up to
-  **{RETAKES_ALLOWED} times** per enrollment. No feedback on individual
-  questions is given for an assessment that was not passed; consider
-  re-reading the guide, or re-watching the lessons, before trying again.
+- If you do not pass, you may re-take the assessment {retake_clause}.
+  No feedback on individual questions is given for an assessment that
+  was not passed; consider re-reading the guide, or re-watching the
+  lessons, before trying again.
 - The assessment must be completed before your enrollment expires,
   **{ENROLLMENT_DAYS} days** after enrollment. An expired enrollment
-  cannot be extended; a new enrollment starts its own clock.
+  cannot be extended; a new enrollment starts its own clock. If you
+  purchased the course and did not complete it, you may start a new
+  enrollment at no additional charge from the course page.
 
 ## Your certificate
 

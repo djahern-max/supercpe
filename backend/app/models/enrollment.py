@@ -18,7 +18,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 
-ENROLLMENT_SOURCES = ("admin", "purchase")
+# 028: "renewal" is the no-charge enrollment a participant who paid and did
+# not complete may start after the year runs out; derived from payment and
+# enrollment rows, never linked to either by a key.
+ENROLLMENT_SOURCES = ("admin", "purchase", "renewal")
 
 
 class Enrollment(Base):
@@ -74,7 +77,8 @@ class Enrollment(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "source IN ('admin', 'purchase')", name="ck_enrollments_source"
+            "source IN ('admin', 'purchase', 'renewal')",
+            name="ck_enrollments_source",
         ),
         # A void always records who did it.
         CheckConstraint(

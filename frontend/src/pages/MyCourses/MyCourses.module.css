@@ -112,3 +112,17 @@
 .footerLink a:hover {
   text-decoration: underline;
 }
+
+/* 028: the renewal button, styled as the card's primary action. */
+.actionButton {
+  composes: action;
+  border: none;
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.actionButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

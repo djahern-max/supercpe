@@ -194,8 +194,13 @@ function Assessment({ api, certificateUrl, coursePath }) {
     // 027: the sitting count is stated in words, and an enrollment with
     // none left gets the shared three-part notice (policy link, contact
     // address, the guide stays open) instead of a bare refusal.
+    // 028: under the unlimited policy there is no count — the score,
+    // the threshold, and Re-take. The exhausted branch stays for a
+    // finite policy, where `retakes_remaining` can reach 0.
     const remaining = result.retakes_remaining;
     const exhausted = remaining === 0;
+    const enrolled = "retakes_remaining" in result;
+    const canRetake = result.retakes_unlimited || result.retakes_allowed > 0;
     const guide =
       info?.lessons_kind === "video"
         ? "Back to the lessons"
@@ -230,10 +235,10 @@ function Assessment({ api, certificateUrl, coursePath }) {
             lessonsKind={info?.lessons_kind}
           />
         ) : (
-          result.retakes_allowed && (
+          canRetake && (
             <div className={styles.actions}>
               <button className={styles.button} type="button" onClick={begin}>
-                {remaining != null ? "Re-take the assessment" : "Try again"}
+                {enrolled ? "Re-take the assessment" : "Try again"}
               </button>
               {coursePath && (
                 <Link className={styles.guideLink} to={coursePath}>
@@ -254,8 +259,12 @@ function Assessment({ api, certificateUrl, coursePath }) {
         <p>
           {info.question_count} questions. A cumulative score of at least{" "}
           {Number(info.passing_pct)} percent is required. Results come after
-          all questions are submitted{info.retakes_allowed > 0 &&
-            `, and up to ${info.retakes_allowed} re-takes are allowed`}.
+          all questions are submitted
+          {info.retakes_unlimited
+            ? ", and the assessment may be re-taken as many times as needed"
+            : info.retakes_allowed > 0 &&
+              `, and up to ${info.retakes_allowed} re-takes are allowed`}
+          .
         </p>
         {errorPanel}
         <button className={styles.button} type="button" onClick={begin}>

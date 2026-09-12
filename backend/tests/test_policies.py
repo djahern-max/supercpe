@@ -18,6 +18,7 @@ from tests.conftest import (
     ADMIN_PASSWORD,
     login,
     make_account,
+    set_retakes_allowed,
 )
 
 POLICIES_URL = "/api/v1/policies"
@@ -159,10 +160,23 @@ def test_public_route_gated_by_site_mode_exactly_as_courses(
 
 
 def test_retake_text_carries_the_enforced_numbers(client, admin_headers):
+    """028: the shipped policy is unlimited and the sentence says so in
+    words; the passing grade and the year still print from the constants."""
+    assert RETAKES_ALLOWED is None
     payload = client.get(POLICIES_URL).json()
-    assert str(RETAKES_ALLOWED) in payload["retake_policy"]
+    assert "as many times as needed" in payload["retake_policy"]
+    assert "None" not in payload["retake_policy"]
     assert str(PASSING_PCT) in payload["retake_policy"]
     assert str(ENROLLMENT_DAYS) in payload["retake_policy"]
+
+
+def test_retake_text_under_a_finite_policy(client, admin_headers, monkeypatch):
+    """The integer branch 010 shipped, still rendered from the constant."""
+    set_retakes_allowed(monkeypatch, 3)
+    payload = client.get(POLICIES_URL).json()
+    assert "re-take it up to 3 times per enrollment" in payload["retake_policy"]
+    assert "as many times" not in payload["retake_policy"]
+    assert str(PASSING_PCT) in payload["retake_policy"]
 
 
 def test_sponsor_statement_absent_while_not_registered(
@@ -223,8 +237,16 @@ def test_public_course_payload_links_policies_and_carries_outline(
 # --- how it works -----------------------------------------------------------
 
 
-def test_how_it_works_numbers_match_the_constants(client, admin_headers):
+def test_how_it_works_numbers_match_the_constants(
+    client, admin_headers, monkeypatch
+):
     markdown = client.get("/api/v1/how-it-works").json()["markdown"]
     assert f"{PASSING_PCT} percent" in markdown
-    assert f"{RETAKES_ALLOWED} times" in markdown
+    assert "as many times as needed" in markdown
+    assert "None" not in markdown
     assert f"{ENROLLMENT_DAYS} days" in markdown
+    assert "no additional charge" in markdown
+    # 028: the finite branch prints the integer.
+    set_retakes_allowed(monkeypatch, 3)
+    markdown = client.get("/api/v1/how-it-works").json()["markdown"]
+    assert "**3 times** per enrollment" in markdown

@@ -43,13 +43,23 @@ def _now() -> datetime:
 def retake_policy_text() -> str:
     """The re-take and passing policy, from the constants that enforce it.
     6.01.2 leaves the re-take count to the sponsor; this is where the
-    choice is disclosed (010 required it)."""
+    choice is disclosed (010 required it). 028: `None` is unlimited, and
+    the sentence says so in words rather than printing a number."""
+    if RETAKES_ALLOWED is None:
+        sittings = (
+            "A participant may re-take the qualified assessment as many "
+            "times as needed."
+        )
+    else:
+        sittings = (
+            "A participant may sit the assessment once and re-take it up "
+            f"to {RETAKES_ALLOWED} times per enrollment."
+        )
     return (
         f"A cumulative grade of at least {PASSING_PCT} percent on the "
-        "qualified assessment is required to pass. A participant may sit "
-        f"the assessment once and re-take it up to {RETAKES_ALLOWED} times "
-        "per enrollment. Every sitting must be completed before the "
-        f"enrollment expires, {ENROLLMENT_DAYS} days after enrollment."
+        f"qualified assessment is required to pass. {sittings} Every "
+        "sitting must be completed before the enrollment expires, "
+        f"{ENROLLMENT_DAYS} days after enrollment."
     )
 
 

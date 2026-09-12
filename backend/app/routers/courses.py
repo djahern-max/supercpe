@@ -5,9 +5,14 @@ the site is open; while it is coming_soon, only sessions get through and
 everyone else sees 404 (require_site_open_or_session)."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.auth import optional_account, require_site_open_or_session
+from app.auth import (
+    optional_account,
+    require_role,
+    require_site_open_or_session,
+)
 from app.constants.certificate import PROGRAM_TYPE
 from app.constants.jurisdiction_policy import FINAL_AUTHORITY_SENTENCE
 from app.db import get_db
@@ -22,15 +27,22 @@ from app.schemas.course import (
     PublicOutlineLesson,
     PublicPerson,
 )
+from app.schemas.enrollment import MyEnrollmentSummary
 from app.schemas.jurisdiction import JurisdictionNoteOut
+from app.schemas.package import ValidationErrors
+from app.routers import my as my_router
 from app.services import courses, credit, development
+from app.services import enrollments as enrollments_service
 from app.services import jurisdictions as jurisdictions_service
 from app.services import policies as policies_service
+from app.services.enrollments import EnrollmentRuleViolation
 
 router = APIRouter(
     prefix="/courses",
     dependencies=[Depends(require_site_open_or_session)],
 )
+
+participant = require_role("participant")
 
 
 def _person(sme) -> PublicPerson | None:
@@ -180,3 +192,33 @@ def jurisdiction_note(
     return JurisdictionNoteOut(
         **note, final_authority=FINAL_AUTHORITY_SENTENCE
     )
+
+
+@router.post(
+    "/{course_code}/renew",
+    response_model=MyEnrollmentSummary,
+    status_code=201,
+    responses={422: {"model": ValidationErrors}},
+)
+def renew_course(
+    course_code: str,
+    db: Session = Depends(get_db),
+    account: Account = Depends(participant),
+):
+    """028: a new one-year enrollment at no charge for a participant who
+    paid for the course and did not complete it before the year ran out.
+    No Stripe call, no payment row. Each failed condition is its own 422
+    line (no paid purchase; still active; already completed; voided);
+    a second call while the renewal is active is refused by the
+    still-active condition, so there is never a duplicate. Like checkout,
+    an unknown course is 404 and an unpublished one a 422."""
+    course = courses.get_course(db, course_code)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    try:
+        enrollment = enrollments_service.renew(db, account, course)
+    except EnrollmentRuleViolation as violation:
+        return JSONResponse(
+            status_code=422, content={"errors": violation.errors}
+        )
+    return my_router.enrollment_summary(db, enrollment)

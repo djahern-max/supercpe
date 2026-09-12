@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getMyAssessment, getMyEnrollment, myCertificateUrl } from "../../api/my";
+import RenewEnrollment from "../../components/RenewEnrollment/RenewEnrollment.jsx";
 import RetakesExhausted from "../../components/RetakesExhausted/RetakesExhausted.jsx";
 import usePageTitle from "../../hooks/usePageTitle";
+import { retakeLabel } from "../MyLesson/nextStep.js";
 import { isExhausted } from "./exhausted.js";
 import styles from "./MyCourse.module.css";
 
@@ -47,6 +49,7 @@ function CopyButton({ text, label }) {
  */
 function NextAction({ enrollment }) {
   const base = `/my/courses/${enrollment.enrollment_id}`;
+  const navigate = useNavigate();
   const completion = enrollment.completion;
   if (completion) {
     return completion.certificate_ready ? (
@@ -65,7 +68,17 @@ function NextAction({ enrollment }) {
     );
   }
   if (enrollment.status === "expired") {
-    return (
+    // 028: a paid, uncompleted enrollment renews at no charge — a new
+    // enrollment with its own year, which the page then opens.
+    return enrollment.renewable ? (
+      <RenewEnrollment
+        courseCode={enrollment.course_code}
+        className={styles.actionButton}
+        onRenewed={(renewed) =>
+          navigate(`/my/courses/${renewed.enrollment_id}`)
+        }
+      />
+    ) : (
       <span className={styles.mutedAction}>
         This enrollment expired on {formatDate(enrollment.expires_at)}.
       </span>
@@ -86,9 +99,7 @@ function NextAction({ enrollment }) {
   if (enrollment.assessment_available) {
     return (
       <Link className={styles.action} to={`${base}/assessment`}>
-        {enrollment.failed_attempts > 0
-          ? `Re-take the qualified assessment (${enrollment.retakes_remaining} left)`
-          : "Take the qualified assessment"}
+        {retakeLabel(enrollment)}
       </Link>
     );
   }
@@ -304,9 +315,7 @@ function MyCourse() {
             >
               {enrollment.open_attempt_id
                 ? "Resume the assessment"
-                : enrollment.failed_attempts > 0
-                  ? `Re-take the qualified assessment (${enrollment.retakes_remaining} left)`
-                  : "Take the qualified assessment"}
+                : retakeLabel(enrollment)}
             </Link>
           ) : completion ? null : (
             <div className={styles.reasonPanel}>

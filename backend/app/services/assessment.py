@@ -181,6 +181,8 @@ def start_for_enrollment(db: Session, enrollment: Enrollment) -> Attempt:
                 )
             ]
         )
+    # 028: None is unlimited — no sittings check at all; an integer keeps
+    # 010's count.
     if enrollments_service.retakes_remaining(db, enrollment) == 0:
         raise AssessmentRuleViolation(
             [
@@ -379,7 +381,13 @@ def result(attempt: Attempt) -> dict:
         else None,
     }
     if attempt.status == "failed":
-        base |= {"retakes_allowed": RETAKES_ALLOWED}
+        # 028: both nullable — None is the unlimited policy — with
+        # `retakes_unlimited` beside them so the browser need not infer
+        # the policy from an absent number.
+        base |= {
+            "retakes_allowed": RETAKES_ALLOWED,
+            "retakes_unlimited": RETAKES_ALLOWED is None,
+        }
         if attempt.enrollment_id is not None:
             base |= {
                 "retakes_remaining": enrollments_service.retakes_remaining(

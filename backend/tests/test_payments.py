@@ -227,37 +227,72 @@ def test_checkout_refusal_matrix(
     [error] = response.json()["errors"]
     assert "draft" in error and "published" in error
 
-    # Already actively enrolled: refused, naming the expiry.
+    # Already actively enrolled after paying: refused twice over — the
+    # active enrollment, named with its expiry, and (028) the prior
+    # purchase, which is the reason that outlives the enrollment.
     pay(client, db_session)
     response = start_checkout(client)
     assert response.status_code == 422
-    [error] = response.json()["errors"]
-    assert "active enrollment" in error and "after it expires" in error
+    errors = response.json()["errors"]
+    assert any("active enrollment" in e and "expiring" in e for e in errors)
+    assert any("already purchased this course" in e for e in errors)
+    assert not any("after it expires" in e for e in errors)
 
     assert db_session.query(Payment).count() == 1
 
 
-def test_expired_enrollment_allows_a_fresh_purchase(
+def test_active_admin_enrollment_refuses_checkout_by_the_enrollment_alone(
     client, db_session, admin_account, stripe_boundary
 ):
+    """A never-paid participant with an active (admin-created)
+    enrollment: only the active-enrollment refusal, since 028's
+    already-purchased line needs a paid row."""
+    course, participant = open_shop(client, db_session)
+    enrollments_service.enroll(db_session, participant, course, created_by=None)
+    response = start_checkout(client)
+    assert response.status_code == 422
+    [error] = response.json()["errors"]
+    assert "active enrollment" in error
+
+
+def test_renewal_after_expiry_checkout_refused(
+    client, db_session, admin_account, stripe_boundary
+):
+    """028 reverses 018's "re-purchase allowed after expiry": a
+    participant who paid never pays again. After the year runs out,
+    checkout is refused by name and the course page's renew route
+    creates the new enrollment at no charge — no Stripe call, no
+    second payment row."""
     course, participant = open_shop(client, db_session)
     first = pay(client, db_session)
     enrollment = enrollments_service.list_for_account(db_session, participant)[0]
     enrollment.expires_at = enrollment.expires_at - timedelta(days=400)
     db_session.commit()
 
-    # Re-purchase creates a fresh payment and, on the webhook, a fresh
-    # enrollment; the old one is history.
-    second = start_checkout(client)
-    assert second.status_code == 201, second.json()
-    payment = db_session.get(Payment, second.json()["payment_id"])
-    assert payment.id != first.id
-    event = completed_event(payment, event_id="evt_completed_2")
-    assert post_webhook(client, event).status_code == 200
+    refused = start_checkout(client)
+    assert refused.status_code == 422, refused.json()
+    [error] = refused.json()["errors"]
+    assert "already purchased this course" in error
+    assert "renew it from the course page" in error
+    assert len(stripe_boundary.created) == 1
+    assert db_session.query(Payment).count() == 1
+
+    renewed = client.post(f"/api/v1/courses/{course.course_code}/renew")
+    assert renewed.status_code == 201, renewed.json()
+    assert renewed.json()["status"] == "active"
+    assert db_session.query(Payment).count() == 1
+    assert db_session.get(Payment, first.id).status == "paid"
     enrollments = enrollments_service.list_for_account(db_session, participant)
     assert len(enrollments) == 2
+    assert sorted(e.source for e in enrollments) == ["purchase", "renewal"]
     statuses = sorted(enrollments_service.status(e) for e in enrollments)
     assert statuses == ["active", "expired"]
+
+    # A first purchase of a different course still returns a session.
+    make_published_course(db_session, "SILV")
+    fresh = start_checkout(client, "SILV")
+    assert fresh.status_code == 201, fresh.json()
+    assert len(stripe_boundary.created) == 2
 
 
 def test_live_pending_session_is_returned_not_duplicated(

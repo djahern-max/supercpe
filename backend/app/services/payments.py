@@ -106,8 +106,15 @@ def start_checkout(db: Session, account: Account, course: Course) -> Payment:
         errors.append(
             f"you already hold an active enrollment on "
             f"{course.course_code}, expiring "
-            f"{existing.expires_at.date().isoformat()}; it can be "
-            "purchased again after it expires"
+            f"{existing.expires_at.date().isoformat()}"
+        )
+    # 028: checkout is for a first purchase only. A participant who paid
+    # never pays again — after expiry they renew at no charge instead.
+    # This narrows 018's "purchase again after it expires".
+    if enrollments_service.has_paid(db, account, course):
+        errors.append(
+            "you have already purchased this course; renew it from the "
+            "course page instead of paying again"
         )
     if errors:
         raise PaymentRuleViolation(errors)

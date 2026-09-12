@@ -162,6 +162,8 @@ def _summary_fields(db: Session, enrollment: Enrollment) -> dict:
     progress = enrollments.progress(db, enrollment)
     open_attempt = assessment.open_attempt_for_enrollment(db, enrollment)
     course = enrollment.course
+    # 028: None under the unlimited policy — `!= 0` keeps the finite gate
+    # and lets None through.
     retakes = enrollments.retakes_remaining(db, enrollment)
     return {
         "enrollment_id": enrollment.id,
@@ -181,13 +183,25 @@ def _summary_fields(db: Session, enrollment: Enrollment) -> dict:
         ),
         "review_answered": progress["review_answered"],
         "review_total": progress["review_total"],
-        "assessment_available": progress["assessment_available"] and retakes > 0,
+        "assessment_available": progress["assessment_available"]
+        and retakes != 0,
         "retakes_remaining": retakes,
+        "retakes_unlimited": RETAKES_ALLOWED is None,
         "failed_attempts": enrollments.failed_attempts(db, enrollment),
         "open_attempt_id": open_attempt.id if open_attempt else None,
         "completion": _completion_out(db, enrollment),
+        "renewable": enrollments.renewable(db, enrollment),
         "_progress": progress,
     }
+
+
+def enrollment_summary(db: Session, enrollment: Enrollment) -> MyEnrollmentSummary:
+    """The /my/courses card payload for one enrollment — also what the
+    028 renew route answers with, so the browser lands on the same shape
+    it already renders."""
+    fields = _summary_fields(db, enrollment)
+    fields.pop("_progress")
+    return MyEnrollmentSummary(**fields)
 
 
 @router.get("/courses", response_model=list[MyEnrollmentSummary])
@@ -196,12 +210,10 @@ def my_courses(
     account: Account = Depends(participant),
 ):
     """The participant home: every enrollment, newest first."""
-    summaries = []
-    for enrollment in enrollments.list_for_account(db, account):
-        fields = _summary_fields(db, enrollment)
-        fields.pop("_progress")
-        summaries.append(MyEnrollmentSummary(**fields))
-    return summaries
+    return [
+        enrollment_summary(db, enrollment)
+        for enrollment in enrollments.list_for_account(db, account)
+    ]
 
 
 @router.get("/enrollments/{enrollment_id}", response_model=MyEnrollmentDetail)
@@ -364,12 +376,13 @@ def get_assessment(
         question_count=len(questions),
         passing_pct=str(PASSING_PCT),
         retakes_allowed=RETAKES_ALLOWED,
+        retakes_unlimited=RETAKES_ALLOWED is None,
         retakes_remaining=retakes,
         open_attempt_id=open_attempt.id if open_attempt else None,
         lessons_kind=courses_service.lessons_kind(
             enrollments.packages_for(db, enrollment)
         ),
-        available=progress["assessment_available"] and retakes > 0,
+        available=progress["assessment_available"] and retakes != 0,
         unavailable_reasons=_unavailable_reasons(db, enrollment, progress),
         questions=[
             AssessmentQuestion(

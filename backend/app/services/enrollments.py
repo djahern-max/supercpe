@@ -23,6 +23,7 @@ from app.models.course import Course
 from app.constants.package_kinds import KIND_TEXT
 from app.models.enrollment import Enrollment, LessonProgress, ReviewAnswer
 from app.models.lesson_package import LessonPackage
+from app.models.payment import Payment
 from app.models.question import Question
 from app.services import questions as questions_service
 
@@ -292,10 +293,120 @@ def failed_attempts(db: Session, enrollment: Enrollment) -> int:
     )
 
 
-def retakes_remaining(db: Session, enrollment: Enrollment) -> int:
+def retakes_remaining(db: Session, enrollment: Enrollment) -> int | None:
     """Sittings left: the first sitting plus RETAKES_ALLOWED re-takes, less
-    every failed (submitted or abandoned) attempt on this enrollment."""
+    every failed (submitted or abandoned) attempt on this enrollment. None
+    when the policy is unlimited (028): there is no count to run down."""
+    if RETAKES_ALLOWED is None:
+        return None
     return max(1 + RETAKES_ALLOWED - failed_attempts(db, enrollment), 0)
+
+
+# --- 028: free renewal after expiry -----------------------------------------
+
+
+def enrollments_for(
+    db: Session, account: Account, course: Course
+) -> list[Enrollment]:
+    """This participant's enrollments on one course, newest first."""
+    return list(
+        db.scalars(
+            select(Enrollment)
+            .where(
+                Enrollment.account_id == account.id,
+                Enrollment.course_id == course.id,
+            )
+            .order_by(Enrollment.enrolled_at.desc(), Enrollment.id.desc())
+        )
+    )
+
+
+def has_paid(db: Session, account: Account, course: Course) -> bool:
+    """At least one `paid` payment row for this course (018's rows). A
+    refunded row is not paid — the money came back."""
+    return (
+        db.scalar(
+            select(Payment.id)
+            .where(
+                Payment.account_id == account.id,
+                Payment.course_id == course.id,
+                Payment.status == "paid",
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def renewal_refusals(db: Session, account: Account, course: Course) -> list[str]:
+    """Why this participant may not renew this course now; empty means
+    eligible. Derived from payment and enrollment rows every time, never
+    stored (the house rule): a participant who paid for the course, holds
+    no active or completed enrollment on it, and whose most recent
+    enrollment on it expired. One line per failed condition, each a
+    distinct 422 for the router. A subscription source (029) will be a
+    second qualifying condition beside `has_paid`, nothing more."""
+    errors = []
+    if not has_paid(db, account, course):
+        errors.append(
+            f"you have not purchased {course.course_code}; a renewal is "
+            "for a course you paid for and did not complete"
+        )
+    rows = enrollments_for(db, account, course)
+    statuses = {status(e) for e in rows}
+    if "completed" in statuses:
+        errors.append(
+            f"you have already completed {course.course_code}; there is "
+            "nothing to renew"
+        )
+    if "active" in statuses:
+        active = next(e for e in rows if status(e) == "active")
+        errors.append(
+            f"your enrollment on {course.course_code} is still active, "
+            f"expiring {active.expires_at.date().isoformat()}"
+        )
+    latest = rows[0] if rows else None
+    if latest is None:
+        errors.append(
+            f"you have no enrollment on {course.course_code} to renew"
+        )
+    elif status(latest) == "voided":
+        errors.append(
+            f"your enrollment on {course.course_code} was voided; a "
+            "voided enrollment cannot be renewed"
+        )
+    return errors
+
+
+def renewable(db: Session, enrollment: Enrollment) -> bool:
+    """Whether this expired enrollment is the one to renew from: the
+    participant's most recent on the course, and eligible."""
+    if status(enrollment) != "expired":
+        return False
+    rows = enrollments_for(db, enrollment.account, enrollment.course)
+    if not rows or rows[0].id != enrollment.id:
+        return False
+    return not renewal_refusals(db, enrollment.account, enrollment.course)
+
+
+def renew(db: Session, account: Account, course: Course) -> Enrollment:
+    """A new one-year enrollment at no charge, through the one constructor
+    with `source="renewal"`. No Stripe call and no payment row: a renewal
+    is not a sale. The expired enrollment and its attempts stay; the new
+    one starts with no answers, no attempts, and the course's *current*
+    published packages pinned. A second call while the renewal is active
+    is refused by the active-enrollment condition, so no duplicate."""
+    if course.status != "published":
+        raise EnrollmentRuleViolation(
+            [
+                f"course {course.course_code} is {course.status}; only "
+                "published courses can be renewed"
+            ]
+        )
+    errors = renewal_refusals(db, account, course)
+    if errors:
+        raise EnrollmentRuleViolation(errors)
+    return enroll(db, account, course, created_by=None, source="renewal")
 
 
 # A video lesson counts as watched within this many seconds of its end:

@@ -25,13 +25,13 @@ vi.mock("../../api/sponsor", () => ({
     }),
 }));
 
-function infoFor(lessonsKind) {
+function infoFor(lessonsKind, policy = FINITE) {
   return {
     course_code: "ATO",
     title: "Account Takeover",
     question_count: 1,
     passing_pct: "70",
-    retakes_allowed: 2,
+    ...policy,
     open_attempt_id: null,
     lessons_kind: lessonsKind,
     questions: [
@@ -47,15 +47,22 @@ function infoFor(lessonsKind) {
   };
 }
 
+// 028: the shipped policy is unlimited; the finite shape is what 027
+// wrote and what a future integer RETAKES_ALLOWED would send again.
+const FINITE = { retakes_allowed: 2, retakes_unlimited: false };
+const UNLIMITED = { retakes_allowed: null, retakes_unlimited: true };
+
 const FAILED = {
   status: "failed",
   score_pct: "0",
   passing_pct: "70",
   correct_count: 0,
   question_count: 1,
-  retakes_allowed: 2,
+  ...FINITE,
   retakes_remaining: 1,
 };
+
+const FAILED_UNLIMITED = { ...FAILED, ...UNLIMITED, retakes_remaining: null };
 
 let container;
 let root;
@@ -84,9 +91,14 @@ function button(text) {
   );
 }
 
-async function failAnAttempt(lessonsKind, result = FAILED, props = {}) {
+async function failAnAttempt(
+  lessonsKind,
+  result = FAILED,
+  props = {},
+  policy = FINITE
+) {
   const api = {
-    getAssessment: () => Promise.resolve(infoFor(lessonsKind)),
+    getAssessment: () => Promise.resolve(infoFor(lessonsKind, policy)),
     start: () => Promise.resolve({ attempt_id: 7, status: "open" }),
     saveAnswers: () => Promise.resolve({}),
     submit: () => Promise.resolve(result),
@@ -142,7 +154,53 @@ describe("Failed-attempt advice (023c F1)", () => {
   });
 });
 
-describe("Failed result wording (027)", () => {
+describe("Failed result under the unlimited policy (028)", () => {
+  it("shows the score, the threshold, and Re-take — no count, no notice", async () => {
+    const text = await failAnAttempt(
+      "text",
+      FAILED_UNLIMITED,
+      { coursePath: "/my/courses/3" },
+      UNLIMITED
+    );
+    expect(text).toContain("0%");
+    expect(text).toContain("70 percent is required.");
+    expect(button("Re-take the assessment")).toBeDefined();
+    expect(button("Try again")).toBeUndefined();
+    expect(container.querySelector('a[href="/my/courses/3"]').textContent).toBe(
+      "Back to the study guide"
+    );
+    expect(text).not.toContain("re-take left");
+    expect(text).not.toContain("re-takes left");
+    expect(text).not.toContain("used all");
+    expect(text).not.toContain("null");
+    expect(container.querySelector('a[href="/policies#retakes"]')).toBeNull();
+    expectNothingPerQuestion(text);
+  });
+
+  it("the intro says the assessment may be re-taken as many times as needed", async () => {
+    const api = {
+      getAssessment: () => Promise.resolve(infoFor("text", UNLIMITED)),
+      start: () => Promise.resolve({ attempt_id: 7, status: "open" }),
+      saveAnswers: () => Promise.resolve({}),
+      submit: () => Promise.resolve(FAILED_UNLIMITED),
+      getAttempt: () => Promise.resolve({ answers: {} }),
+    };
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <Assessment api={api} />
+        </MemoryRouter>
+      );
+    });
+    await flush();
+    expect(container.textContent).toContain(
+      "may be re-taken as many times as needed"
+    );
+    expect(container.textContent).not.toContain("up to");
+  });
+});
+
+describe("Failed result wording under a finite policy (027, kept by 028)", () => {
   it("with sittings left: the count, a Re-take button, and the way back", async () => {
     const text = await failAnAttempt("text", FAILED, { coursePath: "/my/courses/3" });
     expect(text).toContain("70 percent is required.");
@@ -154,7 +212,7 @@ describe("Failed result wording (027)", () => {
     expectNothingPerQuestion(text);
   });
 
-  it("with none left: all N used, the policy link, the contact address, the guide stays open", async () => {
+  it("with none left (a finite mock at 0): the exhausted notice still renders", async () => {
     const text = await failAnAttempt(
       "text",
       { ...FAILED, retakes_remaining: 0 },

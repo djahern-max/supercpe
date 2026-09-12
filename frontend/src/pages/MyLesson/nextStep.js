@@ -10,6 +10,20 @@
  * or "course" (nothing else is open — completed, expired, exhausted — so
  * the course page says why); `course` is the course page's path.
  */
+/**
+ * 028: the words on the assessment button. Under the unlimited policy
+ * (`retakes_remaining` is null) there is no count to show; under a finite
+ * one the sittings left follow in parentheses, as 027 wrote them.
+ */
+export function retakeLabel(enrollment) {
+  if (enrollment.failed_attempts > 0) {
+    return enrollment.retakes_remaining == null
+      ? "Re-take the qualified assessment"
+      : `Re-take the qualified assessment (${enrollment.retakes_remaining} left)`;
+  }
+  return "Take the qualified assessment";
+}
+
 export function deriveNextStep(enrollment, packageId) {
   const base = `/my/courses/${enrollment.enrollment_id}`;
   if (enrollment.completion) {
@@ -40,10 +54,7 @@ export function deriveNextStep(enrollment, packageId) {
     return {
       kind: "assessment",
       to: `${base}/assessment`,
-      label:
-        enrollment.failed_attempts > 0
-          ? `Re-take the qualified assessment (${enrollment.retakes_remaining} left)`
-          : "Take the qualified assessment",
+      label: retakeLabel(enrollment),
       course: base,
     };
   }

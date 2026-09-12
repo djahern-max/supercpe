@@ -17,6 +17,7 @@ from app.models.enrollment import Completion
 from app.services import assessment, enrollments
 from app.services import sponsor as sponsor_service
 from app.services.assessment import AssessmentRuleViolation
+from tests.conftest import set_retakes_allowed
 from tests.test_assessment import walk_asserting_no_feedback
 from tests.test_enrollments import (
     PARTICIPANT_EMAIL,
@@ -119,18 +120,53 @@ def test_start_refused_after_expiry(db_session):
         assessment.start_for_enrollment(db_session, enrollment)
 
 
-def test_start_refused_when_retakes_exhausted(db_session):
+def test_start_refused_when_retakes_exhausted_under_finite_policy(
+    db_session, monkeypatch
+):
+    """010's finite policy, kept working under a patched integer (028's
+    shipped policy is unlimited, so the exhausted state is unreachable
+    without the patch)."""
+    set_retakes_allowed(monkeypatch, 2)
     course, _ = make_published_course(db_session)
     enrollment = enroll(db_session, course, make_participant(db_session))
     answer_all_reviews(db_session, enrollment)
-    for _ in range(1 + RETAKES_ALLOWED):
+    assert enrollments.retakes_remaining(db_session, enrollment) == 3
+    for _ in range(3):
         attempt = sit(db_session, enrollment, wrong=4)
         assert attempt.status == "failed"
     assert enrollments.retakes_remaining(db_session, enrollment) == 0
     with pytest.raises(AssessmentRuleViolation) as exc:
         assessment.start_for_enrollment(db_session, enrollment)
-    assert str(RETAKES_ALLOWED) in exc.value.errors[0]
+    assert "2" in exc.value.errors[0]
     assert "RETAKES_ALLOWED" in exc.value.errors[0]
+    # The result payload carries the finite numbers.
+    result = assessment.result(attempt)
+    assert result["retakes_allowed"] == 2
+    assert result["retakes_remaining"] == 0
+    assert result["retakes_unlimited"] is False
+
+
+def test_unlimited_policy_never_refuses_a_sitting(db_session):
+    """028: RETAKES_ALLOWED is None. Any number of failures, and the next
+    start is still permitted; every attempt is retained."""
+    assert RETAKES_ALLOWED is None
+    course, _ = make_published_course(db_session)
+    enrollment = enroll(db_session, course, make_participant(db_session))
+    answer_all_reviews(db_session, enrollment)
+    for _ in range(5):
+        attempt = sit(db_session, enrollment, wrong=4)
+        assert attempt.status == "failed"
+        assert enrollments.retakes_remaining(db_session, enrollment) is None
+    assert enrollments.failed_attempts(db_session, enrollment) == 5
+    result = assessment.result(attempt)
+    assert result["retakes_allowed"] is None
+    assert result["retakes_remaining"] is None
+    assert result["retakes_unlimited"] is True
+    # A sixth sitting opens; the other refusals are untouched.
+    sixth = assessment.start_for_enrollment(db_session, enrollment)
+    assert sixth.status == "open"
+    with pytest.raises(AssessmentRuleViolation, match="already open"):
+        assessment.start_for_enrollment(db_session, enrollment)
 
 
 def test_submit_after_expiry_abandons_the_attempt(db_session):
@@ -174,8 +210,10 @@ def test_failed_enrollment_result_carries_no_feedback(client, db_session):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "failed"
-    assert body["retakes_allowed"] == RETAKES_ALLOWED
-    assert body["retakes_remaining"] == RETAKES_ALLOWED
+    # 028: nullable under the unlimited policy, with the flag beside them.
+    assert body["retakes_allowed"] is None
+    assert body["retakes_remaining"] is None
+    assert body["retakes_unlimited"] is True
     walk_asserting_no_feedback(body)
 
 

@@ -265,11 +265,19 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   time and its Caddy version do not depend on the registry's tag of the
   day.
 
-- 028 — exhausted enrollments: derived status, re-purchase or goodwill
+- ~~028 — exhausted enrollments: derived status, re-purchase or goodwill
   re-enrollment (sponsor decision), `retake_policy_text()` updated. 027
   names the state on the failed result and the course page (all N
   re-takes used, the policy linked, the contact address, the guide stays
-  open) and builds no exit from it; the exit is this feature.
+  open) and builds no exit from it; the exit is this feature.~~
+  Superseded 2026-09-12 by the line below: the sponsor chose unlimited
+  re-takes, so the exhausted state has no exit because it is unreachable.
+- 028 — unlimited re-takes and free renewal after expiry (sponsor
+  decision 2026-09-12): `RETAKES_ALLOWED = None`; a participant who paid
+  and did not complete starts a new one-year enrollment at no charge
+  after expiry (`source="renewal"`, derived eligibility, no payment row);
+  checkout is for a first purchase only, narrowing 018. 027's exhausted
+  wording stays for any future finite policy.
 
 ## Phase D — Text-first catalog
 Decided 2026-09-01, during the first end-to-end authoring run

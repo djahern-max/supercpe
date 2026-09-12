@@ -97,6 +97,7 @@ def get_assessment(
         question_count=len(questions),
         passing_pct=str(PASSING_PCT),
         retakes_allowed=RETAKES_ALLOWED,
+        retakes_unlimited=RETAKES_ALLOWED is None,
         open_attempt_id=open_attempt.id if open_attempt else None,
         lessons_kind=courses.lessons_kind(
             [lesson.package for lesson in course.lessons]
