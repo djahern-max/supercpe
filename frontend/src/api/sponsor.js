@@ -23,3 +23,10 @@ export function setStateRegistrations(rows) {
 export function sendTestEmail() {
   return request("/api/v1/admin/email/test", { method: "POST", body: "{}" });
 }
+
+// 027: the public subset — name, website, contact address — behind the
+// same open-or-session gate as the catalog. The site footer and the
+// exhausted re-takes notice read the contact address from here.
+export function getPublicSponsor() {
+  return request("/api/v1/sponsor");
+}

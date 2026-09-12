@@ -109,6 +109,16 @@ def test_public_endpoint_includes_registry_id_when_registered(client, admin_head
     assert "national_registry_id" not in client.get("/api/v1/sponsor").json()
 
 
+def test_public_endpoint_carries_contact_email(client, admin_headers):
+    """027: the site footer and the exhausted re-takes notice render the
+    sponsor's contact address from this payload; it must be here, and
+    nothing else new may ride along with it."""
+    client.put("/api/v1/admin/sponsor", headers=admin_headers, json=full_profile())
+    body = client.get("/api/v1/sponsor").json()
+    assert body["contact_email"] == full_profile()["contact_email"]
+    assert set(body) == {"name", "website", "contact_email"}
+
+
 def test_state_registrations_replace_as_a_set(client, admin_headers):
     put = lambda rows: client.put(
         "/api/v1/admin/sponsor/state-registrations", headers=admin_headers, json=rows

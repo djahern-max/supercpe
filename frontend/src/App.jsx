@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 import RequireRole from "./auth/RequireRole.jsx";
 import { SessionProvider } from "./auth/SessionContext.jsx";
+import SiteFooter from "./components/SiteFooter/SiteFooter.jsx";
 import SiteGate from "./components/SiteGate/SiteGate.jsx";
 import SiteHeader from "./components/SiteHeader/SiteHeader.jsx";
 import usePageTitle from "./hooks/usePageTitle";
@@ -161,6 +162,9 @@ function App() {
               the landing page, not a 404 (015). */}
           <Route path="*" element={<SiteGate><NotFound /></SiteGate>} />
         </Routes>
+        {/* 027: one footer under every open surface, under the header's
+            own rule (null while coming-soon and under /admin). */}
+        <SiteFooter />
       </SiteProvider>
     </SessionProvider>
   );

@@ -4,18 +4,25 @@ import { login } from "../../api/auth";
 import { roleHome } from "../../auth/RequireRole.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
 import usePageTitle from "../../hooks/usePageTitle";
+import { SITE_FACE, useSiteFace } from "../../site/SiteContext.jsx";
 import styles from "./Login.module.css";
 
 /**
- * Deliberately not linked from any page: while the site is coming_soon,
- * staff and testers know this address. One error line for every failure —
- * the server does not say which part was wrong, and neither do we.
+ * Not linked from the coming-soon landing page: while the site is
+ * coming_soon, staff and testers know this address (the 025 header links
+ * it once the site is open). One error line for every failure — the
+ * server does not say which part was wrong, and neither do we.
+ *
+ * 027: a Create account link below the form, under the same `siteFace()`
+ * decision as the header — at open, or with a session — so the
+ * coming-soon landing page still advertises nothing.
  */
 function Login() {
   usePageTitle("Sign in");
   const navigate = useNavigate();
   const location = useLocation();
   const { setAccount } = useSession();
+  const face = useSiteFace();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [failed, setFailed] = useState(false);
@@ -89,6 +96,11 @@ function Login() {
           </Link>
         </p>
       </form>
+      {face === SITE_FACE.OPEN && (
+        <p className={styles.registerLink}>
+          New here? <Link to="/register">Create account</Link>
+        </p>
+      )}
     </main>
   );
 }

@@ -197,3 +197,21 @@
   color: var(--color-accent);
   font-weight: 600;
 }
+
+/* 027: the failed result's sitting count and its way back to the guide. */
+.sittings {
+  margin: 0;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.guideLink {
+  color: var(--color-accent);
+  font-weight: 600;
+}

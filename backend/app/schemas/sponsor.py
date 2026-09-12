@@ -75,8 +75,15 @@ class SponsorProfileAdmin(BaseModel):
 class SponsorProfilePublic(BaseModel):
     """The non-sensitive subset. `national_registry_id` is present only when
     the sponsor may claim Registry membership; the router serializes with
-    exclude_none so an unregistered profile never carries the field."""
+    exclude_none so an unregistered profile never carries the field.
+
+    027: `contact_email` joins it so the site footer and the exhausted
+    re-takes notice can say where to write. The route is already behind
+    `require_site_open_or_session`, and the same address already goes to
+    every registrant (017's contact-sponsor email) and to Stripe as the
+    checkout support email (018)."""
 
     name: str
     website: str
+    contact_email: str = ""
     national_registry_id: str | None = None

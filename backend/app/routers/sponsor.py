@@ -17,6 +17,7 @@ def get_public_sponsor(db: Session = Depends(get_db)):
     return SponsorProfilePublic(
         name=profile.name,
         website=profile.website,
+        contact_email=profile.contact_email,
         # Never expose a sponsor ID unless the sponsor may claim Registry
         # membership; exclude_none drops the field entirely.
         national_registry_id=(

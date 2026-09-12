@@ -68,7 +68,7 @@ saved as you go, so a closed browser loses nothing.
 - If you do not pass, you may re-take the assessment up to
   **{RETAKES_ALLOWED} times** per enrollment. No feedback on individual
   questions is given for an assessment that was not passed; consider
-  re-watching the lessons before trying again.
+  re-reading the guide, or re-watching the lessons, before trying again.
 - The assessment must be completed before your enrollment expires,
   **{ENROLLMENT_DAYS} days** after enrollment. An expired enrollment
   cannot be extended; a new enrollment starts its own clock.

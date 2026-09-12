@@ -64,7 +64,11 @@ function MyAssessment() {
         </section>
       ) : (
         gate !== null && (
-          <Assessment api={api} certificateUrl={myCertificateUrl} />
+          <Assessment
+            api={api}
+            certificateUrl={myCertificateUrl}
+            coursePath={`/my/courses/${enrollmentId}`}
+          />
         )
       )}
     </main>

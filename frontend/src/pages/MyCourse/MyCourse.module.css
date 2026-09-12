@@ -145,6 +145,15 @@
   white-space: nowrap;
 }
 
+/* 027: the next action sits right under the deadline, as a button. */
+.nextAction {
+  margin-top: var(--space-md);
+}
+
+.mutedAction {
+  color: var(--color-text-muted);
+}
+
 .action {
   display: inline-block;
   background: var(--color-accent);

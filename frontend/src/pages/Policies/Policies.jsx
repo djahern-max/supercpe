@@ -62,7 +62,9 @@ function Policies() {
         ))}
 
       {payload !== null && (
-        <section className={styles.policy}>
+        // 027: anchored so the failed result and the exhausted notice can
+        // link the policy (/policies#retakes) rather than restate it.
+        <section id="retakes" className={styles.policy}>
           <h2 className={styles.policyTitle}>Assessment and re-takes</h2>
           <p className={styles.body}>{payload.retake_policy}</p>
         </section>

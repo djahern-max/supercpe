@@ -67,3 +67,14 @@
   font-size: 0.875rem;
   text-align: center;
 }
+
+.registerLink {
+  margin: 0;
+  font-size: 0.9375rem;
+  text-align: center;
+}
+
+.registerLink a {
+  color: var(--color-accent);
+  font-weight: 600;
+}

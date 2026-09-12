@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import EvaluationForm from "../EvaluationForm/EvaluationForm.jsx";
+import RetakesExhausted from "../RetakesExhausted/RetakesExhausted.jsx";
 import styles from "./Assessment.module.css";
 import { retryAdvice } from "./retryAdvice.js";
 
@@ -17,9 +19,11 @@ import { retryAdvice } from "./retryAdvice.js";
  * to the course and credentials. `certificateUrl(completionId)` is passed
  * by the enrollment mount so a passed result can offer the download; the
  * preview mount passes nothing and no completion ever appears in its
- * results.
+ * results. `coursePath` (027) is the enrollment's course page, so a
+ * failed result can point back at the study guide; the preview mount
+ * passes none.
  */
-function Assessment({ api, certificateUrl }) {
+function Assessment({ api, certificateUrl, coursePath }) {
   const [info, setInfo] = useState(null);
   const [attemptId, setAttemptId] = useState(null);
   const [answers, setAnswers] = useState({});
@@ -187,6 +191,15 @@ function Assessment({ api, certificateUrl }) {
   if (result && result.status === "failed") {
     // 6.01.2 sub-ii: nothing per question on a failed attempt. Resist
     // adding anything here; the Standard is restrictive on purpose.
+    // 027: the sitting count is stated in words, and an enrollment with
+    // none left gets the shared three-part notice (policy link, contact
+    // address, the guide stays open) instead of a bare refusal.
+    const remaining = result.retakes_remaining;
+    const exhausted = remaining === 0;
+    const guide =
+      info?.lessons_kind === "video"
+        ? "Back to the lessons"
+        : "Back to the study guide";
     return (
       <section className={styles.card}>
         <p className={styles.scoreLine}>
@@ -200,19 +213,34 @@ function Assessment({ api, certificateUrl }) {
           {result.correct_count !== null &&
             `${result.correct_count} of ${result.question_count} correct.`}
         </p>
-        <p className={styles.muted}>{retryAdvice(info?.lessons_kind)}</p>
-        {errorPanel}
-        {result.retakes_remaining === 0 ? (
-          <p className={styles.muted}>
-            No re-takes are left on this enrollment.
+        {remaining != null && !exhausted && (
+          <p className={styles.sittings}>
+            You have {remaining} re-take{remaining === 1 ? "" : "s"} left on
+            this enrollment.
           </p>
+        )}
+        {!exhausted && (
+          <p className={styles.muted}>{retryAdvice(info?.lessons_kind)}</p>
+        )}
+        {errorPanel}
+        {exhausted ? (
+          <RetakesExhausted
+            retakesAllowed={result.retakes_allowed}
+            coursePath={coursePath}
+            lessonsKind={info?.lessons_kind}
+          />
         ) : (
           result.retakes_allowed && (
-            <button className={styles.button} type="button" onClick={begin}>
-              Try again
-              {result.retakes_remaining != null &&
-                ` (${result.retakes_remaining} left)`}
-            </button>
+            <div className={styles.actions}>
+              <button className={styles.button} type="button" onClick={begin}>
+                {remaining != null ? "Re-take the assessment" : "Try again"}
+              </button>
+              {coursePath && (
+                <Link className={styles.guideLink} to={coursePath}>
+                  {guide}
+                </Link>
+              )}
+            </div>
           )
         )}
       </section>

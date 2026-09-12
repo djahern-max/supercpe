@@ -1,12 +1,11 @@
-/* The guide is the page: one column at a comfortable reading measure,
-   with the search box and glossary above it and nothing competing with
-   the prose. */
+/* The guide is the page: one section at a reading measure, with the
+   table of contents beside it on a wide viewport and folded above it on
+   a narrow one. Search and the glossary sit above both. */
 .reader {
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
-  max-width: 44rem;
-  margin: 0 auto;
+  gap: var(--space-md);
+  outline: none;
 }
 
 /* --- chrome: search and glossary, 4.05.3 items 2 and 3 --- */
@@ -38,6 +37,7 @@
 
 .searchInput {
   flex: 1;
+  min-width: 0;
   padding: 0.4rem 0.6rem;
   font: inherit;
   color: var(--color-text);
@@ -47,7 +47,8 @@
 }
 
 .searchButton,
-.chromeButton {
+.chromeButton,
+.contentsToggle {
   padding: 0.4rem 0.8rem;
   font: inherit;
   color: var(--color-accent);
@@ -58,7 +59,8 @@
 }
 
 .searchButton:hover,
-.chromeButton:hover {
+.chromeButton:hover,
+.contentsToggle:hover {
   border-color: var(--color-accent);
 }
 
@@ -130,17 +132,155 @@
   line-height: 1.5;
 }
 
-/* --- contents --- */
+/* --- layout: contents beside the pane on a wide viewport --- */
 
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+/* Narrow: the contents fold away behind the toggle in the chrome. */
 .contents {
+  display: none;
   padding: var(--space-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
 }
 
+.contentsOpen {
+  display: block;
+}
+
+@media (min-width: 60rem) {
+  .layout {
+    grid-template-columns: 16rem minmax(0, 1fr);
+  }
+
+  .contents {
+    display: block;
+    position: sticky;
+    top: var(--space-md);
+    max-height: calc(100vh - var(--space-lg));
+    overflow-y: auto;
+  }
+
+  .contentsToggle {
+    display: none;
+  }
+}
+
 .contentsTitle {
   margin: 0 0 var(--space-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.contentsTitle + .contentsList + .contentsTitle,
+.contentsList + .contentsTitle {
+  margin-top: var(--space-md);
+}
+
+.contentsList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contentsLink {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  color: var(--color-text);
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.contentsLink:hover:not(:disabled) {
+  color: var(--color-accent);
+  background: var(--color-bg);
+}
+
+.contentsLink:disabled {
+  cursor: not-allowed;
+}
+
+.entryTitle {
+  flex: 1;
+  min-width: 0;
+}
+
+.entryState {
+  flex: none;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+/* The four states: read, current, unread (open), locked. A locked entry
+   shows its title — the title is in the payload — and never a body. */
+.entry_read .contentsLink {
+  color: var(--color-text-muted);
+}
+
+.entry_read .entryState {
+  color: var(--color-success);
+}
+
+.entry_current .contentsLink {
+  color: var(--color-accent);
+  font-weight: 600;
+  border-left-color: var(--color-accent);
+  background: var(--color-bg);
+}
+
+.entry_unread .contentsLink {
+  color: var(--color-text);
+}
+
+.entry_locked .contentsLink {
+  color: var(--color-text-muted);
+  opacity: 0.75;
+}
+
+/* --- the pane: progress, one section, the step buttons --- */
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 44rem;
+  min-width: 0;
+  scroll-margin-top: var(--space-md);
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.progressLine {
+  margin: 0;
   font-size: 0.85rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -148,35 +288,19 @@
   color: var(--color-text-muted);
 }
 
-.contentsList {
-  margin: 0;
-  padding-left: 1.2rem;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
+.progressBar {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+  overflow: hidden;
 }
 
-.contentsLink {
-  padding: 0;
-  font: inherit;
-  color: var(--color-accent);
-  background: none;
-  border: none;
-  cursor: pointer;
-  text-align: left;
+.progressFill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  transition: width 200ms ease-out;
 }
-
-.contentsLocked {
-  padding: 0;
-  font: inherit;
-  color: var(--color-text-muted);
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: not-allowed;
-}
-
-/* --- the guide itself --- */
 
 .section {
   scroll-margin-top: var(--space-lg);
@@ -223,6 +347,107 @@
   margin-top: var(--space-xs);
   font-size: 0.85rem;
   color: var(--color-text-muted);
+}
+
+.clipEnded {
+  margin: var(--space-sm) 0 0;
+}
+
+.clipContinue {
+  padding: 0.4rem 0.8rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.stepNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.stepButton {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.stepButton:hover {
+  border-color: var(--color-accent);
+}
+
+.continueButton {
+  padding: 0.5rem 1.25rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.continueButton:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.continueButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stepHint {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+/* --- the completion card --- */
+
+.completion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-md);
+}
+
+.completionTitle {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--color-success);
+}
+
+.completionPrimary {
+  display: inline-block;
+  padding: 0.5rem 1.25rem;
+  font-weight: 600;
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.completionPrimary:hover {
+  opacity: 0.92;
+}
+
+.completionSecondary {
+  color: var(--color-accent);
+  font-size: 0.9375rem;
 }
 
 /* --- review questions between sections --- */

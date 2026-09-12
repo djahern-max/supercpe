@@ -161,6 +161,47 @@
   color: var(--color-error);
 }
 
+/* 027: the end panel, in place over the video like the question panel,
+   saying what comes next. */
+.endPanel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-surface);
+}
+
+.endTitle {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.endText {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.endLink {
+  display: inline-block;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.endLink:hover {
+  opacity: 0.92;
+}
+
 /* Slim, with a visible tick at each review point so the participant knows
    a question is coming. */
 .progress {

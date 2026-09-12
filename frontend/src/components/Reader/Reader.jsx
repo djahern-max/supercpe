@@ -1,8 +1,20 @@
 import { useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { resolveMediaUrl } from "../../api/client";
 import SimpleMarkdown from "../SimpleMarkdown/SimpleMarkdown.jsx";
 import styles from "./Reader.module.css";
 import { stripLeadingTitle } from "./sectionTitle.js";
+import {
+  allAnswered,
+  bodySections,
+  isAnswered,
+  progressLabel,
+  questionsAfter,
+  readingChain,
+  referenceSections,
+  resumeKey,
+  sectionStates,
+} from "./stepper.js";
 
 const ROLE_LABELS = {
   front_matter: "How this course works",
@@ -11,12 +23,16 @@ const ROLE_LABELS = {
   appendix: "Appendix",
 };
 
-const REFERENCE_ROLES = ["front_matter", "glossary", "appendix"];
+// The URL carries the reading position (`?section=<key>`), so reload and
+// back/forward return to the same section. It is browser state, not a
+// record: nothing here is written to the server (010: progress never
+// decreases, and this is not progress).
+const SECTION_PARAM = "section";
 
 /**
- * The participant reader: one text lesson's study guide, read in order,
- * with review questions between its sections (5.01.2.1 "throughout the
- * program in sufficient intervals").
+ * The participant reader: one text lesson's study guide, read one section
+ * at a time in order, with review questions between its sections
+ * (5.01.2.1 "throughout the program in sufficient intervals").
  *
  * The gate is not here. A locked section arrives with `markdown: null`,
  * because the server withholds the text until the placed review question
@@ -25,18 +41,38 @@ const REFERENCE_ROLES = ["front_matter", "glossary", "appendix"];
  * `gradeAnswer` is the only way to learn whether a choice was right, and
  * the feedback comes back with the verdict (5.01.2.2).
  *
+ * 027: a stepper. A table of contents lists every section with its state
+ * (read, current, unread, locked — a locked entry is a title and nothing
+ * more); the pane shows one section; Continue opens the next once every
+ * question placed after the current one is answered. That button is a
+ * presentation of the server's gate, not a second gate: answering already
+ * refetched the payload, and Continue shows what the server unlocked.
+ * Front matter (4.05.3 item 4, "instructions … regarding navigation")
+ * comes first, always. After the last body section, when every question
+ * in the lesson is answered, a completion card names the next step —
+ * `nextStep` is derived by the page from the enrollment detail; the
+ * preview mount passes none.
+ *
  * Supplemental videos render inline at their placement with ordinary
  * controls and no seek lock: completion is verified by the qualified
  * assessment (6.01.2), not by watch time, and interval placement is
  * satisfied by the section gates. That is the 023 decision, recorded in
  * docs/decisions/2026-09-01-text-first.md; the video-only player keeps
- * its own behavior.
+ * its own behavior. When a clip ends it says where to go next.
  *
  * `onSearch` and `onLookup` are the 4.05.3 items 2 and 3 surfaces, passed
  * in so this component never talks to the API itself — the same rule the
  * player follows.
  */
-function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
+function Reader({
+  lesson,
+  gradeAnswer,
+  onSearch,
+  onLookup,
+  onAnswered,
+  onContinue,
+  nextStep,
+}) {
   // The per-question verdicts, tied to the lesson they were given in. A
   // refetch of the *same* lesson — which is how the next section opens
   // after an answer — keeps them, so the feedback stays on screen until
@@ -49,24 +85,34 @@ function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
   });
   const results =
     verdicts.lessonId === lesson.lesson_id ? verdicts.results : {};
+  // Sections this session has moved on from — the "read" mark for
+  // ungated sections the payload cannot vouch for. Same lesson-keyed
+  // shape as the verdicts, for the same reason.
+  const [visitedState, setVisitedState] = useState({
+    lessonId: lesson.lesson_id,
+    keys: [],
+  });
+  const visited = useMemo(
+    () =>
+      new Set(
+        visitedState.lessonId === lesson.lesson_id ? visitedState.keys : []
+      ),
+    [visitedState, lesson.lesson_id]
+  );
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState(null);
   const [glossary, setGlossary] = useState(null);
   const [panel, setPanel] = useState(null);
-  const sectionRefs = useRef({});
+  const [contentsOpen, setContentsOpen] = useState(false);
+  const [endedClips, setEndedClips] = useState({});
+  const [searchParams, setSearchParams] = useSearchParams();
+  const paneRef = useRef(null);
+  const questionsRef = useRef(null);
+  const continueRef = useRef(null);
 
-  // Every review question placed after a section, in order. A list, not
-  // one per section: a section may carry more than one, and all of them
-  // must be answered before the next body section opens.
-  const questionsFor = useMemo(() => {
-    const map = {};
-    for (const question of lesson.questions) {
-      map[question.after_section] = (map[question.after_section] || []).concat(
-        question
-      );
-    }
-    return map;
-  }, [lesson]);
+  const chain = useMemo(() => readingChain(lesson.sections), [lesson]);
+  const bodies = useMemo(() => bodySections(lesson.sections), [lesson]);
+  const reference = useMemo(() => referenceSections(lesson.sections), [lesson]);
 
   const mediaFor = useMemo(() => {
     const map = {};
@@ -76,10 +122,53 @@ function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
     return map;
   }, [lesson]);
 
-  const reading = lesson.sections.filter((s) => s.role === "body");
-  const reference = lesson.sections.filter((s) =>
-    REFERENCE_ROLES.includes(s.role)
-  );
+  // Where we are: the URL's section when it names one of this lesson's
+  // sections, else the first section not yet read as far as the payload
+  // can tell (front matter when it cannot).
+  const requested = searchParams.get(SECTION_PARAM);
+  const currentKey =
+    requested && lesson.sections.some((s) => s.section_key === requested)
+      ? requested
+      : resumeKey(lesson, results);
+  const current = lesson.sections.find((s) => s.section_key === currentKey);
+  const chainIndex = chain.findIndex((s) => s.section_key === currentKey);
+  const states = sectionStates(lesson, results, currentKey, visited);
+
+  const placedHere = current ? questionsAfter(lesson, currentKey) : [];
+  const gateClear = placedHere.every((q) => isAnswered(q, results));
+  const previous = chainIndex > 0 ? chain[chainIndex - 1] : null;
+  const next = chainIndex >= 0 ? chain[chainIndex + 1] : null;
+  const atEnd = chainIndex >= 0 && chainIndex === chain.length - 1;
+  const lessonFinished = atEnd && allAnswered(lesson, results);
+  const readBodies = bodies.filter((s) => states[s.section_key] === "read");
+
+  const goToSection = (sectionKey) => {
+    if (!lesson.sections.some((s) => s.section_key === sectionKey)) return;
+    setVisitedState((prev) => ({
+      lessonId: lesson.lesson_id,
+      keys: Array.from(
+        new Set([
+          ...(prev.lessonId === lesson.lesson_id ? prev.keys : []),
+          currentKey,
+          sectionKey,
+        ])
+      ),
+    }));
+    setSearchParams({ [SECTION_PARAM]: sectionKey });
+    setContentsOpen(false);
+    const pane = paneRef.current;
+    if (pane && typeof pane.scrollIntoView === "function") {
+      pane.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  const continueReading = () => {
+    if (!next || !gateClear) return;
+    // Only the server decides what is open; the page refetches on every
+    // answer, and Continue asks once more so it shows what was unlocked.
+    if (onContinue) onContinue();
+    goToSection(next.section_key);
+  };
 
   const answer = (question, choiceKey) => {
     gradeAnswer(question.question_key, choiceKey).then((result) => {
@@ -109,13 +198,58 @@ function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
     }
   };
 
-  const goToSection = (sectionKey) => {
-    const node = sectionRefs.current[sectionKey];
-    if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
+  // A finished clip points at what follows it: the question placed after
+  // this section if one is still open, else the next section.
+  const afterClip = () => {
+    const target =
+      placedHere.length > 0 && !gateClear
+        ? questionsRef.current
+        : continueRef.current;
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (placedHere.length === 0 || gateClear) continueReading();
+  };
+
+  const handleKeyDown = (event) => {
+    const tag = event.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      continueReading();
+    } else if (event.key === "ArrowLeft" && previous) {
+      event.preventDefault();
+      goToSection(previous.section_key);
+    }
+  };
+
+  const stateLabel = (key) =>
+    states[key] === "locked" ? "Locked" : states[key] === "read" ? "Read" : null;
+
+  const contentsEntry = (section) => {
+    const state = states[section.section_key];
+    return (
+      <li key={section.section_key} className={styles[`entry_${state}`]}>
+        <button
+          type="button"
+          className={styles.contentsLink}
+          disabled={state === "locked"}
+          aria-current={state === "current" ? "step" : undefined}
+          onClick={() => goToSection(section.section_key)}
+        >
+          <span className={styles.entryTitle}>{section.title}</span>
+          {stateLabel(section.section_key) && (
+            <span className={styles.entryState}>
+              {stateLabel(section.section_key)}
+            </span>
+          )}
+        </button>
+      </li>
+    );
   };
 
   return (
-    <div className={styles.reader}>
+    <div className={styles.reader} onKeyDown={handleKeyDown} tabIndex={-1}>
       <div className={styles.chrome}>
         <form className={styles.searchForm} onSubmit={runSearch}>
           <label className={styles.searchLabel} htmlFor="reader-search">
@@ -139,6 +273,14 @@ function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
           onClick={openGlossary}
         >
           {panel === "glossary" ? "Hide glossary" : "Glossary"}
+        </button>
+        <button
+          type="button"
+          className={styles.contentsToggle}
+          aria-expanded={contentsOpen}
+          onClick={() => setContentsOpen(!contentsOpen)}
+        >
+          {contentsOpen ? "Hide contents" : "Contents"}
         </button>
       </div>
 
@@ -189,7 +331,24 @@ function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
               {glossary.map((entry) => (
                 <div key={entry.term} className={styles.glossaryRow}>
                   <dt>{entry.term}</dt>
-                  <dd>{entry.definition}</dd>
+                  <dd>
+                    {entry.definition}
+                    {entry.section_key &&
+                      lesson.sections.some(
+                        (s) => s.section_key === entry.section_key
+                      ) && (
+                        <>
+                          {" "}
+                          <button
+                            type="button"
+                            className={styles.hitLink}
+                            onClick={() => goToSection(entry.section_key)}
+                          >
+                            Open the section
+                          </button>
+                        </>
+                      )}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -197,83 +356,207 @@ function Reader({ lesson, gradeAnswer, onSearch, onLookup, onAnswered }) {
         </div>
       )}
 
-      <nav className={styles.contents} aria-label="Course contents">
-        <h2 className={styles.contentsTitle}>Contents</h2>
-        <ol className={styles.contentsList}>
-          {lesson.sections.map((section) => (
-            <li key={section.section_key}>
-              <button
-                type="button"
-                className={
-                  section.locked ? styles.contentsLocked : styles.contentsLink
-                }
-                disabled={section.locked}
-                onClick={() => goToSection(section.section_key)}
-              >
-                {section.title}
-                {section.locked && " (locked)"}
-              </button>
-            </li>
-          ))}
-        </ol>
-      </nav>
-
-      {lesson.sections.map((section) => (
-        <section
-          key={section.section_key}
-          className={styles.section}
-          ref={(node) => {
-            sectionRefs.current[section.section_key] = node;
-          }}
+      <div className={styles.layout}>
+        <nav
+          className={
+            contentsOpen ? `${styles.contents} ${styles.contentsOpen}` : styles.contents
+          }
+          aria-label="Course contents"
         >
-          <p className={styles.role}>
-            {ROLE_LABELS[section.role] || section.role}
-          </p>
-          <h2 className={styles.sectionTitle}>{section.title}</h2>
-
-          {section.locked ? (
-            <p className={styles.locked}>
-              Answer the review question above to open this section.
-            </p>
-          ) : (
+          <h2 className={styles.contentsTitle}>Contents</h2>
+          <ol className={styles.contentsList}>{chain.map(contentsEntry)}</ol>
+          {reference.length > 0 && (
             <>
-              <SimpleMarkdown
-                markdown={stripLeadingTitle(section.markdown, section.title)}
-              />
-              {(mediaFor[section.section_key] || []).map((item) => (
-                <figure key={item.media_key} className={styles.mediaFigure}>
-                  <video
-                    className={styles.video}
-                    src={resolveMediaUrl(item.url)}
-                    controls
-                    preload="metadata"
-                  />
-                  <figcaption className={styles.mediaCaption}>
-                    A worked example that adds to the guide — it does not
-                    read it aloud. Watch, skip, or replay it as you like.
-                  </figcaption>
-                </figure>
-              ))}
-              {(questionsFor[section.section_key] || []).map((question) => (
-                <ReviewQuestion
-                  key={question.question_key}
-                  question={question}
-                  result={results[question.question_key]}
-                  onAnswer={answer}
-                />
-              ))}
+              <h3 className={styles.contentsTitle}>Reference</h3>
+              <ul className={styles.contentsList}>
+                {reference.map(contentsEntry)}
+              </ul>
             </>
           )}
-        </section>
-      ))}
+        </nav>
 
-      {reading.length > 0 && reference.length > 0 && (
-        <p className={styles.footnote}>
-          The glossary and any appendixes are reference material. They are
-          open from the start and are not required reading.
-        </p>
-      )}
+        <article className={styles.pane} ref={paneRef}>
+          {current && (
+            <>
+              <div className={styles.progress}>
+                <p className={styles.progressLine}>
+                  {progressLabel(lesson, currentKey)}
+                </p>
+                <div
+                  className={styles.progressBar}
+                  role="progressbar"
+                  aria-label="Sections read"
+                  aria-valuemin={0}
+                  aria-valuemax={bodies.length}
+                  aria-valuenow={readBodies.length}
+                >
+                  <div
+                    className={styles.progressFill}
+                    style={{
+                      width: `${bodies.length ? (readBodies.length / bodies.length) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <section key={currentKey} className={styles.section}>
+                <p className={styles.role}>
+                  {ROLE_LABELS[current.role] || current.role}
+                </p>
+                <h2 className={styles.sectionTitle}>{current.title}</h2>
+
+                {current.locked ? (
+                  <p className={styles.locked}>
+                    Answer the review question after the previous section to
+                    open this one.
+                  </p>
+                ) : (
+                  <>
+                    <SimpleMarkdown
+                      markdown={stripLeadingTitle(current.markdown, current.title)}
+                    />
+                    {(mediaFor[currentKey] || []).map((item) => (
+                      <figure key={item.media_key} className={styles.mediaFigure}>
+                        <video
+                          className={styles.video}
+                          src={resolveMediaUrl(item.url)}
+                          controls
+                          preload="metadata"
+                          onEnded={() =>
+                            setEndedClips((prev) => ({
+                              ...prev,
+                              [item.media_key]: true,
+                            }))
+                          }
+                          onPlay={() =>
+                            setEndedClips((prev) => ({
+                              ...prev,
+                              [item.media_key]: false,
+                            }))
+                          }
+                        />
+                        <figcaption className={styles.mediaCaption}>
+                          A worked example that adds to the guide — it does
+                          not read it aloud. Watch, skip, or replay it as you
+                          like.
+                        </figcaption>
+                        {endedClips[item.media_key] && (
+                          <p className={styles.clipEnded}>
+                            <button
+                              type="button"
+                              className={styles.clipContinue}
+                              onClick={afterClip}
+                            >
+                              Continue reading
+                            </button>
+                          </p>
+                        )}
+                      </figure>
+                    ))}
+                    {placedHere.length > 0 && (
+                      <div ref={questionsRef}>
+                        {placedHere.map((question) => (
+                          <ReviewQuestion
+                            key={question.question_key}
+                            question={question}
+                            result={results[question.question_key]}
+                            onAnswer={answer}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+
+              <div className={styles.stepNav} ref={continueRef}>
+                {chainIndex === -1 ? (
+                  <button
+                    type="button"
+                    className={styles.stepButton}
+                    onClick={() => goToSection(resumeKey(lesson, results))}
+                  >
+                    Back to the guide
+                  </button>
+                ) : (
+                  <>
+                    {previous && (
+                      <button
+                        type="button"
+                        className={styles.stepButton}
+                        onClick={() => goToSection(previous.section_key)}
+                      >
+                        Previous
+                      </button>
+                    )}
+                    {next && (
+                      <>
+                        <button
+                          type="button"
+                          className={styles.continueButton}
+                          disabled={!gateClear || current.locked}
+                          onClick={continueReading}
+                        >
+                          Continue
+                        </button>
+                        {!gateClear && !current.locked && (
+                          <span className={styles.stepHint}>
+                            Answer the review question
+                            {placedHere.length > 1 ? "s" : ""} above to
+                            continue.
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {lessonFinished && <CompletionCard nextStep={nextStep} />}
+            </>
+          )}
+
+          {bodies.length > 0 && reference.length > 0 && (
+            <p className={styles.footnote}>
+              The glossary and any appendixes are reference material. They are
+              open from the start and are not required reading.
+            </p>
+          )}
+        </article>
+      </div>
     </div>
+  );
+}
+
+/**
+ * After the last body section, once every question in the lesson is
+ * answered: what to do next. The page derives `nextStep` from the
+ * enrollment detail (the next unread lesson, else the assessment when it
+ * is available, else the course page, which says why it is not).
+ */
+function CompletionCard({ nextStep }) {
+  const finished =
+    nextStep?.kind === "lesson"
+      ? "You've finished this lesson"
+      : "You've finished the study guide";
+  return (
+    <section className={styles.completion} aria-label="Next step">
+      <h2 className={styles.completionTitle}>{finished}</h2>
+      {nextStep ? (
+        <>
+          <Link className={styles.completionPrimary} to={nextStep.to}>
+            {nextStep.label}
+          </Link>
+          {nextStep.kind !== "course" && nextStep.course && (
+            <Link className={styles.completionSecondary} to={nextStep.course}>
+              Back to the course page
+            </Link>
+          )}
+        </>
+      ) : (
+        <p className={styles.muted}>Every review question here is answered.</p>
+      )}
+    </section>
   );
 }
 
@@ -297,11 +580,14 @@ function escapeRegExp(text) {
 /**
  * One review question, asked between sections. Nothing here knows the
  * right answer until the server says so: `result` arrives from grading and
- * always carries feedback, correct or not (5.01.2.2).
+ * always carries feedback, correct or not (5.01.2.2). The chosen key rides
+ * on the result, so leaving and returning to the section shows the same
+ * verdict (023c D2, kept through the stepper).
  */
 function ReviewQuestion({ question, result, onAnswer }) {
-  const [chosen, setChosen] = useState(null);
+  const [chosenHere, setChosenHere] = useState(null);
   const answered = result !== undefined;
+  const chosen = answered ? result.choiceKey : chosenHere;
 
   return (
     <div className={styles.question}>
@@ -326,7 +612,7 @@ function ReviewQuestion({ question, result, onAnswer }) {
                   .filter(Boolean)
                   .join(" ")}
                 onClick={() => {
-                  setChosen(choice.choice_key);
+                  setChosenHere(choice.choice_key);
                   onAnswer(question, choice.choice_key);
                 }}
               >

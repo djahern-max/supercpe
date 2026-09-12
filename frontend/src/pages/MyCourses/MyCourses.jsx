@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { useSession } from "../../auth/SessionContext.jsx";
+import { Link } from "react-router-dom";
 import { listMyCourses, myCertificateUrl } from "../../api/my";
 import EvaluationForm from "../../components/EvaluationForm/EvaluationForm.jsx";
 import usePageTitle from "../../hooks/usePageTitle";
@@ -17,8 +16,10 @@ function formatDate(iso) {
 
 /**
  * The participant home: each enrollment as a card with one primary action —
- * Continue / Take the assessment / Retake (N left) / View certificate /
- * Expired.
+ * Continue reading / Take the qualified assessment / Re-take (N left) /
+ * View certificate / Expired. 027: the same next action the course page
+ * shows, in the same words; an enrollment with no sittings left points
+ * at the course page, where the exhausted notice says what that means.
  */
 function PrimaryAction({ enrollment }) {
   const to = `/my/courses/${enrollment.enrollment_id}`;
@@ -54,25 +55,36 @@ function PrimaryAction({ enrollment }) {
   if (enrollment.assessment_available) {
     const label =
       enrollment.failed_attempts > 0
-        ? `Retake the assessment (${enrollment.retakes_remaining} left)`
-        : "Take the assessment";
+        ? `Re-take the qualified assessment (${enrollment.retakes_remaining} left)`
+        : "Take the qualified assessment";
     return (
       <Link className={styles.action} to={`${to}/assessment`}>
         {label}
       </Link>
     );
   }
+  if (enrollment.retakes_remaining === 0) {
+    return (
+      <Link className={styles.action} to={to}>
+        No re-takes left — see your options
+      </Link>
+    );
+  }
+  const verb =
+    enrollment.lessons_kind === "text"
+      ? "Continue reading"
+      : enrollment.lessons_kind === "video"
+        ? "Continue watching"
+        : "Continue";
   return (
     <Link className={styles.action} to={to}>
-      Continue
+      {verb}
     </Link>
   );
 }
 
 function MyCourses() {
   usePageTitle("My courses");
-  const navigate = useNavigate();
-  const { account, signOut } = useSession();
   const [enrollments, setEnrollments] = useState(null);
   const [error, setError] = useState(false);
 
@@ -90,28 +102,11 @@ function MyCourses() {
     };
   }, []);
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate("/login");
-  };
-
   return (
     <main className={styles.page}>
-      <header className={styles.header}>
-        <h1 className={styles.heading}>My courses</h1>
-        <span className={styles.spacer} />
-        {account && <span className={styles.who}>{account.email}</span>}
-        <Link className={styles.accountLink} to="/account">
-          Account
-        </Link>
-        <button
-          className={styles.signOut}
-          type="button"
-          onClick={handleSignOut}
-        >
-          Sign out
-        </button>
-      </header>
+      {/* 027: the email, Account link, and Sign out that sat here are in
+          the 025 site header; the page keeps only its heading. */}
+      <h1 className={styles.heading}>My courses</h1>
 
       {error && (
         <p className={styles.muted}>Your courses could not be loaded.</p>

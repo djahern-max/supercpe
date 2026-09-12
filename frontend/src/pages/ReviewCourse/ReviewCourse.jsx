@@ -3,7 +3,6 @@ import { Link, useParams } from "react-router-dom";
 import { getReviewCourse, recordReview } from "../../api/review";
 import { ApiError } from "../../api/client";
 import { useSession } from "../../auth/SessionContext.jsx";
-import { ReviewHeader } from "../ReviewHome/ReviewHome.jsx";
 import styles from "./ReviewCourse.module.css";
 
 const EMPTY_FORM = {
@@ -81,7 +80,6 @@ function ReviewCourse() {
 
   return (
     <main className={styles.page}>
-      <ReviewHeader />
       <p className={styles.breadcrumb}>
         <Link to="/review">Courses</Link> / {code}
       </p>

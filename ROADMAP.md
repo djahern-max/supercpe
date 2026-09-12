@@ -265,6 +265,12 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   time and its Caddy version do not depend on the registry's tag of the
   day.
 
+- 028 — exhausted enrollments: derived status, re-purchase or goodwill
+  re-enrollment (sponsor decision), `retake_policy_text()` updated. 027
+  names the state on the failed result and the course page (all N
+  re-takes used, the policy linked, the contact address, the guide stays
+  open) and builds no exit from it; the exit is this feature.
+
 ## Phase D — Text-first catalog
 Decided 2026-09-01, during the first end-to-end authoring run
 (first-course-walkthrough.md), by the operator as a user. Full rationale

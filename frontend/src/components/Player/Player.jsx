@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { resolveMediaUrl } from "../../api/client";
 import styles from "./Player.module.css";
 
@@ -6,6 +7,10 @@ import styles from "./Player.module.css";
 // granularity, not participants.
 const SEEK_TOLERANCE_SECONDS = 0.25;
 const ARROW_SEEK_SECONDS = 5;
+// 027: the visible rewind control. Backward seeking was always allowed
+// (`seekTo` clamps to the furthest point watched, never below zero); what
+// was missing was a control a participant could see.
+const REWIND_SECONDS = 15;
 // Progress reports go out at most this often while playing; pause and
 // question stops always report.
 const PROGRESS_REPORT_SECONDS = 10;
@@ -31,8 +36,21 @@ function formatTime(totalSeconds) {
  * session (the enrollment mount, 010); `onProgress(seconds)` reports the
  * furthest point back, throttled, fire-and-forget. The preview mount
  * passes neither and behaves exactly as before.
+ *
+ * 027: when the video ends, a panel says what comes next — the review
+ * questions still unanswered in this lesson (`reviewRemaining`, from the
+ * enrollment detail; asked again in place, since re-answering is
+ * allowed), else `nextStep` as the page derived it (the next lesson, the
+ * assessment, or the course page). The preview mount passes neither.
  */
-function Player({ lesson, gradeAnswer, initialFurthestSeconds = 0, onProgress }) {
+function Player({
+  lesson,
+  gradeAnswer,
+  initialFurthestSeconds = 0,
+  onProgress,
+  nextStep,
+  reviewRemaining = 0,
+}) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const lastTimeRef = useRef(0);
@@ -44,6 +62,7 @@ function Player({ lesson, gradeAnswer, initialFurthestSeconds = 0, onProgress })
   const seekInFlightRef = useRef(false);
 
   const [playing, setPlaying] = useState(false);
+  const [ended, setEnded] = useState(false);
   const [muted, setMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(lesson.duration_seconds);
@@ -187,6 +206,24 @@ function Player({ lesson, gradeAnswer, initialFurthestSeconds = 0, onProgress })
     }
   };
 
+  // 027: from the end panel, the questions this lesson still has
+  // unanswered (a reload mid-question resumes past the review point and
+  // never re-asks it). All of them are asked again, in order; the server
+  // records each answer and any re-answer is allowed.
+  const askReviewQuestions = () => {
+    if (lesson.questions.length === 0) return;
+    pendingRef.current = lesson.questions.slice(1);
+    openQuestion(lesson.questions[0]);
+  };
+
+  const watchAgain = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    lastTimeRef.current = 0;
+    video.currentTime = 0;
+    video.play();
+  };
+
   const handleRewatch = () => {
     const block = lesson.blocks[activeQuestion.after_block - 1];
     pendingRef.current = [];
@@ -269,12 +306,18 @@ function Player({ lesson, gradeAnswer, initialFurthestSeconds = 0, onProgress })
             seekInFlightRef.current = true;
           }}
           onSeeked={handleSeeked}
-          onPlay={() => setPlaying(true)}
+          onPlay={() => {
+            setPlaying(true);
+            setEnded(false);
+          }}
           onPause={() => {
             setPlaying(false);
             reportProgress();
           }}
-          onEnded={reportProgress}
+          onEnded={() => {
+            reportProgress();
+            setEnded(true);
+          }}
           onLoadedMetadata={(event) => {
             setDuration(event.target.duration);
             // Resume at the furthest point watched; the seeked handler
@@ -374,6 +417,37 @@ function Player({ lesson, gradeAnswer, initialFurthestSeconds = 0, onProgress })
             </div>
           </div>
         )}
+
+        {ended && !activeQuestion && (
+          <div className={styles.endPanel} role="status" aria-label="Lesson finished">
+            <p className={styles.endTitle}>Lesson finished</p>
+            {reviewRemaining > 0 ? (
+              <>
+                <p className={styles.endText}>
+                  {reviewRemaining} review question
+                  {reviewRemaining === 1 ? " is" : "s are"} still unanswered in
+                  this lesson.
+                </p>
+                <button
+                  type="button"
+                  className={styles.submit}
+                  onClick={askReviewQuestions}
+                >
+                  Answer the review questions
+                </button>
+              </>
+            ) : nextStep ? (
+              <Link className={styles.endLink} to={nextStep.to}>
+                {nextStep.label}
+              </Link>
+            ) : (
+              <p className={styles.endText}>End of this lesson.</p>
+            )}
+            <button type="button" className={styles.rewatch} onClick={watchAgain}>
+              Watch again
+            </button>
+          </div>
+        )}
       </div>
 
       <div
@@ -404,6 +478,15 @@ function Player({ lesson, gradeAnswer, initialFurthestSeconds = 0, onProgress })
           aria-label={playing ? "Pause" : "Play"}
         >
           {playing ? "Pause" : "Play"}
+        </button>
+        <button
+          type="button"
+          className={styles.control}
+          onClick={() => seekTo(videoRef.current.currentTime - REWIND_SECONDS)}
+          disabled={Boolean(activeQuestion)}
+          aria-label={`Rewind ${REWIND_SECONDS} seconds`}
+        >
+          Rewind {REWIND_SECONDS} s
         </button>
         <span className={styles.time}>
           {formatTime(currentTime)} / {formatTime(duration)}

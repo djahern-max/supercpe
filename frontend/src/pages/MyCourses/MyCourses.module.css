@@ -4,38 +4,9 @@
   padding: var(--space-xl) var(--space-lg);
 }
 
-.header {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-lg);
-}
-
 .heading {
-  margin: 0;
+  margin: 0 0 var(--space-lg);
   font-size: 1.75rem;
-}
-
-.spacer {
-  flex: 1;
-}
-
-.who {
-  color: var(--color-text-muted);
-  font-size: 0.875rem;
-}
-
-.signOut {
-  border: none;
-  background: none;
-  color: var(--color-accent);
-  font-size: 0.875rem;
-  cursor: pointer;
-  padding: 0;
-}
-
-.signOut:hover {
-  text-decoration: underline;
 }
 
 .muted {
@@ -139,15 +110,5 @@
 }
 
 .footerLink a:hover {
-  text-decoration: underline;
-}
-
-.accountLink {
-  color: var(--color-accent);
-  font-size: 0.875rem;
-  text-decoration: none;
-}
-
-.accountLink:hover {
   text-decoration: underline;
 }
