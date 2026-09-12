@@ -5,10 +5,13 @@ import { ApiError } from "../../api/client";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { formatUsd } from "../../constants/money";
 import styles from "./AdminPayments.module.css";
+import { stripeDashboardUrl } from "./stripeDashboard";
 
 // The money's paper trail (018). A refund never unwinds access by
 // itself: the flagged rows are the queue of refund-policy decisions, and
 // the guarded Void button is the "access ends" answer.
+// 026: a test-mode row (Stripe's `livemode` false) gets a quiet marker
+// and a dashboard link into the sandbox (stripeDashboard.js).
 function AdminPayments() {
   const { refresh: refreshSession } = useSession();
   const [payments, setPayments] = useState(null);
@@ -121,7 +124,7 @@ function AdminPayments() {
                   <td className={styles.stripeIds}>
                     {payment.stripe_payment_intent_id ? (
                       <a
-                        href={`https://dashboard.stripe.com/payments/${payment.stripe_payment_intent_id}`}
+                        href={stripeDashboardUrl(payment)}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -130,6 +133,14 @@ function AdminPayments() {
                     ) : (
                       <span title={payment.stripe_checkout_session_id}>
                         {payment.stripe_checkout_session_id.slice(0, 18)}…
+                      </span>
+                    )}
+                    {payment.livemode === false && (
+                      <span
+                        className={styles.testMarker}
+                        title="A Stripe test-mode transaction, as Stripe reported it"
+                      >
+                        Test
                       </span>
                     )}
                   </td>

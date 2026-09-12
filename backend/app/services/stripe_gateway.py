@@ -28,14 +28,16 @@ class WebhookSignatureError(Exception):
 @dataclass
 class CheckoutSession:
     """What superCPE keeps of a created Checkout Session: the id, where
-    to send the participant, and the amount/currency exactly as Stripe
-    reported them back."""
+    to send the participant, the amount/currency exactly as Stripe
+    reported them back, and (026) whether Stripe says the session is a
+    live-mode one."""
 
     id: str
     url: str
     payment_intent_id: str | None
     amount_cents: int
     currency: str
+    livemode: bool | None
 
 
 def create_checkout_session(
@@ -85,6 +87,7 @@ def create_checkout_session(
         payment_intent_id=session["payment_intent"],
         amount_cents=session["amount_total"],
         currency=session["currency"],
+        livemode=session.get("livemode"),
     )
 
 

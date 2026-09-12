@@ -71,7 +71,13 @@ def launch_findings(db: Session) -> list[Finding]:
     published, and made available" before participants arrive). Block
     findings here are exactly what `site.site_open_blockers` refuses the
     open flip with; warn findings are reported beside them."""
-    from app.config import EMAIL_VARS, STRIPE_VARS, settings
+    from app.config import (
+        EMAIL_VARS,
+        STRIPE_LIVE_KEY_PREFIXES,
+        STRIPE_VARS,
+        settings,
+        stripe_non_live_key_vars,
+    )
     from app.constants.evaluation import EVALUATION_REVIEW_DAYS
     from app.services import courses as courses_module
     from app.services import disclosure
@@ -123,6 +129,28 @@ def launch_findings(db: Session) -> list[Finding]:
                 ),
             )
         )
+    # 026: the flip is the moment test keys become dangerous — an open
+    # catalog on sandbox keys takes nobody's money and issues real
+    # enrollments. Prefix check only (sk_live_ / pk_live_), never a call
+    # to Stripe. STRIPE_WEBHOOK_SECRET has no live/test prefix and cannot
+    # be checked this way; the runbook's swap step is the control for it,
+    # so its absence here is deliberate, not an oversight.
+    else:
+        for var in stripe_non_live_key_vars(settings):
+            findings.append(
+                Finding(
+                    code="payments_test_keys",
+                    level="block",
+                    message=(
+                        f"{var} is not a live Stripe key "
+                        f"(expected the {STRIPE_LIVE_KEY_PREFIXES[var]} "
+                        "prefix); an open site must charge real cards "
+                        "(026). Swap all three STRIPE_* settings to the "
+                        "live values in one edit, the webhook signing "
+                        "secret included."
+                    ),
+                )
+            )
     item_of = {"registration": 8, "refund": 9, "complaint": 10}
     for kind in policies_service.missing_kinds(db):
         findings.append(

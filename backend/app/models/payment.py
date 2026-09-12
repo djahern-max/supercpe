@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -57,6 +58,15 @@ class Payment(Base):
     status: Mapped[str] = mapped_column(
         String, nullable=False, default="pending", server_default="pending"
     )
+    # 026: Stripe's own `livemode` on the Checkout Session, stored as
+    # reported when the session is created and re-stamped from the
+    # completion event — never inferred from the key prefix, the same
+    # rule as amount and currency. A test transaction is then
+    # permanently and honestly distinguishable in the record without
+    # anything being deleted, which is what 9.02's never-delete posture
+    # requires of us. Recorded and displayed, never branched on. Null
+    # only on rows that predate the column (none exist in production).
+    livemode: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

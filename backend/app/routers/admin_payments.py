@@ -42,6 +42,7 @@ def _payment_out(db: Session, payment: Payment) -> AdminPaymentOut:
         status=payment.status,
         stripe_checkout_session_id=payment.stripe_checkout_session_id,
         stripe_payment_intent_id=payment.stripe_payment_intent_id,
+        livemode=payment.livemode,
         created_at=payment.created_at,
         updated_at=payment.updated_at,
         enrollment_id=enrollment.id if enrollment else None,

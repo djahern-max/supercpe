@@ -53,6 +53,10 @@ def stripe_boundary(monkeypatch):
             payment_intent_id=None,
             amount_cents=kwargs["price_cents"],
             currency=kwargs["currency"],
+            # 026: as Stripe would report it on a sandbox session — the
+            # conftest keys are live-shaped, so a row that reads False
+            # proves the value came from the object, not the key prefix.
+            livemode=False,
         )
 
     def fake_verify_webhook(payload, signature_header):
@@ -537,13 +541,17 @@ def test_status_endpoint_is_owner_only(
 # --- mode matrix and the open gate -------------------------------------------
 
 
-def test_018_routes_404_anonymously_in_coming_soon(client, db_session):
-    """Acceptance 5, beyond the 015 router walk in test_site (which
-    covers these routes by construction): the three 018 routes answer
-    404 to anonymous requests while the site is coming_soon."""
+def test_018_routes_404_anonymously_in_coming_soon(
+    client, db_session, stripe_boundary
+):
+    """018's acceptance 5, as 026 reversed it for one route: checkout
+    and the status endpoint still answer 404 to anonymous requests while
+    the site is coming_soon; the webhook now answers as it does at open —
+    a bare 400 for anything unsigned — so the transport can be proven
+    before the flip. The full both-modes proof is the 026 tests below."""
     assert client.post(CHECKOUT_URL, json={"course_code": "GOLD"}).status_code == 404
     assert client.get(f"{CHECKOUT_URL}/cs_x/status").status_code == 404
-    assert client.post(WEBHOOK_URL, content=b"{}").status_code == 404
+    assert client.post(WEBHOOK_URL, content=b"{}").status_code == 400
 
 
 def test_open_gate_refuses_without_stripe_config_and_passes_with_it(
@@ -580,3 +588,217 @@ def boot_violations_for(**overrides):
     from app.config import boot_violations
 
     return boot_violations(make_settings(**overrides))
+
+
+# --- 026: the webhook answers in both modes; live keys required to open ---
+
+
+UNSIGNED_EVENT = {
+    "id": "evt_x",
+    "type": "checkout.session.completed",
+    "data": {"object": {}},
+}
+
+
+def open_site_as_admin(client):
+    login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
+    open_the_site(client)
+    client.cookies.clear()
+
+
+def test_unsigned_webhook_is_refused_identically_in_both_modes(
+    client, db_session, admin_account, stripe_boundary
+):
+    """026 acceptance 2: the refusal an unsigned request gets while
+    coming_soon is byte-identical to the one it gets at open — same
+    status, same body, no hint, no reason, no route name."""
+    closed = [
+        post_webhook(client, UNSIGNED_EVENT, signature=signature)
+        for signature in ("", "t=1,v1=wrong")
+    ]
+    make_published_course(db_session)
+    open_site_as_admin(client)
+    opened = [
+        post_webhook(client, UNSIGNED_EVENT, signature=signature)
+        for signature in ("", "t=1,v1=wrong")
+    ]
+    for before, after in zip(closed, opened):
+        assert before.status_code == 400
+        assert (before.status_code, before.content) == (
+            after.status_code,
+            after.content,
+        )
+    assert db_session.query(StripeWebhookEvent).count() == 0
+
+
+def test_signed_webhook_is_processed_identically_in_both_modes(
+    client, db_session, admin_account, stripe_boundary
+):
+    """026 acceptance 2, the other half: a signed completion event
+    posted anonymously while coming_soon marks the payment paid and
+    creates the one enrollment exactly as it does at open, and the two
+    responses are byte-identical. Checkout itself already worked in
+    coming_soon for a signed-in participant (the gate passes on any
+    session); only the sessionless webhook needed the exemption."""
+    make_published_course(db_session, "GOLD")
+    make_published_course(db_session, "SILVER")
+    participant = make_participant(db_session)
+    login(client, PARTICIPANT_EMAIL, PARTICIPANT_PASSWORD)
+
+    started = start_checkout(client, "GOLD")
+    assert started.status_code == 201, started.json()
+    closed_payment = db_session.get(Payment, started.json()["payment_id"])
+    client.cookies.clear()  # Stripe has no session
+    closed = post_webhook(client, completed_event(closed_payment, "evt_closed"))
+    db_session.refresh(closed_payment)
+    assert closed.status_code == 200
+    assert closed_payment.status == "paid"
+    [enrollment] = enrollments_service.list_for_account(db_session, participant)
+    assert enrollment.course_id == closed_payment.course_id
+    assert enrollment.expires_at - enrollment.enrolled_at == timedelta(days=365)
+
+    open_site_as_admin(client)
+    login(client, PARTICIPANT_EMAIL, PARTICIPANT_PASSWORD)
+    started = start_checkout(client, "SILVER")
+    open_payment = db_session.get(Payment, started.json()["payment_id"])
+    client.cookies.clear()
+    opened = post_webhook(client, completed_event(open_payment, "evt_open"))
+    db_session.refresh(open_payment)
+    assert open_payment.status == "paid"
+    assert (closed.status_code, closed.content) == (
+        opened.status_code,
+        opened.content,
+    )
+    db_session.expire_all()
+    assert len(enrollments_service.list_for_account(db_session, participant)) == 2
+
+
+def test_webhook_responses_carry_no_course_fact_in_either_mode(
+    client, db_session, admin_account, stripe_boundary
+):
+    """026 acceptance 3, in the spirit of 003/015/016: nothing the
+    webhook answers — refused or processed, closed or open — names a
+    course title, code, price, credit figure, or the Registry."""
+    course, _ = make_published_course(db_session)
+    participant = make_participant(db_session)
+    facts = [
+        course.title,
+        course.course_code,
+        str(course.price_cents),
+        f"{course.price_cents // 100}.{course.price_cents % 100:02d}",
+        str(course.credit_award),
+        "National Registry",
+        "national_registry",
+        participant.email,
+    ]
+    assert all(facts), facts
+
+    responses = []
+    for mode in ("coming_soon", "open"):
+        if mode == "open":
+            open_site_as_admin(client)
+        login(client, PARTICIPANT_EMAIL, PARTICIPANT_PASSWORD)
+        started = start_checkout(client)
+        payment = db_session.get(Payment, started.json()["payment_id"])
+        client.cookies.clear()
+        responses.append(post_webhook(client, UNSIGNED_EVENT, signature=""))
+        responses.append(
+            post_webhook(client, completed_event(payment, f"evt_{mode}"))
+        )
+        responses.append(
+            post_webhook(client, completed_event(payment, f"evt_{mode}"))
+        )  # the replay
+        responses.append(post_webhook(client, refund_event(payment, f"evt_refund_{mode}")))
+        # An enrollment now blocks a second purchase of the same course
+        # at open; void it so the open-mode pass can buy again.
+        db_session.refresh(payment)
+        [enrollment] = [
+            e
+            for e in enrollments_service.list_for_account(db_session, participant)
+            if enrollments_service.status(e) == "active"
+        ]
+        enrollments_service.void(db_session, enrollment, admin_account)
+    assert len(responses) == 8
+    for response in responses:
+        for fact in facts:
+            assert fact not in response.text, (fact, response.text)
+
+
+def test_livemode_is_recorded_from_stripe_never_inferred(
+    client, db_session, admin_account, stripe_boundary
+):
+    """026 acceptance 6: the conftest keys are live-shaped, yet the row
+    reads False because that is what the (stubbed) session and event
+    reported — stored at checkout, re-stamped from the completion
+    event, shown on /admin/payments, and never branched on."""
+    open_shop(client, db_session)
+    started = start_checkout(client)
+    payment = db_session.get(Payment, started.json()["payment_id"])
+    assert payment.status == "pending"
+    assert payment.livemode is False
+
+    event = completed_event(payment)
+    event["data"]["object"]["livemode"] = False
+    assert post_webhook(client, event).status_code == 200
+    db_session.refresh(payment)
+    assert payment.status == "paid"
+    assert payment.livemode is False
+
+    client.cookies.clear()
+    login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
+    [row] = client.get(ADMIN_PAYMENTS_URL).json()
+    assert row["livemode"] is False
+    assert row["status"] == "paid"
+
+
+def test_completion_event_restamps_livemode_from_the_object(
+    client, db_session, admin_account, stripe_boundary
+):
+    open_shop(client, db_session)
+    started = start_checkout(client)
+    payment = db_session.get(Payment, started.json()["payment_id"])
+    assert payment.livemode is False
+    event = completed_event(payment)
+    event["data"]["object"]["livemode"] = True
+    assert post_webhook(client, event).status_code == 200
+    db_session.refresh(payment)
+    assert payment.livemode is True
+
+    # An event that carries no livemode at all leaves the record alone
+    # rather than guessing.
+    course, _ = make_published_course(db_session, "SILVER")
+    started = start_checkout(client, "SILVER")
+    payment = db_session.get(Payment, started.json()["payment_id"])
+    event = completed_event(payment, "evt_no_livemode")
+    assert "livemode" not in event["data"]["object"]
+    assert post_webhook(client, event).status_code == 200
+    db_session.refresh(payment)
+    assert payment.livemode is False
+
+
+@pytest.mark.parametrize(
+    "var, test_value",
+    [
+        ("stripe_secret_key", "sk_test_x"),
+        ("stripe_publishable_key", "pk_test_x"),
+    ],
+)
+def test_open_gate_refuses_test_keys_naming_the_variable(
+    client, db_session, admin_account, admin_headers, monkeypatch, var, test_value
+):
+    """026 acceptance 4: coming_soon -> open is refused while either
+    prefixed key is not a live key, naming the variable in the 422
+    errors shape; with live-shaped keys (the conftest dummies) the same
+    flip succeeds. The check is never weakened to fit the fixtures."""
+    make_published_course(db_session)
+    monkeypatch.setattr(settings, var, test_value)
+    refused = client.put(SITE_MODE_URL, json={"site_mode": "open"})
+    assert refused.status_code == 422
+    errors = refused.json()["errors"]
+    assert any(
+        var.upper() in e and "not a live Stripe key" in e for e in errors
+    ), errors
+    # Not double-reported as "not configured": the keys are all set.
+    assert not any("Stripe is not configured" in e for e in errors)
+    monkeypatch.undo()
+    open_the_site(client)

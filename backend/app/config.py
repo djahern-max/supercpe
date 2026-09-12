@@ -53,6 +53,17 @@ STRIPE_VARS = (
     "STRIPE_WEBHOOK_SECRET",
 )
 
+# 026: what a live Stripe key looks like. Detection is by prefix and
+# nothing else — asking Stripe from inside a config validator would be
+# a new failure mode for no gain. `STRIPE_WEBHOOK_SECRET` is absent on
+# purpose: signing secrets carry no live/test prefix (`whsec_` either
+# way), so the runbook's "swap all three in one edit" step is the only
+# control for it (docs/OPERATIONS.md, "Payments (018)").
+STRIPE_LIVE_KEY_PREFIXES = {
+    "STRIPE_SECRET_KEY": "sk_live_",
+    "STRIPE_PUBLISHABLE_KEY": "pk_live_",
+}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
@@ -119,6 +130,20 @@ class Settings(BaseSettings):
 
 class ConfigurationError(RuntimeError):
     pass
+
+
+def stripe_non_live_key_vars(settings: Settings) -> list[str]:
+    """The prefixed Stripe variables whose value is not a live key —
+    a test key, or nothing at all. Empty until the site opens: test keys
+    are the right keys for proving the transport while coming_soon
+    (026), and become dangerous only at the flip. Read by the open gate
+    (readiness.launch_findings) and by `preflight` on an already-open
+    site; never at boot, so a closed site with test keys still runs."""
+    return [
+        var
+        for var, prefix in STRIPE_LIVE_KEY_PREFIXES.items()
+        if not getattr(settings, var.lower()).startswith(prefix)
+    ]
 
 
 def boot_violations(settings: Settings) -> list[str]:

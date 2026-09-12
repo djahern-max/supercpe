@@ -59,6 +59,13 @@
   color: var(--color-accent);
 }
 
+/* 026: the test-mode marker is information, not an alarm. */
+.testMarker {
+  margin-left: var(--space-xs);
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
 .voidButton {
   padding: 0.25rem 0.6rem;
   border: 1px solid var(--color-error);

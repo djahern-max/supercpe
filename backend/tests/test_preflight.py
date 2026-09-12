@@ -6,10 +6,13 @@ never a duplicate of the rules."""
 
 import pytest
 from moto import mock_aws
+from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.orm import sessionmaker
 
 import app.storage
 from app import cli
 from app.config import settings
+from app.services.sponsor import get_profile
 from app.storage import SpacesStorage
 
 BUCKET = "supercpe-test"
@@ -26,6 +29,14 @@ PROD_OK = dict(
     spaces_key="DO00EXAMPLEKEY",
     spaces_secret="s" * 43,
 )
+
+
+@pytest.fixture(autouse=True)
+def cli_db(monkeypatch, test_engine, db_session):
+    """026: preflight reads site_mode through the CLI's own session
+    factory; point it at the test database (and truncate after, via
+    db_session) so no test reads the developer's dev database."""
+    monkeypatch.setattr(cli, "SessionLocal", sessionmaker(bind=test_engine))
 
 
 @pytest.fixture
@@ -110,3 +121,70 @@ def test_deploy_script_runs_preflight_before_migrations():
     preflight_at = script.index("python -m app.cli preflight")
     migrate_at = script.index("alembic upgrade head")
     assert preflight_at < migrate_at
+
+
+# --- 026: test keys on an already-open site ---------------------------------
+
+
+def set_site_mode(db_session, mode):
+    profile = get_profile(db_session)
+    profile.site_mode = mode
+    db_session.commit()
+
+
+def test_preflight_fails_on_an_open_site_with_test_keys(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    """026 acceptance 5: the regression guard for deploying test keys
+    onto a site that is already open — a refused deploy, naming the
+    variable, with the old version still serving."""
+    enable_versioning(spaces)
+    set_site_mode(db_session, "open")
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    assert cli.preflight() == 1
+    err = capsys.readouterr().err
+    assert "STRIPE_SECRET_KEY" in err
+    assert "not a live Stripe key" in err
+    assert "STRIPE_PUBLISHABLE_KEY" not in err
+
+
+def test_preflight_passes_an_open_site_with_live_keys(
+    prod_settings, spaces, db_session, capsys
+):
+    enable_versioning(spaces)
+    set_site_mode(db_session, "open")
+    assert cli.preflight() == 0
+    assert "preflight ok" in capsys.readouterr().out
+
+
+def test_preflight_is_silent_about_test_keys_while_coming_soon(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    """Sandbox keys on a closed site are correct, not a regression: that
+    is exactly how the transport is proven before the flip."""
+    enable_versioning(spaces)
+    set_site_mode(db_session, "coming_soon")
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    monkeypatch.setattr(settings, "stripe_publishable_key", "pk_test_x")
+    assert cli.preflight() == 0
+    out = capsys.readouterr()
+    assert "STRIPE" not in out.err
+
+
+def test_preflight_skips_the_live_key_check_when_site_mode_is_unreadable(
+    prod_settings, spaces, monkeypatch, capsys
+):
+    """deploy.sh runs preflight before `alembic upgrade head`, so on a
+    first deploy the table does not exist yet; that is a note, not a
+    refusal — there is no open site to protect."""
+    enable_versioning(spaces)
+
+    def no_table(db):
+        raise ProgrammingError(
+            "SELECT 1", {}, Exception("relation sponsor_profile does not exist")
+        )
+
+    monkeypatch.setattr(cli.site_service, "get_site_mode", no_table)
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_x")
+    assert cli.preflight() == 0
+    assert "site_mode could not be read" in capsys.readouterr().out

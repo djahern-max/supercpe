@@ -2669,3 +2669,167 @@ Shipped: 2026-09-11
   `SiteProvider`; nothing enforces the order beyond `App.jsx`.
 - No frontend change to `frontend/dist/`; the build for the screenshot
   went to a scratch directory.
+
+## 026 — Prove Stripe against production before the flip
+
+Shipped: 2026-09-11
+
+**What changed**
+- Webhook exemption: `POST /api/v1/stripe/webhook` no longer sits behind
+  `require_site_open_or_session`. The router-level dependency in
+  `backend/app/routers/stripe_webhook.py` is gone and the route is
+  allowlisted by name in 015's `INTENTIONALLY_PUBLIC`
+  (`backend/tests/test_site.py`) with the argument in two sentences.
+  **This feature touches the allowlist. That is a deliberate reversal
+  of a deliberate decision** — 018's acceptance item 5, "router walk
+  green, allowlist untouched". Behavior is otherwise unchanged: an
+  unsigned request gets the same 400 `{"detail": "Invalid webhook
+  signature"}` in both modes; no hint, reason, or route name was added.
+- Live keys required to open: `stripe_non_live_key_vars` and
+  `STRIPE_LIVE_KEY_PREFIXES` in `backend/app/config.py` (prefix check,
+  `sk_live_` / `pk_live_`, never a call to Stripe). The open gate gained
+  the `payments_test_keys` block finding (`launch_findings` in
+  `backend/app/services/readiness.py`), one per offending variable, in
+  the existing 422 `{"errors": [...]}` shape; it fires only when all
+  three STRIPE_* values are set, so it never doubles
+  `payments_not_configured`. `preflight` (`backend/app/cli.py`) reads
+  `site_mode` through the CLI's own session and fails when the site is
+  already `open` and either key is not live-prefixed, naming the
+  variable — a refused deploy with the old version serving. When
+  `site_mode` cannot be read (first deploy: preflight runs before
+  `alembic upgrade head`, so the table does not exist) it prints a note
+  and skips; there is no open site to protect. Boot is untouched: a
+  closed site on test keys runs on purpose.
+- `payments.livemode`, nullable boolean, migration `b7e3f9c2a815`.
+  Set from Stripe's Checkout Session object at `start_checkout` (the
+  gateway's `CheckoutSession` gained `livemode`) and re-stamped from the
+  completion event's object (`_handle_completed`), never inferred from
+  the key prefix — the rule 018 applied to amount and currency. No
+  backfill; rows predating the column keep null (none in production).
+  Recorded and displayed, never branched on. Docstring says exactly
+  that a test transaction is thereby permanently and honestly
+  distinguishable without anything being deleted (9.02).
+- Admin: `AdminPaymentOut` carries `livemode`; `/admin/payments` shows a
+  quiet muted "Test" marker beside the Stripe id on `livemode = false`
+  rows, and the dashboard link goes to
+  `https://dashboard.stripe.com/test/payments/…` for them
+  (`frontend/src/pages/AdminPayments/stripeDashboard.js`); live and
+  null rows link as before. New `AdminPayments.test.jsx` (3 tests).
+- `docs/OPERATIONS.md` "Payments (018)" rewritten as the section 018
+  specified and never got: account creation as the LLC, statement
+  descriptor = `sponsor_profile.name` and why, restricted-key scopes
+  named concretely (Checkout Sessions write; Payment Intents, Charges,
+  Refunds read), the webhook registered **twice** with the bold warning
+  that the two endpoints have different signing secrets and
+  `STRIPE_WEBHOOK_SECRET` must be swapped in the same edit as the keys,
+  the 10-step production verification run with its log table, the
+  refund runbook stating plainly that the flag is not a bug, and what
+  preflight and the open gate each refuse with the message each gives.
+  Opening day step 4 now says the transport was proven in advance and
+  what remains is the key swap plus one live smoke purchase (step 8).
+- Test env: conftest's dummy keys are now `sk_live_dummy` /
+  `pk_live_dummy`; the refusal tests swap in test-shaped ones. The
+  check was not weakened to fit the fixtures.
+- Tests: 464 passing (11 new; 025 had 453). Router walk green with
+  exactly one allowlist addition. Unsigned webhook refused
+  byte-identically in both modes; a signed completion processed
+  identically in both modes (payment paid, one enrollment, one-year
+  expiry, identical bodies); no webhook response in either mode carries
+  the course title, code, price in cents or dollars, credit figure,
+  participant email, or "National Registry"; `livemode` recorded from
+  the stubbed session as False under live-shaped keys, re-stamped from
+  the completion object, left alone when the event carries none, shown
+  on `/admin/payments`; open gate refuses each test-shaped key naming
+  it and passes with live-shaped ones; preflight fails on an open site
+  with a test key naming only that variable, passes open with live
+  keys, is silent while coming_soon, and skips with a note when
+  `site_mode` is unreadable. 018's "three routes 404 in coming_soon"
+  test was rewritten for the reversal: checkout and status still 404,
+  the webhook answers 400. Frontend: 30 passing (3 new).
+
+**Standards touched**
+- 9.02 — read in `docs/2026-Statement-on-Standards-for-CPE-Programs.pdf`
+  (page 22): "retain adequate documentation … for a minimum of five
+  years". The verification run leaves a real sandbox payment, refund,
+  and voided enrollment in production's tables; nothing deletes them,
+  and `livemode` is what lets them stay without being mistaken for
+  money. COMPLIANCE.md gained an update row on the 018 9.02 row saying
+  so, and recording that the run had not yet been performed.
+- 009's gate property ("a closed site does not advertise what is behind
+  it") — verified, not assumed: `require_site_open_or_session` refuses
+  with a bare 404 and protects course facts, prices, and the catalog's
+  existence from anonymous visitors. The webhook's two possible bodies
+  (`{"detail": "Invalid webhook signature"}` and `{"received": true}`)
+  carry none of that, which the new test pins in both modes. The
+  exemption reveals only that supercpe.com has a Stripe integration,
+  which the checkout redirect announces to every customer anyway. No
+  other protected property was found; the mechanism is per-router, so
+  removing the dependency from this one-route router exempts exactly
+  one route.
+
+**Decisions**
+- Recon (task 1), reported as found:
+  - The gate was applied at router level
+    (`APIRouter(dependencies=[Depends(require_site_open_or_session)])`)
+    on a router carrying only the webhook route.
+  - `INTENTIONALLY_PUBLIC` lives in `backend/tests/test_site.py` with
+    seven entries (health, site, login, logout, landing, waiting-list,
+    sitemap); the walk asserts every allowlisted route answers not-404
+    anonymously in `coming_soon` and every other route answers 401 or
+    404.
+  - Unsigned request before this feature: 400 `{"detail": "Invalid
+    webhook signature"}` at open, 404 `{"detail": "Not found"}` in
+    coming_soon.
+  - Preflight read only the env file, Spaces, and ffprobe — no DB value
+    — but it can reach the database: it runs from the api image against
+    the production env file, and `create-admin` on the same module
+    already uses `SessionLocal`. So the check went into preflight as
+    specified, not API boot; the first-deploy case (no tables yet) is
+    handled by the skip-with-note above.
+  - The gateway did not capture `livemode`; `verify_webhook` returned
+    the whole event dict (which carries it at the top level and on the
+    object), and `create_checkout_session` discarded it.
+  - Dashboard links were built for live mode only
+    (`https://dashboard.stripe.com/payments/{id}`); a test id 404s
+    there. Fixed to respect `livemode`.
+- `livemode` is stamped at checkout as well as at completion, so a
+  `pending` row is already honest about its mode; the completion event
+  re-stamps from the object, and an event with no `livemode` at all
+  leaves the value alone rather than guessing.
+- Prefix detection covers "empty" as well as "test-prefixed": on an
+  already-open site, preflight also refuses a blank key by name. The
+  open gate reaches that case through 018's `payments_not_configured`
+  first, so the two findings never both fire.
+- The CLI's session factory is monkeypatched to the test engine in
+  `test_preflight.py` (autouse) so no preflight test reads the
+  developer's dev database.
+- `stripeDashboardUrl` lives in its own module rather than beside the
+  component: oxlint's react-refresh rule flags non-component exports
+  from component files.
+
+**Known gaps**
+- **The task 6 verification run was not performed.** Acceptance 8 is
+  open. The build session had no Stripe sandbox keys (none in the local
+  `.env`), no dashboard access, no browser, and the droplet refused its
+  SSH key. The procedure is written in OPERATIONS.md with a log table
+  whose first line says "Not yet run"; when the operator runs it, the
+  date and outcome go there and in a new CHANGELOG entry, never by
+  editing this one.
+- Stripe disables webhook endpoints after sustained delivery failures;
+  the sandbox endpoint may be disabled by flip time if it sits idle and
+  failing. The runbook says to check its status, not assume it.
+- Nothing verifies that `STRIPE_WEBHOOK_SECRET` belongs to the same
+  mode as the keys. Candidate, not built: compare `livemode` on the
+  first received event against the key prefix and log loudly on
+  mismatch. The runbook's swap step is the only control.
+- The restricted-key scope list is the app's actual call surface plus
+  the reads the refund runbook wants; whether Stripe requires Products
+  write for inline `price_data` under a restricted key is recorded as
+  "if it refuses, add it" rather than asserted, because it was not
+  exercised.
+- ROADMAP.md's 018 line still says "every public route 404s in
+  coming_soon"; it is now true of every public route but the webhook.
+  Not edited: out of scope for this feature.
+- The `/admin/sponsor` launch-findings panel renders the new finding's
+  message through the existing generic list; no frontend change was
+  needed, and none was made.

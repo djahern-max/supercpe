@@ -151,6 +151,13 @@ INTENTIONALLY_PUBLIC = {
     # 022: the mode-aware sitemap — public in both modes on purpose, so
     # indexing can start while coming_soon; it lists only the root then.
     ("GET", "/api/v1/sitemap.xml"),
+    # 026: the Stripe webhook, the one deliberate reversal of 018's
+    # "allowlist untouched". It discloses nothing the gate protects — no
+    # course, price, participant, or credit figure; an unsigned request
+    # gets the same bare 400 in either mode and a signed one is Stripe's
+    # own. Answering while coming_soon is what lets the transport be
+    # proven against production with sandbox keys before the flip.
+    ("POST", "/api/v1/stripe/webhook"),
 }
 
 

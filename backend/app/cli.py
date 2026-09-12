@@ -52,8 +52,16 @@ import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from app.config import SPACES_VARS, ConfigurationError, boot_violations, settings
+from app.config import (
+    SPACES_VARS,
+    STRIPE_LIVE_KEY_PREFIXES,
+    ConfigurationError,
+    boot_violations,
+    settings,
+    stripe_non_live_key_vars,
+)
 from app.constants.storage import (
     BACKUP_NONCURRENT_DAYS,
     BACKUPS_PREFIX,
@@ -64,6 +72,7 @@ from app.constants.storage import (
 from app.db import SessionLocal
 from app.models.account import Account
 from app.services import auth as auth_service
+from app.services import site as site_service
 from app.services.auth import AuthRuleViolation
 from app.services.ffprobe import FfprobeNotFoundError, ensure_ffprobe_available
 from app.storage import SpacesStorage, ensure_bucket_versioning, get_storage
@@ -302,10 +311,30 @@ def bucket_setup() -> int:
     return run_bucket_setup(client, settings.spaces_bucket)
 
 
+def stored_site_mode() -> str | None:
+    """The site mode as the database holds it, or None when it cannot be
+    read. deploy.sh runs preflight before `alembic upgrade head`, so on
+    a first deploy the table does not exist yet, and an unreachable
+    database fails the migration step moments later on its own — either
+    way there is no open site to protect, and the caller says so rather
+    than refusing."""
+    db = SessionLocal()
+    try:
+        return site_service.get_site_mode(db)
+    except (OperationalError, ProgrammingError):
+        return None
+    finally:
+        db.close()
+
+
 def preflight() -> int:
     """Every check that would refuse boot, without booting: the 012
     config validations (same code path, every violation at once), the
-    013 versioning guard, and the 002 ffprobe requirement."""
+    013 versioning guard, and the 002 ffprobe requirement. Plus one
+    check that is not a boot refusal (026): an already-open site being
+    handed test Stripe keys. Boot must not refuse that — a closed site
+    runs on test keys on purpose — but a deploy should, with the old
+    version still serving."""
     violations = boot_violations(settings)
     spaces_configured = settings.storage_backend == "spaces" and all(
         getattr(settings, var.lower()) for var in SPACES_VARS
@@ -324,6 +353,26 @@ def preflight() -> int:
         ensure_ffprobe_available()
     except FfprobeNotFoundError as error:
         violations.append(str(error))
+
+    # 026: the open gate refuses test keys at the flip; this is the
+    # regression guard for the other direction — test keys deployed
+    # onto a site that is already open. Prefix check only.
+    site_mode = stored_site_mode()
+    if site_mode is None:
+        print(
+            "note: site_mode could not be read (no tables yet, or the "
+            "database is unreachable); the open-site live-key check was "
+            "skipped."
+        )
+    elif site_mode == "open":
+        for var in stripe_non_live_key_vars(settings):
+            violations.append(
+                f"{var} is not a live Stripe key (expected the "
+                f"{STRIPE_LIVE_KEY_PREFIXES[var]} prefix) and the site "
+                "is open: this deploy would put test keys on a live "
+                "catalog. Swap all three STRIPE_* settings to the live "
+                "values in one edit, the webhook signing secret included."
+            )
 
     if violations:
         print("preflight FAILED — the app would refuse to boot:", file=sys.stderr)

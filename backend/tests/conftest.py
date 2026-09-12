@@ -30,12 +30,15 @@ settings.email_password = "not-a-real-password"
 settings.email_from = "no-reply@supercpe.test"
 
 # 018: the launch gate likewise refuses coming_soon -> open without
-# complete Stripe config; dummy keys satisfy it. Every Stripe call in the
-# suite goes through the stubbed boundary (`stripe_boundary` in
+# complete Stripe config; dummy keys satisfy it. 026: the gate now also
+# refuses keys without the live prefix, so the dummies are live-shaped —
+# the check is never weakened to fit the fixtures; the tests that prove
+# the refusal swap in test-shaped keys. Every Stripe call in the suite
+# goes through the stubbed boundary (`stripe_boundary` in
 # test_payments.py) — nothing touches the network, and these keys could
 # not authenticate anywhere if one did.
-settings.stripe_secret_key = "sk_test_dummy"
-settings.stripe_publishable_key = "pk_test_dummy"
+settings.stripe_secret_key = "sk_live_dummy"
+settings.stripe_publishable_key = "pk_live_dummy"
 settings.stripe_webhook_secret = "whsec_dummy"
 
 

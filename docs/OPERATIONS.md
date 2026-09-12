@@ -491,51 +491,172 @@ browser landing on the success page proves nothing — so the webhook
 endpoint and its signing secret are load-bearing: without them, people
 pay and no enrollment appears.
 
-To configure payments:
+026 made the transport provable **before** the flip: the webhook route
+answers while the site is `coming_soon` (the one route exempt from the
+009 gate — it discloses nothing, and an unsigned request gets the same
+bare 400 in either mode), sandbox keys are valid config on a closed
+site, and two checks (below) make it impossible to open on them. Every
+payment row records Stripe's own `livemode`, so a sandbox transaction
+stays in the record, honestly marked, and is never deleted.
 
-1. Create the Stripe account (owner and credential location recorded
-   here when done, like email). In Stripe settings, enable **Successful
-   payments** customer emails — Stripe sends the receipt; superCPE
-   sends no payment email of its own.
-2. Create a **restricted** API key (not the full secret key) with write
-   access to Checkout Sessions only; that is all the app calls.
-3. Register the webhook endpoint
-   `https://supercpe.com/api/v1/stripe/webhook` in the Stripe dashboard
-   for the events `checkout.session.completed`,
-   `checkout.session.expired`, and `charge.refunded`, and capture its
-   signing secret (`whsec_…`).
-4. Set all three variables in the production env: `STRIPE_SECRET_KEY`
-   (the restricted key), `STRIPE_PUBLISHABLE_KEY`,
-   `STRIPE_WEBHOOK_SECRET`. All-or-nothing: a partial set refuses to
-   boot (`python -m app.cli preflight` catches it). Absent entirely is
-   valid only while the site is coming-soon.
-5. Test-mode end-to-end on the dev machine before trusting any of it:
-   put the test-mode keys in the local `.env`, run
-   `stripe listen --forward-to localhost:8000/api/v1/stripe/webhook`
-   (the CLI prints a test `whsec_…` — use it as
-   `STRIPE_WEBHOOK_SECRET`), buy a published course with card
-   `4242 4242 4242 4242`, and watch the success page flip to enrolled
-   when the forwarded webhook lands. `stripe trigger
-   checkout.session.completed` exercises the handler without a browser.
-6. The `coming_soon → open` flip **refuses** while any `STRIPE_*` is
-   unset (`payments_not_configured`) — an open catalog whose Enroll
-   buttons cannot reach Stripe would be lying. Publish likewise refuses
-   a course with no price (a business rule, not a Standards item).
+### Account and keys
 
-**Refund runbook.** Do the refund in the Stripe dashboard (there is no
-refund button in superCPE, deliberately). The `charge.refunded` webhook
-marks the payment `refunded`, and `/admin/payments` flags
-**refunded with active enrollment** loudly. Then decide per the
-published refund policy whether access ends: if it does, use **Void
-enrollment** on that row (logged — who and when are stamped on the
-enrollment; the participant's row and progress are kept, never
-deleted). Nothing voids automatically, because a refund after credit
-was earned or a certificate issued is a policy decision, not a
-mechanical one. Completed enrollments cannot be voided at all — the
+Recorded as the steps to execute, in order. Tick each with its date in
+the log at the end of this section when done.
+
+1. **Create the Stripe account** as the LLC: legal name and EIN exactly
+   as on the IRS letter, the registered business address, industry
+   "Education — professional training" (or the closest Stripe offers),
+   website `https://supercpe.com`. Record the account owner and where
+   the login lives in "Who and where" above. In Stripe settings enable
+   **Successful payments** customer emails — Stripe sends the receipt;
+   superCPE sends no payment email of its own.
+2. **Statement descriptor** = `sponsor_profile.name` exactly as
+   `/admin/sponsor` shows it (Stripe allows 5–22 characters, no
+   `< > ' " *`). A CPA who does not recognize the charge on a card
+   statement disputes it, and one dispute costs more than the course.
+   The descriptor must be the name they saw on the site and will see on
+   the certificate.
+3. **Keys.** Every Stripe account has a sandbox (test mode) beside live
+   mode, each with its own keys. `STRIPE_SECRET_KEY` is a **restricted**
+   key in both modes, never the full secret key. Create the live key
+   with exactly these scopes, so launch day is copy-work:
+   - Checkout Sessions — **Write** (what `create_checkout_session` calls)
+   - Payment Intents — **Read**
+   - Charges — **Read**
+   - Refunds — **Read**
+   - everything else — None
+
+   The three reads are for the dashboard-side look the refund runbook
+   asks for and cost nothing to grant. If Stripe refuses session
+   creation with a permissions error naming Products or Prices, add
+   Products **Write** — inline `price_data` creates them. The
+   publishable key (`pk_…`) is not secret and has no scopes.
+4. **Register the webhook endpoint — twice.** URL
+   `https://supercpe.com/api/v1/stripe/webhook`; events
+   `checkout.session.completed`, `checkout.session.expired`,
+   `charge.refunded`. Register it once in the **sandbox** (for the
+   verification run below) and again, separately, in **live mode** at
+   flip time. **They have different signing secrets. `STRIPE_WEBHOOK_SECRET`
+   must be swapped in the same edit as the two keys.** With live keys
+   and the sandbox secret, every live event fails signature
+   verification: the Stripe dashboard shows delivery attempts answered
+   400, the site shows nothing, and people who paid have no enrollment.
+   This is the single most likely launch-day failure, and no code can
+   catch it — signing secrets carry no live/test prefix. Before the
+   flip also check that Stripe has not **disabled** the sandbox
+   endpoint: Stripe disables endpoints after sustained delivery
+   failures, and one that sat idle-and-failing is the warning that the
+   live one can go the same way. The status is on the endpoint's
+   dashboard page; do not assume it.
+5. **Set the three variables** in `/srv/supercpe/.env`:
+   `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`.
+   All-or-nothing: a partial set refuses to boot (preflight catches
+   it). Absent entirely is valid only while coming-soon. Sandbox values
+   are valid while coming-soon; live values are required to open.
+6. **Run the production verification** (below) with the sandbox values,
+   before the flip.
+7. **At the flip**, swap all three values to live in one edit, deploy,
+   open the site, and make the one live smoke purchase (Opening day
+   step 8).
+
+### What refuses what (026)
+
+Two checks, two questions. Detection is by key prefix only
+(`sk_live_` / `pk_live_`); nothing calls Stripe from a validator.
+
+- **The open gate.** `coming_soon → open` is refused — 422
+  `{"errors": [...]}`, shown on `/admin/sponsor` as the
+  `payments_test_keys` block finding — while `STRIPE_SECRET_KEY` does
+  not start with `sk_live_` or `STRIPE_PUBLISHABLE_KEY` with `pk_live_`.
+  One message per offending variable:
+
+      STRIPE_SECRET_KEY is not a live Stripe key (expected the sk_live_
+      prefix); an open site must charge real cards (026). Swap all three
+      STRIPE_* settings to the live values in one edit, the webhook
+      signing secret included.
+
+  018's `payments_not_configured` finding still fires instead when any
+  of the three is unset. This is the check that matters: the flip is
+  the moment test keys become dangerous.
+- **Preflight.** `python -m app.cli preflight` — run by `deploy.sh`
+  before migrations, old version still serving — fails when the site is
+  **already open** and either key is not live-prefixed:
+
+      STRIPE_SECRET_KEY is not a live Stripe key (expected the sk_live_
+      prefix) and the site is open: this deploy would put test keys on a
+      live catalog. Swap all three STRIPE_* settings to the live values
+      in one edit, the webhook signing secret included.
+
+  So the failure mode is a refused deploy, not an outage. While
+  coming-soon it says nothing about keys. If it cannot read `site_mode`
+  (first deploy, no tables yet) it prints a note and skips — there is
+  no open site to protect.
+- **Neither checks `STRIPE_WEBHOOK_SECRET`.** It cannot be checked by
+  prefix; step 4's swap rule is the control. A cheap future check would
+  compare `livemode` on the first received event against the key
+  prefix and log loudly on mismatch; noted, not built.
+
+### Production verification run (026)
+
+An operator procedure, not a test: a complete sandbox checkout against
+the live server — real DNS, real TLS, real Caddy routing, real
+signature verification — while `site_mode` is still `coming_soon`.
+Nothing about the transport needs live money.
+
+1. `/srv/supercpe/.env` gains the three **sandbox** values. Site stays
+   `coming_soon`.
+2. Deploy. Preflight passes — the site is not open, so the live-key
+   check is silent.
+3. Register the sandbox webhook endpoint at the production URL (step 4
+   above). Send a test event from the dashboard. Expect **200**, not 404;
+   an unsigned probe (`curl -X POST https://supercpe.com/api/v1/stripe/webhook`)
+   answers 400 `{"detail":"Invalid webhook signature"}`.
+4. Sign in as a participant (any session passes the closed gate), buy a
+   published course with `4242 4242 4242 4242`.
+5. Confirm on `/admin/payments`: the row goes `pending → paid` and shows
+   the **Test** marker (`livemode = false`); exactly one enrollment
+   exists with a one-year expiry; `/purchase/success` stops polling and
+   links to the player.
+6. Replay the event from the dashboard. Nothing changes (idempotent by
+   event id).
+7. Refund in Stripe. The payment goes `refunded`, the enrollment
+   survives, the refunded-with-active-enrollment flag appears. **The
+   flag is not a bug** — see the refund runbook.
+8. Void the test enrollment with the admin action. The payment row
+   stays: it is an honest record of a test transaction, and `livemode`
+   says so.
+9. Attempt `coming_soon → open` on `/admin/sponsor`. It **must refuse**,
+   naming `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` as not live.
+   This step is what proves 026 did both of its jobs.
+10. Remove the three values from `.env`, deploy, confirm `/health` green.
+    (Or leave the sandbox values in place until the flip; either is
+    valid while coming-soon.)
+
+Log — one line per run, newest last:
+
+| Date | Who | Outcome |
+| --- | --- | --- |
+| 2026-09-11 | — | **Not yet run.** 026 shipped the code and this procedure; the run needs the Stripe sandbox keys, the dashboard, a browser, and the droplet, none of which the build session had. Record the first run here and in a new CHANGELOG entry. |
+
+### Refund runbook
+
+Do the refund in the Stripe dashboard (there is no refund button in
+superCPE, deliberately). The `charge.refunded` webhook marks the payment
+`refunded`, and `/admin/payments` flags **refunded with active
+enrollment** loudly. **That flag is not a bug**: nothing voids
+automatically, because a refund after credit was earned or a
+certificate issued is a policy decision, not a mechanical one. Then
+decide per the published refund policy whether access ends: if it
+does, use **Void enrollment** on that row (logged — who and when are
+stamped on the enrollment; the participant's row and progress are kept,
+never deleted). Completed enrollments cannot be voided at all — the
 completion is an immutable 9.02 record.
 
 Payments rows are financial records: never deleted, not subject to the
-five-year CPE retention floor — they outlive it.
+five-year CPE retention floor — they outlive it. Test-mode rows
+(`livemode = false`, the quiet **Test** marker, dashboard link into the
+sandbox) are kept on the same terms; nothing hides or removes them.
 
 ## Certificate delivery (019)
 
@@ -630,8 +751,16 @@ its own section; this list only sequences them.
    policies each have a current version.
 3. **Email proven (017)**: SMTP configured, SPF/DKIM in place, and the
    admin test-send delivered — see Outbound email (017).
-4. **Stripe configured (018)**: restricted key, webhook registered with
-   its signing secret, test-mode walkthrough done — see Payments (018).
+4. **Stripe live keys (018/026)**: the transport — DNS, TLS, Caddy,
+   signature verification, the handler itself — was proven in advance
+   by the production verification run in Payments (018), on sandbox
+   keys, while still coming-soon; check its log has a dated pass. What
+   remains here is the key swap: all three `STRIPE_*` values to live in
+   **one edit** (the live endpoint's signing secret, not the sandbox
+   one), deploy, and a look at the sandbox endpoint's status for the
+   disabled warning. Step 8 is the one live smoke purchase. Preflight
+   and the open gate both refuse test keys, so a missed swap is a
+   refused flip, not a silent one.
 5. **Jurisdiction rows verified (020, optional)**: as far as intended —
    see Jurisdiction policies (020); the table showing nothing is a valid
    launch state.
@@ -639,9 +768,11 @@ its own section; this list only sequences them.
    site can open — no block-level findings.
 7. **The flip**: set site mode to `open` (logged, with a note). This
    closes the waiting list permanently.
-8. **Smoke test**: register a real account, buy the course in live mode,
-   confirm the enrollment appears; refund yourself per the refund
-   runbook in Payments (018) if desired.
+8. **Smoke test**: register a real account, buy the course in live mode
+   — the one live purchase; everything else was proven on sandbox keys
+   — confirm the enrollment appears and the row on `/admin/payments`
+   carries no Test marker; refund yourself per the refund runbook in
+   Payments (018) if desired.
 9. **Then** press **Send invitations** on `/admin/waiting-list` — only
    after the smoke test proved the pages the email links to.
 10. **Watch the failed column**: per-row Resend (or a second press of

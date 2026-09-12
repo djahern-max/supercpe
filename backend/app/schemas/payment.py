@@ -41,6 +41,10 @@ class AdminPaymentOut(BaseModel):
     status: str
     stripe_checkout_session_id: str
     stripe_payment_intent_id: str | None
+    # 026: as Stripe reported it; false is a test transaction, null a row
+    # older than the column. Displayed (a quiet marker, and the dashboard
+    # link opens the matching mode), never branched on.
+    livemode: bool | None
     created_at: datetime
     updated_at: datetime
     # Derived: the enrollment this payment created, when one exists.

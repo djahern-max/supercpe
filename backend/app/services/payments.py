@@ -155,6 +155,7 @@ def start_checkout(db: Session, account: Account, course: Course) -> Payment:
     # As Stripe reported them, not as superCPE asked.
     payment.amount_cents = session.amount_cents
     payment.currency = session.currency
+    payment.livemode = session.livemode
     db.commit()
     return payment
 
@@ -286,6 +287,11 @@ def _handle_completed(db: Session, event: dict) -> None:
         payment.amount_cents = session_obj["amount_total"]
     if session_obj.get("currency"):
         payment.currency = session_obj["currency"]
+    # 026: Stripe's word on whether this was a live-mode session, from
+    # the object itself (every event also carries it at the top level).
+    livemode = session_obj.get("livemode", event.get("livemode"))
+    if livemode is not None:
+        payment.livemode = livemode
     _record_event(db, event)
     try:
         enrollments_service.enroll(
