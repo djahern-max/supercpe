@@ -3926,3 +3926,190 @@ Shipped: 2026-09-13
 - pyflakes still reports the pre-existing unused imports 030 listed
   (`app/routers/checkout.py`, `app/models/enrollment.py`, six test
   modules); oxlint's 12 remaining warnings are all on untouched files.
+
+## 031 — Free seeking on the video player, up to the next unanswered review question
+Shipped: 2026-09-13
+
+**What changed**
+- Task 0 (recon), answered before code was written:
+  1. **Review points.** `reviewPoints` in
+     `frontend/src/components/Player/Player.jsx`: a `useMemo` over
+     `lesson.questions`, each mapped to
+     `{ time: lesson.blocks[after_block - 1].end_seconds, question }`,
+     sorted by time. Unchanged.
+  2. **Answered state.** The enrollment play payload (`play_lesson` in
+     `backend/app/routers/my.py`, `MyPlayLesson`) carried no per-question
+     `answered`; the reader payload did — `ReaderQuestionOut.answered`
+     (`backend/app/schemas/reader.py`), set in `reader.build` from
+     `answered_keys`, which `read_lesson` in `my.py` derives as the
+     question keys whose `Question.id` is in
+     `enrollments.answers_by_question(db, enrollment)` (one
+     `review_answers` row per (enrollment, question), re-answer updates
+     the row). The video payload now uses the same dict.
+  3. **Preview identity.** Preview review answers are not persisted
+     anywhere: `grade_review` in `backend/app/routers/player.py` grades
+     and returns; 007's `X-Preview-Id` keys only preview *assessment*
+     attempts (`routers/assessment.py`). So the preview payload says
+     `answered: false` on every load and the player tracks answers in
+     component state for the session — which is what happened before.
+     The enrollment path uses the `review_answers` record.
+  4. **`furthest_seconds`.** Readers of the column: `record_progress`
+     (writer, monotonic) and `progress()` in
+     `backend/app/services/enrollments.py`; `play_lesson` and
+     `put_progress` in `routers/my.py`; `MyLessonProgress`,
+     `MyPlayLesson`, `ProgressUpdate`, `ProgressOut` in
+     `schemas/enrollment.py`; the participant instructions text
+     (`services/instructions.py`); `MyCourse.jsx` (the "m:ss / m:ss"
+     line) and `MyLesson.jsx` (`initialFurthestSeconds`) in the
+     frontend. Readers of the player's `furthest` state: none — only
+     `furthestRef` was read. **`lesson_done` (enrollments.py:423) does
+     derive a video lesson's `done` from `furthest_seconds` reaching
+     `duration_seconds - WATCHED_TOLERANCE_SECONDS`; a text lesson's
+     from `review_answered == review_total`.** Its docstring says it is
+     display only: nothing that gates the assessment, records a
+     completion, or reaches a certificate or the audit bundle reads it
+     (the gate is `assessment_available`). Reported, not changed — see
+     Known gaps for what the ceiling does to its meaning.
+  5. **The pinned refusal.** `Player.test.jsx` › "Player seeking (027)"
+     › "still refuses a forward seek past the furthest point watched".
+     Replaced by the eight seeking tests below, not deleted silently.
+  6. **The unused `furthest` state variable.** Gone as a consequence:
+     `furthest`/`setFurthest` were never read (only `furthestRef` was),
+     and nothing in the new player renders from it. oxlint's warning
+     count drops from 12 to 11.
+- Backend: `PlayQuestion` gains `answered: bool`
+  (`backend/app/schemas/player.py`). The enrollment route sets it from
+  `answers_by_question` — the reader's derivation, not a copy of it —
+  and the preview route sets `False` with the reason in a comment. No
+  migration. `walk_asserting_no_answer_key` still passes over both
+  payloads: `answered` is a fact about the participant's own record,
+  never the key.
+- Player (`Player.jsx`): `answeredKeys` (a Set seeded from the payload,
+  grown when a grade resolves), `ceilingPoint` (the earliest review
+  point not in it), `ceiling` (its time, else the media duration).
+  `seekTo` clamps to `[0, ceiling]` — bar click, arrow keys, Rewind, and
+  the new Forward all go through it. `handleSeeked` undoes a seek past
+  the ceiling to the ceiling and, when a seek lands on the ceiling (within
+  `SEEK_TOLERANCE_SECONDS`), snaps to it and asks its question through
+  the same `askQuestions(points)` the playback crossing detector now
+  calls — pause, queue the rest behind Continue, open the first. The
+  in-flight clamp stays on `seeked` (006's reason). Resume on
+  `loadedmetadata` seeks to `min(furthest, ceiling)`, so a reload past an
+  unanswered point lands on the point and asks. "Forward 15 s"
+  (`FORWARD_SECONDS`, beside `REWIND_SECONDS`) sits beside Rewind. Ticks
+  at answered review points take `tickAnswered` (the existing
+  `--color-success` token) and the title "Review question (answered)";
+  unanswered ticks are unchanged. `furthest_seconds` is still advanced
+  on `timeupdate` and reported as before; it gates nothing.
+- Tests: backend 557 → 559 (`test_player.py`: preview payload marks every
+  question unanswered even after a preview grade; enrollment payload
+  flips exactly the answered question after one `review_answers` row,
+  a wrong answer counting as answered). Frontend 127 → 133
+  (`Player.test.jsx` seeking: backward seek and Rewind kept; forward seek
+  past the first unanswered point clamps to it and asks; a forward seek
+  within the ceiling past `furthest` is honoured and ArrowRight landing on
+  the ceiling asks; Forward 15 s from 10 s lands on 25 s and keeps going,
+  from 35 s lands on 40 s and asks; after answering the first question a
+  seek to 60 s is honoured and a seek to 110 s clamps at 80 s with the
+  ticks reading answered/unanswered; every question answered on load →
+  a seek to 119 s honoured; resume with `furthest_seconds` 100 and the
+  second question unanswered lands on 80 s and asks; a wrong answer's
+  "Re-watch this section" seeks to the block start, resumes, and the
+  ceiling has moved on; the three 027 end-panel tests kept). `conftest.py`
+  now pins `google_client_id` and `google_preview_emails` to empty for the
+  suite — see Known gaps.
+- Docs: COMPLIANCE.md Notes edited on the 006 rows for 5.01.2, 5.01.2.1,
+  and 6.01 (no new rows) and on the 023 5.01.2.1 row, whose "The
+  video-only player keeps its lock" is now qualified.
+  `docs/decisions/2026-09-13-video-seek-ceiling.md` records the decision
+  alongside 023's text-first file.
+
+**Standards touched**
+- 5.01.2.1 — printed page 9 (the chart runs onto page 10). Placement is
+  unchanged; the ceiling is what guarantees each placed question is
+  presented before playback continues past it, which is all the
+  paragraph asks of the player. COMPLIANCE.md 5.01.2 and 5.01.2.1 Notes
+  updated.
+- 5.01.2.2 — printed page 10. Read to confirm nothing about feedback
+  moves; nothing does. COMPLIANCE.md not changed for it.
+- 6.01 — printed page 10. Completion verification is the review-answer
+  record plus the qualified assessment; playback position never was a
+  completion signal and is not one now. COMPLIANCE.md 6.01 Notes
+  updated.
+- 7.02.6–7.02.7 — not re-read for this feature (the spec's summary was
+  relied on): Method 2 credit is computed from measured inputs, not from
+  how a participant moves through the media; nothing here touches
+  credit.
+
+**Decisions**
+- **Reversal of 006's Decision** "Forward-seek prevention is a sponsor
+  design choice, not a Standards requirement (5.01.2.1 sets no such
+  rule), and is enforced only in the player", and of the 023 resolution
+  in `docs/decisions/2026-09-01-text-first.md` and ROADMAP.md ("relaxed
+  for supplemental clips, kept for the video-only player"). This is the
+  counterpart of 023's reader-clip decision, made for the video-only
+  player: the sponsor wants forward and backward controls and keeps the
+  one thing the lock protected — no placed review question can be
+  skipped. Asked for by the spec (CLAUDE.md rule 7).
+- **The ceiling is the earliest unanswered review point, not the
+  furthest watched.** Seeks never ask a question except when they land
+  on the ceiling; playback crossing any review point still asks it,
+  answered or not (006's behavior, and what the wrong-answer re-watch
+  flow relies on). The spec's Out of scope described "today's behavior"
+  as playing through an answered point without re-asking; the code has
+  re-asked on every crossing since 006, and that was left as it is —
+  changing it is out of scope by the spec's own list.
+- **A seek that lands on the ceiling asks through the playback path**:
+  one `askQuestions(points)` serves the crossing detector and the seeked
+  handler, so there is one way a question opens.
+- **Answered is marked when the grade resolves**, not on Continue: on
+  the enrollment path that is the moment the `review_answers` row
+  exists; in the preview, state is all there is.
+- **`answered` is required on `PlayQuestion`, not defaulted**, so both
+  serializers have to say it; the player treats a missing flag as false
+  for any older payload.
+- **Ticks got the answered variant** with the existing success token —
+  one CSS rule, not design work.
+- **`furthest_seconds` still advances only on `timeupdate`**, so a
+  forward seek followed by nothing does not move the resume point;
+  playing after it does.
+
+**Known gaps**
+- **Lesson `done` for a video lesson depends on `furthest_seconds`**
+  (`lesson_done`, Task 0.4). This feature did not change that derivation
+  — it is out of scope — but the ceiling changes what it means: once
+  every review question in a video lesson is answered, a participant can
+  seek to the end, the next `timeupdate` advances `furthest_seconds`
+  there, and the lesson reads "done" on the course page and in the
+  next-step derivation without having been played through. Before, only
+  playback (or the 027 reload-past-a-question case) could get there.
+  `done` is display and navigation only; the assessment gate,
+  completion, certificate, and audit bundle never read it. Whether a
+  video lesson's `done` should read from the review record, as a text
+  lesson's already does, is the operator's decision; recorded in the
+  decision file. Report, not build.
+- Acceptance 4 (the walkthrough on production with the ATO video lesson
+  after deploy): not yet run by the operator. Acceptance 2 and 3 (the
+  local browser walkthrough with a real video in the admin preview and
+  an enrollment) were not performed in the build session; the same
+  sequences are proven in `Player.test.jsx` against a jsdom media
+  element with the seek events fired by hand.
+- 027's end panel is unchanged: "Answer the review questions" still
+  re-asks every question in the lesson, though the payload now carries
+  the flag that would let it ask only the unanswered ones. With the
+  ceiling the panel's remaining-questions branch is reachable only when
+  a reload mid-question resumed past a review point, as 027 documents.
+- `conftest.py` did not pin the Google settings, so the suite's shape
+  depended on the developer's `.env`: with `GOOGLE_PREVIEW_EMAILS` set
+  locally (as the operator set it after 030a), three 030/030a tests
+  failed. Pinned here, alongside the email and Stripe pins. A 030a gap
+  closed in passing, not a 031 change.
+- ROADMAP.md's 023 note still reads "kept for the video-only player";
+  it is a historical note, not a rule, and was not edited.
+- Out of scope, reported not built: reader clips, the assessment,
+  grading or feedback wording, `review_answers` or `lesson_progress`
+  changes, skip-to-next-point, playback speed, captions, a player
+  library, placement rules, re-ask behavior on seek-back, ingest, credit,
+  readiness, video-tool.
+- pyflakes still reports the pre-existing unused imports 030 listed;
+  oxlint's 11 remaining warnings are all on untouched files.

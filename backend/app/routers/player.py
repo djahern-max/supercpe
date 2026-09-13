@@ -99,6 +99,10 @@ def play_lesson(
                     PlayChoice(choice_key=c.choice_key, text=c.text)
                     for c in q.choices
                 ],
+                # 031: nothing a previewer does is recorded, so every
+                # question is unanswered on each load; the player then
+                # tracks answers in its own state for the session.
+                answered=False,
             )
             for q in questions_service.for_package(db, package.id)
             if q.kind == "review"

@@ -228,6 +228,12 @@
   background: var(--color-warning);
 }
 
+/* 031: a review point whose question this participant has answered — the
+   timeline is open past it. */
+.tickAnswered {
+  background: var(--color-success);
+}
+
 .controls {
   display: flex;
   align-items: center;

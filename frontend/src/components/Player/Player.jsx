@@ -3,14 +3,17 @@ import { Link } from "react-router-dom";
 import { resolveMediaUrl } from "../../api/client";
 import styles from "./Player.module.css";
 
-// How far past the furthest-watched point a seek may land. Covers timeupdate
-// granularity, not participants.
+// How far past the ceiling a seek may land before it is undone, and how
+// close to it a seek must land to count as arriving there. Covers
+// timeupdate granularity, not participants.
 const SEEK_TOLERANCE_SECONDS = 0.25;
 const ARROW_SEEK_SECONDS = 5;
 // 027: the visible rewind control. Backward seeking was always allowed
-// (`seekTo` clamps to the furthest point watched, never below zero); what
-// was missing was a control a participant could see.
+// (`seekTo` never goes below zero); what was missing was a control a
+// participant could see.
 const REWIND_SECONDS = 15;
+// 031: its forward twin, clamped to the ceiling like every other seek.
+const FORWARD_SECONDS = 15;
 // Progress reports go out at most this often while playing; pause and
 // question stops always report.
 const PROGRESS_REPORT_SECONDS = 10;
@@ -29,13 +32,23 @@ function formatTime(totalSeconds) {
  * itself — the lesson payload and the grading call come in as props, and
  * the payload never contains the answer key.
  *
- * Forward seeking past the furthest point watched is prevented. That is a
- * sponsor design choice, not a Standards requirement.
+ * 031: seeking is free in both directions up to one ceiling — the
+ * earliest review point whose question is still unanswered (or the end of
+ * the media once none remain). Reaching that point by playback, by a
+ * seek, or by "Forward 15 s" pauses and asks the question, the same way
+ * playback always has; answering it moves the ceiling to the next
+ * unanswered point. This replaces 006's lock at the furthest point
+ * watched, which was a sponsor design choice, not a Standards requirement
+ * (5.01.2.1 requires each placed question be presented; the ceiling is
+ * what enforces that). `answered` on each question comes from the payload
+ * (the participant's own review_answers; always false in the preview) and
+ * is tracked here as answers are graded.
  *
  * `initialFurthestSeconds` restores the furthest point from a prior
  * session (the enrollment mount, 010); `onProgress(seconds)` reports the
- * furthest point back, throttled, fire-and-forget. The preview mount
- * passes neither and behaves exactly as before.
+ * furthest point back, throttled, fire-and-forget. Resume lands at that
+ * point or the ceiling, whichever is earlier; furthest no longer gates
+ * anything. The preview mount passes neither.
  *
  * 027: when the video ends, a panel says what comes next — the review
  * questions still unanswered in this lesson (`reviewRemaining`, from the
@@ -66,7 +79,6 @@ function Player({
   const [muted, setMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(lesson.duration_seconds);
-  const [furthest, setFurthest] = useState(initialFurthestSeconds);
   const furthestRef = useRef(initialFurthestSeconds);
   const lastReportedRef = useRef(initialFurthestSeconds);
 
@@ -96,10 +108,31 @@ function Player({
       .sort((a, b) => a.time - b.time);
   }, [lesson]);
 
+  // 031: which questions this participant has answered — seeded from the
+  // payload, grown as answers are graded here. Never shrinks.
+  const [answeredKeys, setAnsweredKeys] = useState(
+    () =>
+      new Set(
+        lesson.questions
+          .filter((question) => question.answered === true)
+          .map((question) => question.question_key)
+      )
+  );
+  // The ceiling: the earliest review point still unanswered, else the end.
+  const ceilingPoint = useMemo(
+    () =>
+      reviewPoints.find(
+        (point) => !answeredKeys.has(point.question.question_key)
+      ) ?? null,
+    [reviewPoints, answeredKeys]
+  );
+  const ceilingFor = (mediaDuration) =>
+    ceilingPoint ? ceilingPoint.time : mediaDuration;
+  const ceiling = ceilingFor(duration);
+
   const advanceFurthest = (time) => {
     if (time > furthestRef.current) {
       furthestRef.current = time;
-      setFurthest(time);
       if (time - lastReportedRef.current >= PROGRESS_REPORT_SECONDS) {
         reportProgress();
       }
@@ -120,6 +153,16 @@ function Player({
     setGradeError(null);
   };
 
+  // Arriving at review points — by playback crossing them, or by a seek
+  // landing on the ceiling — pauses and asks, first point first; the rest
+  // queue behind Continue.
+  const askQuestions = (points) => {
+    const video = videoRef.current;
+    if (video) video.pause();
+    pendingRef.current = points.slice(1).map((point) => point.question);
+    openQuestion(points[0].question);
+  };
+
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -137,32 +180,39 @@ function Player({
       (point) => lastTimeRef.current < point.time && point.time <= time
     );
     lastTimeRef.current = time;
-    if (crossed.length > 0) {
-      video.pause();
-      pendingRef.current = crossed.slice(1).map((point) => point.question);
-      openQuestion(crossed[0].question);
-    }
+    if (crossed.length > 0) askQuestions(crossed);
   };
 
-  // Forward seeks past the furthest point watched are undone once the seek
-  // settles. Correcting on `seeked` rather than mid-`seeking` matters:
-  // re-targeting an in-flight seek can wedge the media element.
+  // 031: a seek past the ceiling is undone to the ceiling once the seek
+  // settles, and a seek that lands on the ceiling asks its question — the
+  // point is reached, whichever way the participant got there. Correcting
+  // on `seeked` rather than mid-`seeking` matters (006): re-targeting an
+  // in-flight seek can wedge the media element.
   const handleSeeked = () => {
     const video = videoRef.current;
     if (!video) return;
     seekInFlightRef.current = false;
-    if (video.currentTime > furthestRef.current + SEEK_TOLERANCE_SECONDS) {
-      video.currentTime = furthestRef.current;
+    if (activeQuestion) {
+      lastTimeRef.current = video.currentTime;
+      setCurrentTime(video.currentTime);
       return;
     }
+    if (video.currentTime > ceiling + SEEK_TOLERANCE_SECONDS) {
+      video.currentTime = ceiling;
+    }
+    const arrived =
+      ceilingPoint !== null &&
+      video.currentTime >= ceiling - SEEK_TOLERANCE_SECONDS;
+    if (arrived && video.currentTime !== ceiling) video.currentTime = ceiling;
     lastTimeRef.current = video.currentTime;
     setCurrentTime(video.currentTime);
+    if (arrived) askQuestions([ceilingPoint]);
   };
 
   const seekTo = (time) => {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = Math.max(0, Math.min(time, furthestRef.current));
+    video.currentTime = Math.max(0, Math.min(time, ceiling));
   };
 
   const togglePlay = () => {
@@ -182,6 +232,10 @@ function Player({
         selectedChoice
       );
       setResult(graded);
+      // Graded means recorded on the enrollment path; the preview keeps
+      // no record, so this state is what moves the ceiling either way.
+      const answeredKey = activeQuestion.question_key;
+      setAnsweredKeys((previous) => new Set(previous).add(answeredKey));
     } catch {
       setGradeError("Could not check the answer. Try again.");
     } finally {
@@ -319,19 +373,22 @@ function Player({
             setEnded(true);
           }}
           onLoadedMetadata={(event) => {
-            setDuration(event.target.duration);
-            // Resume at the furthest point watched; the seeked handler
-            // realigns the crossing detector so earlier questions are not
-            // re-asked on the way in.
             const video = event.target;
-            if (
-              furthestRef.current > 0 &&
-              video.currentTime < furthestRef.current
-            ) {
-              video.currentTime = Math.min(
-                furthestRef.current,
-                video.duration
-              );
+            const mediaDuration = Number.isFinite(video.duration)
+              ? video.duration
+              : lesson.duration_seconds;
+            setDuration(mediaDuration);
+            // Resume at the furthest point watched or the ceiling,
+            // whichever is earlier (031): landing on the ceiling asks
+            // its question through the seeked handler, which also
+            // realigns the crossing detector so earlier questions are
+            // not re-asked on the way in.
+            const resumeTo = Math.min(
+              furthestRef.current,
+              ceilingFor(mediaDuration)
+            );
+            if (resumeTo > 0 && video.currentTime < resumeTo) {
+              video.currentTime = resumeTo;
             }
           }}
           onClick={togglePlay}
@@ -459,14 +516,19 @@ function Player({
           className={styles.progressFill}
           style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
         />
-        {reviewPoints.map((point) => (
-          <span
-            key={point.question.question_key}
-            className={styles.tick}
-            style={{ left: `${duration ? (point.time / duration) * 100 : 0}%` }}
-            title="Review question"
-          />
-        ))}
+        {reviewPoints.map((point) => {
+          const answered = answeredKeys.has(point.question.question_key);
+          return (
+            <span
+              key={point.question.question_key}
+              className={
+                answered ? `${styles.tick} ${styles.tickAnswered}` : styles.tick
+              }
+              style={{ left: `${duration ? (point.time / duration) * 100 : 0}%` }}
+              title={answered ? "Review question (answered)" : "Review question"}
+            />
+          );
+        })}
       </div>
 
       <div className={styles.controls}>
@@ -487,6 +549,15 @@ function Player({
           aria-label={`Rewind ${REWIND_SECONDS} seconds`}
         >
           Rewind {REWIND_SECONDS} s
+        </button>
+        <button
+          type="button"
+          className={styles.control}
+          onClick={() => seekTo(videoRef.current.currentTime + FORWARD_SECONDS)}
+          disabled={Boolean(activeQuestion)}
+          aria-label={`Forward ${FORWARD_SECONDS} seconds`}
+        >
+          Forward {FORWARD_SECONDS} s
         </button>
         <span className={styles.time}>
           {formatTime(currentTime)} / {formatTime(duration)}

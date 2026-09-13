@@ -154,3 +154,56 @@ def test_admin_question_payload_has_no_answer_key(client, admin_headers, tmp_pat
     assert [q["question_key"] for q in group["assessment"]] == ["q-02"]
     assert group["review"][0]["counts_toward_minimum"] is True
     assert group["review"][0]["choice_count"] == 3
+
+
+# --- 031: `answered` on each review question in the play payload -----------------
+
+
+def test_preview_play_payload_marks_every_question_unanswered(
+    client, admin_headers, tmp_path
+):
+    """Nothing a previewer does is recorded (006), so the flag is False on
+    every load — even right after grading an answer through the preview
+    route."""
+    package_id = setup_course(client, admin_headers, tmp_path)
+    client.post(
+        review_url("ASC606-CON", package_id, "q-01"),
+        json={"choice_key": "b"},
+        headers=admin_headers,
+    )
+    body = client.get(play_url("ASC606-CON", package_id), headers=admin_headers).json()
+    assert [(q["question_key"], q["answered"]) for q in body["questions"]] == [
+        ("q-01", False)
+    ]
+    walk_asserting_no_answer_key(body)
+
+
+def test_enrollment_play_payload_derives_answered_from_review_answers(
+    client, db_session
+):
+    """The enrollment path: one review_answers row → that question True,
+    the rest False; derived exactly as the reader payload derives it."""
+    from tests.test_enrollments import play_url as my_play_url
+    from tests.test_enrollments import review_url as my_review_url
+    from tests.test_enrollments import setup_enrolled
+
+    _, package, enrollment = setup_enrolled(client, db_session)
+    before = client.get(my_play_url(enrollment.id, package.id)).json()
+    keys = [q["question_key"] for q in before["questions"]]
+    assert len(keys) >= 2
+    assert all(q["answered"] is False for q in before["questions"])
+
+    graded = client.post(
+        my_review_url(enrollment.id, package.id, keys[0]),
+        json={"choice_key": "b"},
+    )
+    assert graded.status_code == 200
+
+    after = client.get(my_play_url(enrollment.id, package.id)).json()
+    flags = {q["question_key"]: q["answered"] for q in after["questions"]}
+    assert flags[keys[0]] is True
+    assert all(flags[key] is False for key in keys[1:])
+    # A wrong answer counts as answered: the record is of engagement, not
+    # of correctness (5.01.2.1 sets no passing rate).
+    assert graded.json()["correct"] is False
+    walk_asserting_no_answer_key(after)

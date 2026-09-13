@@ -277,6 +277,10 @@ def play_lesson(
         ),
         0,
     )
+    # 031: the same derivation `read_lesson` uses for the reader payload —
+    # a question is answered when this enrollment holds a review_answers
+    # row for it. The player's seek ceiling is the earliest unanswered one.
+    answered = enrollments.answers_by_question(db, enrollment)
     return MyPlayLesson(
         lesson_id=package.lesson_id,
         title=package.title,
@@ -292,6 +296,7 @@ def play_lesson(
                     PlayChoice(choice_key=c.choice_key, text=c.text)
                     for c in q.choices
                 ],
+                answered=q.id in answered,
             )
             for q in questions_service.for_package(db, package.id)
             if q.kind == "review"

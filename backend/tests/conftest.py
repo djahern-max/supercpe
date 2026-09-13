@@ -42,6 +42,12 @@ settings.stripe_publishable_key = "pk_live_dummy"
 settings.stripe_webhook_secret = "whsec_dummy"
 # 029: the yearly Price id joined the all-or-nothing group.
 settings.stripe_subscription_price_id = "price_dummy"
+# 030/030a (pinned in 031): the Google client id and the coming-soon
+# preview list are read from the developer's .env like everything else;
+# the suite must not change shape because the operator listed their own
+# address locally. Tests that need either set it with monkeypatch.
+settings.google_client_id = ""
+settings.google_preview_emails = ""
 
 
 @pytest.fixture(scope="session")
