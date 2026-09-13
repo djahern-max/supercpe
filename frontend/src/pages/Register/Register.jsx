@@ -1,7 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { register } from "../../api/register";
+import { roleHome } from "../../auth/RequireRole.jsx";
+import { useSession } from "../../auth/SessionContext.jsx";
+import GoogleSignIn from "../../components/GoogleSignIn/GoogleSignIn.jsx";
 import { US_JURISDICTIONS } from "../../constants/jurisdictions";
 import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./Register.module.css";
@@ -11,9 +14,15 @@ import styles from "./Register.module.css";
  * constant message verbatim — the page never says whether the address
  * was new. The form links the published registration policy (8.01.1);
  * it does not restate it.
+ *
+ * 030: "or sign up with Google" below the form. Same endpoint as the
+ * sign-in page's button — creation is that endpoint's third branch — so
+ * a Google account that already has a superCPE account simply signs in.
  */
 function Register() {
   usePageTitle("Register");
+  const navigate = useNavigate();
+  const { setAccount } = useSession();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -127,6 +136,15 @@ function Register() {
             <Link to="/policies">registration and attendance policy</Link>.
           </p>
         </form>
+      )}
+      {!message && (
+        <GoogleSignIn
+          text="signup_with"
+          onSuccess={(account) => {
+            setAccount(account);
+            navigate(roleHome(account.role), { replace: true });
+          }}
+        />
       )}
       <p className={styles.footerLink}>
         Already have an account? <Link to="/login">Sign in</Link>

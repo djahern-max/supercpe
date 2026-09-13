@@ -15,6 +15,12 @@ boto3==1.43.83
 # signature verification; hand-rolling the HMAC check would be less
 # trustworthy. Only services/stripe_gateway.py imports it.
 stripe==12.4.0
+# Google ID-token verification (030): signature against Google's JWKS,
+# issuer, audience, expiry. Chosen over google-auth: one package (the
+# cryptography extra is already present) instead of three, a JWKS
+# client that caches keys and follows rotation, no HTTP library of its
+# own. Only services/google_identity.py imports it.
+PyJWT[crypto]==2.14.0
 pytest==8.3.4
 httpx==0.28.1
 # Test-side PDF text extraction for the certificate tests (010).

@@ -26,8 +26,15 @@ from app.constants.auth import (
     SESSION_IDLE_MINUTES,
 )
 from app.models.account import Account, AuthSession
+from app.services import google_identity
+from app.services.google_identity import GoogleIdentityError
 
 LOGIN_FAILED = "Email or password is incorrect"
+# 030: the one refusal for every failed Google sign-in — bad token,
+# unverified email, deactivated account, non-participant role, feature
+# not configured. Byte-identical across cases so a Google account for
+# x@y cannot learn whether x@y has a superCPE account, or what kind.
+GOOGLE_SIGN_IN_FAILED = "Sign in with Google did not succeed"
 
 _hasher = PasswordHasher()
 # Verified against on unknown emails so they cost the same as known ones.
@@ -41,7 +48,8 @@ class AuthRuleViolation(Exception):
 
 
 class AuthenticationFailed(Exception):
-    """Always carries LOGIN_FAILED; the login route turns it into a 401."""
+    """Carries LOGIN_FAILED (password) or GOOGLE_SIGN_IN_FAILED (030);
+    the route turns it into a 401."""
 
 
 def _now() -> datetime:
@@ -63,17 +71,21 @@ def create_account(
     db: Session,
     email: str,
     role: str,
-    initial_password: str,
+    initial_password: str | None,
     created_by: Account | None,
     display_name: str = "",
     must_change_password: bool = True,
     email_verified: bool = True,
     state: str | None = None,
+    google_sub: str | None = None,
 ) -> Account:
     """`email_verified` defaults True: an admin (or the CLI) creating an
     account and hand-delivering the initial password is the vouch that the
     address reaches its holder. Only 017 self-registration passes False
-    and proves the address with an emailed token instead."""
+    and proves the address with an emailed token instead.
+
+    `initial_password` is None only for 030's Google-created accounts:
+    no password is stored and `google_sub` is the sign-in credential."""
     email = email.strip().lower()
     errors = []
     if "@" not in email or email.startswith("@") or email.endswith("@"):
@@ -84,39 +96,63 @@ def create_account(
         errors.append(f"An account with email {email} already exists")
     if errors:
         raise AuthRuleViolation(errors)
-    _check_password_strength(initial_password)
+    if initial_password is not None:
+        _check_password_strength(initial_password)
 
     account = Account(
         email=email,
-        password_hash=_hasher.hash(initial_password),
+        password_hash=(
+            _hasher.hash(initial_password)
+            if initial_password is not None
+            else None
+        ),
         role=role,
         display_name=display_name,
         must_change_password=must_change_password,
         created_by_account_id=created_by.id if created_by else None,
         email_verified_at=_now() if email_verified else None,
         state=state,
+        google_sub=google_sub,
     )
     db.add(account)
     db.commit()
     return account
 
 
+def _burn_a_verification(password: str) -> None:
+    """Spend one argon2 verification against a throwaway hash, so a
+    refusal costs the same whether or not there was a hash to check."""
+    try:
+        _hasher.verify(_DUMMY_HASH, password)
+    except VerifyMismatchError:
+        pass
+
+
+def password_matches(account: Account, password: str) -> bool:
+    """The one place a stored password is checked. An account with no
+    password (030, Google-created) never matches — and costs the same as
+    a wrong password, so the answer does not say which it was."""
+    if account.password_hash is None:
+        _burn_a_verification(password)
+        return False
+    try:
+        _hasher.verify(account.password_hash, password)
+    except VerifyMismatchError:
+        return False
+    return True
+
+
 def authenticate(db: Session, email: str, password: str) -> Account:
     account = get_account_by_email(db, email)
     if account is None:
         # Same cost as a real verification, same message as a wrong password.
-        try:
-            _hasher.verify(_DUMMY_HASH, password)
-        except VerifyMismatchError:
-            pass
+        _burn_a_verification(password)
         raise AuthenticationFailed(LOGIN_FAILED)
 
     if account.locked_until is not None and account.locked_until > _now():
         raise AuthenticationFailed(LOGIN_FAILED)
 
-    try:
-        _hasher.verify(account.password_hash, password)
-    except VerifyMismatchError:
+    if not password_matches(account, password):
         account.failed_logins += 1
         if account.failed_logins >= MAX_FAILED_LOGINS:
             account.locked_until = _now() + timedelta(minutes=LOCKOUT_MINUTES)
@@ -137,6 +173,73 @@ def authenticate(db: Session, email: str, password: str) -> Account:
     account.locked_until = None
     db.commit()
     return account
+
+
+def signin_methods(account: Account) -> list[str]:
+    """Derived on every read from what the row holds — never stored."""
+    methods = []
+    if account.password_hash is not None:
+        methods.append("password")
+    if account.google_sub is not None:
+        methods.append("google")
+    return methods
+
+
+def _google_sign_in_allowed(account: Account) -> bool:
+    """Google is an identity, not a role: only an active participant may
+    sign in with it. An admin's or reviewer's Google account compromised
+    is not an admin compromise, and a deactivated account stays out."""
+    return account.role == "participant" and account.is_active
+
+
+def sign_in_with_google(db: Session, credential: str) -> Account:
+    """030: the one service function behind POST /auth/google. Verifies
+    the ID token at the boundary, then: the account linked to its `sub`,
+    else the active participant with its verified email (linked now, set
+    once), else a new participant with no password. Every refusal is the
+    same AuthenticationFailed(GOOGLE_SIGN_IN_FAILED); the caller cannot
+    tell which branch ran."""
+    try:
+        identity = google_identity.verify(credential)
+    except GoogleIdentityError:
+        raise AuthenticationFailed(GOOGLE_SIGN_IN_FAILED)
+    if not identity.email_verified:
+        raise AuthenticationFailed(GOOGLE_SIGN_IN_FAILED)
+
+    account = db.scalar(
+        select(Account).where(Account.google_sub == identity.sub)
+    )
+    if account is not None:
+        if not _google_sign_in_allowed(account):
+            raise AuthenticationFailed(GOOGLE_SIGN_IN_FAILED)
+        return account
+
+    email = identity.email.strip().lower()
+    account = get_account_by_email(db, email)
+    if account is not None:
+        # Linked to a different Google account already: `google_sub` is
+        # set once, so this Google account gets the same refusal as a
+        # stranger's would.
+        if not _google_sign_in_allowed(account) or account.google_sub is not None:
+            raise AuthenticationFailed(GOOGLE_SIGN_IN_FAILED)
+        account.google_sub = identity.sub
+        if account.email_verified_at is None:
+            # Google's verification satisfies 017's requirement.
+            account.email_verified_at = _now()
+        db.commit()
+        return account
+
+    return create_account(
+        db,
+        email,
+        "participant",
+        None,
+        created_by=None,
+        display_name=identity.name,
+        must_change_password=False,
+        email_verified=True,
+        google_sub=identity.sub,
+    )
 
 
 def open_session(
@@ -222,10 +325,10 @@ def change_password(
     db: Session, account: Account, current: str, new: str, raw_token: str
 ) -> None:
     """Verifies the current password, sets the new one, clears the forced
-    change, and revokes every session except the one making the change."""
-    try:
-        _hasher.verify(account.password_hash, current)
-    except VerifyMismatchError:
+    change, and revokes every session except the one making the change.
+    An account with no password (030) has no current password to give,
+    so it cannot pass here; a reset flow is the only way it gains one."""
+    if not password_matches(account, current):
         raise AuthRuleViolation(["The current password is incorrect"])
     _check_password_strength(new)
     account.password_hash = _hasher.hash(new)

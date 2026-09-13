@@ -20,10 +20,12 @@ supercpe.com {
 
 	handle /api/* {
 		rate_limit {
+			# 030: Google sign-in is a second login door — an anonymous
+			# POST carrying a token — and shares the login rule.
 			zone login {
 				match {
 					method POST
-					path /api/v1/auth/login
+					path /api/v1/auth/login /api/v1/auth/google
 				}
 				key {client_ip}
 				events 10

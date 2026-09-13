@@ -28,7 +28,10 @@ class Account(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Lowercased on write by services.auth; unique on the stored form.
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Null for an account created by Google sign-in (030) that has never
+    # set a password; password login on such an account fails exactly
+    # like a wrong password. Every account created any other way has one.
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(String, nullable=False)
     display_name: Mapped[str] = mapped_column(
         String, nullable=False, default="", server_default=""
@@ -57,6 +60,15 @@ class Account(Base):
     # Customer object) and are not backfilled: a guest is not a Customer
     # and inventing one would not be a record of anything.
     stripe_customer_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, unique=True
+    )
+    # 030: Google's stable `sub` claim for the linked Google account.
+    # Set once on the first Google sign-in (creation or verified-email
+    # linking) and never rewritten; after linking the account is matched
+    # on `sub` only, never on email, because the email can change on
+    # Google's side and `sub` cannot. Null for accounts that never
+    # signed in with Google. No unlink path exists.
+    google_sub: Mapped[str | None] = mapped_column(
         String, nullable=True, unique=True
     )
     failed_logins: Mapped[int] = mapped_column(

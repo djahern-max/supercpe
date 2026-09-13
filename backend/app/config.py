@@ -118,6 +118,18 @@ class Settings(BaseSettings):
     stripe_publishable_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_subscription_price_id: str = ""
+    # Google sign-in (030): the OAuth client id of the Web application
+    # in the sponsor's Google Cloud project. Optional and alone — not
+    # part of any all-or-nothing group and not a readiness finding: the
+    # site can open without it. Unset means the button does not render
+    # and POST /auth/google answers the constant refusal. Not a secret
+    # (it is in every page that renders the button), but it lives in
+    # .env like every other environment value.
+    google_client_id: str = ""
+
+    @property
+    def google_configured(self) -> bool:
+        return bool(self.google_client_id)
 
     @property
     def stripe_configured(self) -> bool:

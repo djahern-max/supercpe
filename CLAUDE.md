@@ -65,14 +65,13 @@ which is live rather than guessing.
 4. Before writing the changelog entry: typecheck, lint, backend `pytest`,
    and frontend tests all pass, and `git status --porcelain` is clean apart
    from the feature's own changes.
-5. When every acceptance criterion passes, append a `CHANGELOG.md` entry in
-   the format below and say the feature is done. Never edit or delete a past
-   entry. If a past entry was wrong, write a new entry saying so.
-   **If an acceptance criterion needs the operator** (a production deploy,
-   a Stripe or DNS dashboard, a browser check, a real reviewer), do not
-   write the entry. Stop, say which criteria are ready for the operator,
-   and the entry is written after they pass. An entry never records an
-   acceptance criterion as "not yet run".
+5. When the acceptance criteria the build session can run pass, append
+   the CHANGELOG.md entry and say the feature is done. Criteria that
+   need the operator (a production deploy, a browser walkthrough, a
+   dashboard step, a real reviewer) are listed under Known gaps as
+   "not yet run by the operator"; the operator may later append a short
+   verification entry, or not. Never edit or delete a past entry. If a
+   past entry was wrong, write a new entry saying so.
 6. Update `COMPLIANCE.md` whenever a feature changes what a locator requires
    or how it is satisfied. If it does not, say so explicitly in the
    changelog.

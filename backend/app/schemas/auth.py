@@ -22,6 +22,22 @@ class MeOut(BaseModel):
     # header's Subscribe link and the course page's enroll section key
     # on it. A fact about the viewer's own account, nothing about a course.
     subscription_current: bool = False
+    # 030: how this account can sign in — "password" when a hash is
+    # stored, "google" when a Google account is linked. Derived per
+    # read from the row; the account page renders it.
+    signin_methods: list[str] = []
+
+
+class GoogleSignInRequest(BaseModel):
+    # The ID token Google Identity Services handed the browser (030).
+    credential: str
+
+
+class GoogleConfigOut(BaseModel):
+    """What the browser needs to render Google's button, and nothing
+    else: the client id, or null when the feature is not configured."""
+
+    client_id: str | None
 
 
 class ChangePasswordRequest(BaseModel):

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { login } from "../../api/auth";
 import { roleHome } from "../../auth/RequireRole.jsx";
+import GoogleSignIn from "../../components/GoogleSignIn/GoogleSignIn.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
 import usePageTitle from "../../hooks/usePageTitle";
 import { SITE_FACE, useSiteFace } from "../../site/SiteContext.jsx";
@@ -16,6 +17,10 @@ import styles from "./Login.module.css";
  * 027: a Create account link below the form, under the same `siteFace()`
  * decision as the header — at open, or with a session — so the
  * coming-soon landing page still advertises nothing.
+ *
+ * 030: Google's button below the form under the same decision, and only
+ * when the server reports a client id; a successful Google sign-in
+ * finishes exactly as a password sign-in does (`finishSignIn`).
  */
 function Login() {
   usePageTitle("Sign in");
@@ -28,20 +33,23 @@ function Login() {
   const [failed, setFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const finishSignIn = (account) => {
+    setAccount(account);
+    if (account.must_change_password) {
+      navigate("/change-password", { replace: true });
+    } else {
+      navigate(location.state?.from ?? roleHome(account.role), {
+        replace: true,
+      });
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSubmitting(true);
     setFailed(false);
     try {
-      const account = await login(email.trim(), password);
-      setAccount(account);
-      if (account.must_change_password) {
-        navigate("/change-password", { replace: true });
-      } else {
-        navigate(location.state?.from ?? roleHome(account.role), {
-          replace: true,
-        });
-      }
+      finishSignIn(await login(email.trim(), password));
     } catch {
       setFailed(true);
     } finally {
@@ -96,6 +104,7 @@ function Login() {
           </Link>
         </p>
       </form>
+      <GoogleSignIn onSuccess={finishSignIn} />
       {face === SITE_FACE.OPEN && (
         <p className={styles.registerLink}>
           New here? <Link to="/register">Create account</Link>

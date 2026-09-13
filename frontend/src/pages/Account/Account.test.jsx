@@ -27,9 +27,16 @@ vi.mock("../../api/subscribe", () => ({
   getMySubscription: api.getMySubscription,
   openSubscriptionPortal: api.openSubscriptionPortal,
 }));
+const session = vi.hoisted(() => ({ signinMethods: ["password"] }));
+
 vi.mock("../../auth/SessionContext.jsx", () => ({
   useSession: () => ({
-    account: { id: 3, email: "pat@supercpe.test", role: "participant" },
+    account: {
+      id: 3,
+      email: "pat@supercpe.test",
+      role: "participant",
+      signin_methods: session.signinMethods,
+    },
     loading: false,
     refresh: vi.fn(),
     signOut: vi.fn(),
@@ -72,6 +79,7 @@ describe("Account subscription section (029)", () => {
     api.getMyState.mockResolvedValue({ state: null });
     api.getMySubscription.mockReset();
     api.openSubscriptionPortal.mockReset();
+    session.signinMethods = ["password"];
   });
 
   afterEach(() => {
@@ -165,5 +173,67 @@ describe("Account subscription section (029)", () => {
     expect(container.querySelector('a[href="/subscribe"]').textContent).toBe(
       "Subscribe again"
     );
+  });
+});
+
+/**
+ * 030: the account page names the sign-in methods from the session
+ * payload and offers Change your password only when there is one.
+ */
+describe("Account sign-in methods (030)", () => {
+  let container;
+  let root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    api.getMyState.mockResolvedValue({ state: null });
+    api.getMySubscription.mockReset().mockResolvedValue(subscription());
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  async function mount(methods) {
+    session.signinMethods = methods;
+    act(() => {
+      root.render(
+        <MemoryRouter initialEntries={["/account"]}>
+          <Account />
+        </MemoryRouter>
+      );
+    });
+    await flush();
+  }
+
+  const changePasswordLink = () =>
+    container.querySelector('a[href="/change-password"]');
+
+  it("password only", async () => {
+    await mount(["password"]);
+    expect(container.textContent).toContain("Sign-in methods");
+    expect(container.textContent).toContain("Password");
+    expect(container.textContent).not.toContain("Google");
+    expect(changePasswordLink()).not.toBeNull();
+  });
+
+  it("google only: no password to change", async () => {
+    await mount(["google"]);
+    expect(container.textContent).toContain("Google");
+    expect(container.textContent).toContain(
+      "This account has no password; it signs in with Google."
+    );
+    expect(container.textContent).not.toContain("Password and Google");
+    expect(changePasswordLink()).toBeNull();
+  });
+
+  it("password and google", async () => {
+    await mount(["password", "google"]);
+    expect(container.textContent).toContain("Password and Google");
+    expect(container.textContent).not.toContain("has no password");
+    expect(changePasswordLink()).not.toBeNull();
   });
 });

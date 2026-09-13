@@ -257,3 +257,30 @@ def test_preflight_refuses_an_open_site_when_the_price_cannot_be_read(
     monkeypatch.setattr(cli.stripe_gateway, "retrieve_price", unreachable)
     assert cli.preflight() == 1
     assert "could not be retrieved" in capsys.readouterr().err
+
+
+# --- 030: GOOGLE_CLIENT_ID is a note, never a refusal ---------------------------
+
+
+def test_preflight_notes_google_sign_in_not_configured(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    enable_versioning(spaces)
+    monkeypatch.setattr(settings, "google_client_id", "")
+    assert cli.preflight() == 0
+    out = capsys.readouterr().out
+    assert "GOOGLE_CLIENT_ID is not configured" in out
+    assert "preflight ok" in out
+
+
+def test_preflight_notes_google_sign_in_configured(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    enable_versioning(spaces)
+    monkeypatch.setattr(
+        settings, "google_client_id", "1234-test.apps.googleusercontent.com"
+    )
+    assert cli.preflight() == 0
+    out = capsys.readouterr().out
+    assert "GOOGLE_CLIENT_ID is configured" in out
+    assert "preflight ok" in out

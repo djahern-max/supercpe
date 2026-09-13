@@ -534,6 +534,13 @@ the log at the end of this section when done.
    publishable key (`pk_…`) is not secret and has no scopes.
    **029 adds the Billing scopes** — see "Subscriptions (029)" below;
    the same key carries both sets.
+
+   **State on 2026-09-12:** the sandbox deployment on production runs on
+   the Stripe **standard** secret key (`sk_test_…`), not a restricted
+   key; no restricted key exists in the sandbox. That is tolerable for
+   the sandbox only. Live must never run on the standard key — the
+   opening-day checklist (step 4) creates the live restricted key with
+   the union of the 018 and 029 scopes before the swap.
 4. **Register the webhook endpoint — twice.** URL
    `https://supercpe.com/api/v1/stripe/webhook`; events
    `checkout.session.completed`, `checkout.session.expired`,
@@ -652,6 +659,7 @@ Log — one line per run, newest last:
 | Date | Who | Outcome |
 | --- | --- | --- |
 | 2026-09-11 | — | **Not yet run.** 026 shipped the code and this procedure; the run needs the Stripe sandbox keys, the dashboard, a browser, and the droplet, none of which the build session had. Record the first run here and in a new CHANGELOG entry. |
+| 2026-09-12 | operator | A $29.00 test-mode Checkout completed on production at 11:56 AM local: `checkout.session.completed` for `pi_3UEpY1GWw04RDXCn0rkCWIIS`; the production webhook destination shows 1 delivery, 0 failed, 416 ms. Evidence for steps 3–5. Whether this was the full walkthrough (steps 6–10) is confirmed in the 026 verification CHANGELOG entry, written after that confirmation. |
 
 ### Refund runbook
 
@@ -701,6 +709,15 @@ end of this section.
    `STRIPE_SUBSCRIPTION_PRICE_ID=price_…` in `/srv/supercpe/.env`; it
    is the fourth member of the all-or-nothing STRIPE_* group and is
    swapped to the live value in the same edit as the keys.
+
+   **Done in the sandbox, 2026-09-12:** Product "superCPE annual
+   subscription" and yearly Price `price_1UEtb2GWw04RDXCnRbBgU2KL`
+   ($149.00 USD/year) created; `STRIPE_SUBSCRIPTION_PRICE_ID` set on
+   production to that id. **The Price is mode-specific**: a live Product
+   and Price do not exist yet and are created at the flip (Opening day
+   step 4). The open gate checks that the id is present and preflight
+   checks its amount; neither checks the mode, so a sandbox id left in
+   place on an open site fails only on the first live subscribe.
 2. **Add the Billing scopes to the restricted key** (both modes), on
    top of 018's: Customers — **Write** (one Customer per account,
    created on the first subscribe); Subscriptions — **Read** (one
@@ -717,6 +734,14 @@ end of this section.
    sessions and invoice refunds too. `customer.subscription.created` is
    deliberately not needed: the completed-session handler retrieves the
    subscription once and copies status and period from it.
+
+   **State on 2026-09-12:** the sandbox destination
+   `we_1UEpAaGWw04RDXCnayTHkdSn` listens to all seven events
+   (`charge.refunded`, `checkout.session.completed`,
+   `checkout.session.expired`, `customer.subscription.deleted`,
+   `customer.subscription.updated`, `invoice.paid`,
+   `invoice.payment_failed`). The **live** destination still needs the
+   four 029 events added (Opening day step 4).
 4. **Configure the Customer Portal** (Settings → Billing → Customer
    portal), both modes: cancellation **allowed, at period end**
    (immediate cancellation off); payment method update **allowed**;
@@ -865,7 +890,7 @@ table, and per-row **Resend** on failed rows. The CSV export carries the
 - The send **refuses while the site is coming_soon** — the invitation
   links people to the register and course pages, which 404 until open.
   The flip itself never sends; pressing this button is a deliberate,
-  separate step (step 9 of Opening day below).
+  separate step (step 10 of Opening day below).
 - The run is sequential with a per-row status commit, so a crash loses
   nothing already recorded, and **re-running is the retry**: sent rows
   are always skipped, so a second press after a partial failure reaches
@@ -878,6 +903,75 @@ table, and per-row **Resend** on failed rows. The CSV export carries the
   email them again. That closing line is load-bearing: there is no
   second email, ever, and no unsubscribe machinery because there is no
   subscription.
+
+## Google sign-in (030)
+
+Participants may sign in, or create a participant account, with a
+Google account. ID-token flow: the browser renders Google's button
+(Google Identity Services), Google hands it a signed ID token, the
+browser POSTs the token to `/api/v1/auth/google`, and the API verifies
+the signature against Google's published keys, the issuer, the audience
+(our client id), and the expiry. There is **no client secret, no
+redirect URI, no callback route**, and nothing Google issues is stored.
+One config value: `GOOGLE_CLIENT_ID`. It is optional and alone — not
+part of the open gate; unset means the button does not render and the
+endpoint refuses. Preflight prints a "configured / not configured" note
+either way and never refuses over it.
+
+Google is an identity, not a role: only participant accounts sign in
+with it. Admin and reviewer accounts are refused with the same generic
+answer as a bad token, so an operator's Google account being
+compromised is not an admin compromise.
+
+To set it up:
+
+1. In Google Cloud Console, create (or pick) a project named for
+   superCPE, then **APIs & Services → Credentials → Create credentials
+   → OAuth client ID**, application type **Web application**, name it
+   `superCPE web`.
+   - **Authorized JavaScript origins**: `https://supercpe.com` and the
+     local dev origin (`http://localhost:5173`).
+   - **Authorized redirect URIs**: **none**. The ID-token flow uses no
+     redirect; leave the list empty.
+   - Copy the client id (`…apps.googleusercontent.com`). The client
+     secret Google also shows is not used anywhere; do not copy it into
+     any env.
+2. Set `GOOGLE_CLIENT_ID=<the id>` in `/srv/supercpe/.env` (locally,
+   `backend/.env`) and deploy. Preflight prints `note: GOOGLE_CLIENT_ID
+   is configured`. Nothing in the Caddyfile needs a header change: no
+   Content-Security-Policy, Cross-Origin-Opener-Policy, or frame header
+   is set today (only HSTS), so Google's script, popup, and iframe are
+   not blocked. Should a CSP ever be added, it must allow
+   `https://accounts.google.com/gsi/client` in `script-src`,
+   `https://accounts.google.com/gsi/` in `frame-src` and `connect-src`,
+   `https://accounts.google.com/gsi/style` in `style-src`, and a COOP of
+   `same-origin-allow-popups` if COOP is set. The login rate limit
+   (`zone login`) covers `/api/v1/auth/google` too.
+3. **The consent screen** (APIs & Services → OAuth consent screen /
+   Google Auth Platform → Branding): user type **External**; app name
+   `superCPE`; a support email; and a **privacy policy URL**.
+   **superCPE has no privacy policy page.** `/policies` holds the 8.01
+   CPE policies (registration, refund, complaint), which are not a
+   privacy policy, and must not be handed to Google as one. Until the
+   operator decides where a privacy policy lives (a new page, a hosted
+   document — its own small feature), leave the OAuth app in **Testing**
+   publishing status: sign-in then works only for the Google accounts
+   listed under **Test users** (add your own), which is enough for the
+   acceptance walkthrough and for staff. Moving to **In production**
+   (any Google account may sign in) requires the privacy policy URL and,
+   because the app requests only the basic `openid email profile`
+   scopes, no Google verification review.
+4. Walk it: on `/login` at open, sign in with Google as a new address
+   (a Test user while in Testing) — lands on `/my/courses`, `/account`
+   says "Sign-in methods: Google"; then register a password account and
+   sign in with Google using the same address — same account, `/account`
+   says "Password and Google". A Google-only account gets a password
+   only through a reset flow, which does not exist yet (ROADMAP 017a);
+   until it does, such an account signs in with Google only.
+
+Turning it off is unsetting `GOOGLE_CLIENT_ID` and deploying: the
+button disappears and the endpoint refuses; linked accounts keep their
+`google_sub` and sign in with their password if they have one.
 
 ## Opening day (021)
 
@@ -895,28 +989,64 @@ its own section; this list only sequences them.
 4. **Stripe live keys (018/026)**: the transport — DNS, TLS, Caddy,
    signature verification, the handler itself — was proven in advance
    by the production verification run in Payments (018), on sandbox
-   keys, while still coming-soon; check its log has a dated pass. What
-   remains here is the key swap: all four `STRIPE_*` values to live in
-   **one edit** (the live endpoint's signing secret, not the sandbox
-   one; the live Price id, not the sandbox one — 029), deploy, and a
-   look at the sandbox endpoint's status for the disabled warning. Step 8 is the one live smoke purchase. Preflight
-   and the open gate both refuse test keys, so a missed swap is a
-   refused flip, not a silent one.
+   keys, while still coming-soon; check its log has a dated pass. Before
+   the swap, three things that exist only in the sandbox today
+   (2026-09-12) must be created in live mode:
+   - **A live restricted key.** The sandbox runs on the standard
+     `sk_test_…` key; live must never run on the standard key. Create a
+     live restricted key with the union of the 018 and 029 scopes —
+     Checkout Sessions write, Customers write, Subscriptions read,
+     Coupons write, Billing Portal write, Invoices read, Products and
+     Prices read, Charges read, Webhook Endpoints read — and use it as
+     `STRIPE_SECRET_KEY` on production.
+   - **A live Product and yearly Price** ("superCPE annual
+     subscription", USD 149.00/year — Subscriptions (029) step 1) and a
+     new `STRIPE_SUBSCRIPTION_PRICE_ID` for it. The sandbox id
+     `price_1UEtb2GWw04RDXCnRbBgU2KL` is mode-specific: the open gate
+     checks presence and preflight checks the amount, neither checks
+     the mode, so leaving it in place fails only on the first live
+     subscribe.
+   - **The four 029 events on the live webhook destination**
+     (`customer.subscription.updated`, `customer.subscription.deleted`,
+     `invoice.paid`, `invoice.payment_failed`); the sandbox destination
+     already has all seven.
+
+   Then the key swap: all four `STRIPE_*` values to live in **one
+   edit** (the live restricted key; the live endpoint's signing secret,
+   not the sandbox one; the live Price id, not the sandbox one — 029),
+   deploy, and a look at the sandbox endpoint's status for the disabled
+   warning. Step 9 is the one live smoke purchase. Preflight and the
+   open gate both refuse test keys, so a missed swap is a refused flip,
+   not a silent one.
 5. **Jurisdiction rows verified (020, optional)**: as far as intended —
    see Jurisdiction policies (020); the table showing nothing is a valid
    launch state.
-6. **`launch_findings` empty**: the gate on `/admin/sponsor` agrees the
+6. **Google sign-in (030, optional)**: the site opens without it; if it
+   is to be offered on opening day, both of these are done before the
+   flip — see Google sign-in (030):
+   - `GOOGLE_CLIENT_ID` set on production (OAuth Web application
+     client, origins `https://supercpe.com`, no redirect URIs), deployed,
+     and steps 1–2 of the acceptance walkthrough repeated on production
+     with your own Google account listed as a Test user.
+   - **Privacy policy decided.** The OAuth consent screen cannot leave
+     Testing mode without a privacy policy URL, and `/policies` (the
+     8.01 CPE policies) is not one. In Testing mode only listed Test
+     users can sign in with Google — acceptable for launch, but the
+     public button then fails for everyone else, so either publish a
+     privacy policy and move the app to In production, or leave
+     `GOOGLE_CLIENT_ID` unset until then.
+7. **`launch_findings` empty**: the gate on `/admin/sponsor` agrees the
    site can open — no block-level findings.
-7. **The flip**: set site mode to `open` (logged, with a note). This
+8. **The flip**: set site mode to `open` (logged, with a note). This
    closes the waiting list permanently.
-8. **Smoke test**: register a real account, buy the course in live mode
+9. **Smoke test**: register a real account, buy the course in live mode
    — the one live purchase; everything else was proven on sandbox keys
    — confirm the enrollment appears and the row on `/admin/payments`
    carries no Test marker; refund yourself per the refund runbook in
    Payments (018) if desired.
-9. **Then** press **Send invitations** on `/admin/waiting-list` — only
-   after the smoke test proved the pages the email links to.
-10. **Watch the failed column**: per-row Resend (or a second press of
+10. **Then** press **Send invitations** on `/admin/waiting-list` — only
+    after the smoke test proved the pages the email links to.
+11. **Watch the failed column**: per-row Resend (or a second press of
     the batch button) as needed — see Waiting-list invitations (021).
 
 ## Site identity (022)

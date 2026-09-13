@@ -4,14 +4,16 @@ CSRF posture: the session cookie is SameSite=Lax, CORS is same-origin, and
 every mutating route here requires `Content-Type: application/json`, which
 a cross-site form cannot send. No CSRF token is needed on top of that.
 These routes are never gated on site mode: /login must work while the
-site is coming_soon.
+site is coming_soon. The two exceptions are 030's Google routes, which
+sit behind `require_site_open_or_session` like /register: 404 anonymously
+while coming_soon, public at open.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.auth import current_account, require_role
+from app.auth import current_account, require_role, require_site_open_or_session
 from app.config import settings
 from app.constants.auth import SESSION_ABSOLUTE_HOURS, SESSION_COOKIE
 from app.constants.jurisdictions import US_JURISDICTIONS
@@ -19,6 +21,8 @@ from app.db import get_db
 from app.models.account import Account
 from app.schemas.auth import (
     ChangePasswordRequest,
+    GoogleConfigOut,
+    GoogleSignInRequest,
     LoginRequest,
     MeOut,
     MyStateOut,
@@ -51,6 +55,7 @@ def _me(db: Session, account: Account) -> MeOut:
             account.role == "participant"
             and subscriptions_service.current(db, account) is not None
         ),
+        signin_methods=auth_service.signin_methods(account),
     )
 
 
@@ -79,6 +84,47 @@ def login(
         account = auth_service.authenticate(db, payload.email, payload.password)
     except AuthenticationFailed:
         raise HTTPException(status_code=401, detail=auth_service.LOGIN_FAILED)
+    raw_token = auth_service.open_session(
+        db,
+        account,
+        user_agent=request.headers.get("user-agent", ""),
+        ip=request.client.host if request.client else "",
+    )
+    _set_session_cookie(response, raw_token)
+    return _me(db, account)
+
+
+@router.get(
+    "/google/config",
+    response_model=GoogleConfigOut,
+    dependencies=[Depends(require_site_open_or_session)],
+)
+def google_config():
+    """030: the client id the button needs, or null — the frontend renders
+    Google's button only when it is non-null. Nothing else is exposed."""
+    return GoogleConfigOut(client_id=settings.google_client_id or None)
+
+
+@router.post(
+    "/google",
+    response_model=MeOut,
+    dependencies=[Depends(require_site_open_or_session), Depends(require_json)],
+)
+def google_sign_in(
+    payload: GoogleSignInRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """030: sign in (or create a participant account) from a Google ID
+    token. Same session function, same cookie, same response shape as
+    password login; one constant 401 for every refusal."""
+    try:
+        account = auth_service.sign_in_with_google(db, payload.credential)
+    except AuthenticationFailed:
+        raise HTTPException(
+            status_code=401, detail=auth_service.GOOGLE_SIGN_IN_FAILED
+        )
     raw_token = auth_service.open_session(
         db,
         account,

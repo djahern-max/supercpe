@@ -2833,3 +2833,894 @@ Shipped: 2026-09-11
 - The `/admin/sponsor` launch-findings panel renders the new finding's
   message through the existing generic list; no frontend change was
   needed, and none was made.
+
+## 027 — Participant flow: every screen names the next step
+Shipped: 2026-09-12
+
+**What changed**
+- Task 0 (recon), answered before code was written:
+  1. `ATO` is text-first, so the walkthrough's clip was a supplemental
+     clip inside the reader. They do render today
+     (`frontend/src/components/Reader/Reader.jsx`, a `<video controls>`
+     at the clip's `after_section`, no seek handler). W3 applied to the
+     reader clip: nothing happened on `ended`. W4 on a reader clip is
+     not a lock — native controls seek freely and both the local media
+     route (`FileResponse`, Range-aware) and Spaces presigned URLs honor
+     Range requests. On the video-only player the participant sees no
+     seek control at all: no native controls, only Play/Pause and Mute
+     beside a thin bar.
+  2. Backward seeking on the video-only player already worked: `seekTo`
+     clamps to `[0, furthest]` and `handleSeeked` undoes only a forward
+     seek past the furthest point. It was reachable only by clicking the
+     bar or the arrow keys. **Not a fix — a control added** ("Rewind
+     15 s", `REWIND_SECONDS` in `Player.jsx`).
+  3. The reader receives one `sections[]` array in manifest order with
+     `locked` and `markdown: null` per locked section, plus `questions[]`
+     (`after_section`, `answered`) and `media[]` (`after_section`). The
+     stepper was built on that payload unchanged; `reader.build` and
+     `schemas/reader.py` are untouched.
+  4. `assessment_available`, `assessment_unavailable_reasons`, per-lesson
+     `done`/`review_answered`/`review_total`, `retakes_remaining`,
+     `failed_attempts`, and `open_attempt_id` are on the enrollment
+     detail (`GET /api/v1/my/enrollments/{id}`) only; the reader payload
+     has none of them. `MyLesson` already fetched the detail to choose
+     the medium; it now keeps it and refetches it after every graded
+     answer.
+  5. A failed enrollment attempt's result carries `retakes_allowed` and
+     `retakes_remaining` (integers) beside `score_pct`, `passing_pct`,
+     `correct_count`, `question_count` (`result` in
+     `backend/app/services/assessment.py`). Preview attempts carry no
+     `retakes_remaining`. The assessment info (`MyAssessmentInfo`) also
+     carries both.
+  6. `/policies` renders `retake_policy_text()` under "Assessment and
+     re-takes" with no anchor. It now has `id="retakes"`; the failed
+     result and the course page link `/policies#retakes` and do not
+     restate it.
+- Reader as a section stepper (`frontend/src/components/Reader/Reader.jsx`,
+  `Reader.module.css`, new `stepper.js`): one section on screen; a
+  contents column (sidebar from 60rem, a "Contents" toggle below) listing
+  every section as read / current / unread / locked, with glossary and
+  appendix under "Reference"; a locked entry is a disabled title marked
+  Locked. Front matter first, always ("Start here"); body sections show
+  "Section N of M" and a thin bar; reference sections say "Reference"
+  and offer "Back to the guide". Questions placed after the current
+  section render inline beneath it, all of them, in package order;
+  Continue is disabled with the hint "Answer the review question above
+  to continue" until every one is answered, then opens the next section
+  — calling the page's `onContinue` (a refetch) first, so it shows what
+  the server unlocked. Position is `?section=<key>` in the URL (reload
+  and back/forward work; nothing written to the server); with no
+  section in the URL the reader lands on the section after the last
+  passed gate (`resumeKey`), or front matter when no gate has been
+  passed. Search hits and glossary entries with a `section_key` in this
+  lesson set the URL position. Left/right arrow keys step; no new
+  dependency.
+- Completion call to action: after the last body section, once every
+  question in the lesson is answered, a card names the next step from
+  `deriveNextStep` (`frontend/src/pages/MyLesson/nextStep.js`): the next
+  lesson not yet `done` (in position order), else "Take the qualified
+  assessment" / "Re-take … (N left)" when `assessment_available`, else
+  "Resume the assessment" for an open attempt, else the course page.
+  `MyCourse` shows the next action as a primary button under the
+  deadline ("Continue reading (lesson 2 of 3)", "Continue watching …",
+  "Take the qualified assessment", "Re-take the qualified assessment (N
+  left)", "Resume the assessment", "View your certificate"); `/my/courses`
+  cards carry the same labels ("Continue reading" by `lessons_kind`).
+- Video direction and controls: reader clips keep `controls` and no seek
+  handler (test pins a settled seek standing) and show "Continue
+  reading" on `ended`, which scrolls to the open question after the
+  section or opens the next section. The video-only player
+  (`frontend/src/components/Player/Player.jsx`) gains "Rewind 15 s" and
+  an end panel: the remaining review questions when the enrollment says
+  any are unanswered (asked again in place — a reload mid-question
+  resumes past the review point and never re-asks it), else the derived
+  next step, else "End of this lesson." in the preview; "Watch again"
+  beside it. Forward-seek lock untouched (test pins the refusal).
+- Failed-result and exhausted wording
+  (`frontend/src/components/Assessment/Assessment.jsx`, new
+  `frontend/src/components/RetakesExhausted/`): with sittings left —
+  score, threshold, "You have N re-takes left on this enrollment", a
+  "Re-take the assessment" button, "Back to the study guide" (or "Back
+  to the lessons" on a video course); with none — score, threshold, "You
+  have used all N re-takes on this enrollment", "Read the re-take
+  policy" → `/policies#retakes`, "Contact us about re-enrolling:
+  <address>", and "The study guide stays open: you can keep reading
+  it". The course page renders the same notice once, in the next-action
+  slot, and drops its "Qualified assessment" section in that state;
+  "The assessment is not available yet" is now only shown for unanswered
+  review questions (the "No re-takes left" reason is filtered out of the
+  list). `MyCourse` reads `retakes_allowed` from the assessment info
+  only when exhausted (the detail carries the sittings left, not the
+  allowance).
+- Video-wording grep (section 5), participant surfaces, as found:
+  `pages/MyCourses/progressLabel.js` (kind-aware, kept),
+  `pages/MyCourse/MyCourse.jsx:176` (a comment), `pages/MyLesson/
+  MyLesson.jsx` (medium dispatch), `pages/Catalog/Catalog.jsx` ("N
+  minutes of video", shown only for video lessons with ≥1 minute, kept),
+  `components/Assessment/retryAdvice.js` (kind-aware, kept),
+  `components/Reader/Reader.jsx` (the clip caption "Watch, skip, or
+  replay it as you like", about a clip, kept), `components/Player/
+  Player.jsx` ("Re-watch this section", the video player, kept). One
+  miss found and fixed: the `/how-it-works` text
+  (`backend/app/services/instructions.py`) said "consider re-watching
+  the lessons before trying again" for every course; it now says
+  "re-reading the guide, or re-watching the lessons".
+- Chrome: `MyCourses` keeps only its heading (email, Account link, and
+  Sign out were the header's); `ReviewHeader` is removed from
+  `ReviewHome.jsx` and `ReviewCourse.jsx` along with its CSS — after
+  dropping its email and Sign out only a second wordmark remained.
+  `/login` shows "New here? Create account" below the form under
+  `siteFace() === OPEN`. New `frontend/src/components/SiteFooter/` under
+  exactly the header's rule (null while loading or coming-soon, under
+  `/admin`, and on `/change-password`): links `/policies`,
+  `/how-it-works`, and the sponsor's contact address (mailto). Mounted
+  in `App.jsx` after `<Routes>`.
+- Backend (two small changes, both reported): `SponsorProfilePublic`
+  gains `contact_email` and the public `GET /api/v1/sponsor` serves it
+  (`backend/app/schemas/sponsor.py`, `backend/app/routers/sponsor.py`;
+  new test `test_public_endpoint_carries_contact_email` pins the field
+  and that nothing else joined it) — the address was in no
+  participant-facing payload and the spec asks for it on two surfaces;
+  and the instructions wording above. Suite 464 → 465 (the one new
+  test). No model change, no migration.
+- Frontend tests 30 → 73: `Reader.test.jsx` (D2 kept and extended
+  through the stepper: the verdict survives leaving and returning; one
+  section at a time; locked entry title-only and its body absent from
+  the DOM; Continue disabled/enabled; progress counts body sections;
+  URL round-trip and fallback; resume landing; no `is_correct`,
+  `correct_choice_key`, or feedback text in the DOM before grading;
+  completion card conditions and next-lesson variant; clip `controls`,
+  no seek lock, `ended` affordance), `stepper.test.js`,
+  `nextStep.test.js`, `Player.test.jsx` (backward seek and rewind,
+  forward refused, end panel variants), `Assessment.test.jsx` (both
+  failed variants and the preview, nothing per question),
+  `SiteFooter.test.jsx` (footer present at open with and without the
+  sponsor read, absent in coming-soon / under `/admin` /
+  `/change-password`, no course fact or Registry string; `/login`
+  Create account at open and not in coming-soon signed out; one Sign
+  out and one email on `/my/courses`, `/review`, `/review/courses/ATO`).
+- COMPLIANCE.md: four rows appended (4.05.3 item 4, 5.01.2.1, 6.01.2
+  re-takes, 8.01.1). ROADMAP.md: the 028 improvement note.
+
+**Standards touched**
+- 4.05.3 items 4 and 5 — read in `docs/2026-Statement-on-Standards-for-
+  CPE-Programs.pdf` on printed pages 7–8. The front matter that answers
+  item 4 renders first in the stepper and is never hidden; item 5's
+  review questions render inline with feedback as before.
+- 5.01.2.1 — page 9. Placement is the package's `after_section`; the
+  stepper moves, batches, and defers nothing, and adds no gate of its
+  own.
+- 5.01.2.2 — page 10. Feedback stays on screen through the stepper and
+  through leaving and returning to a section.
+- 6.01.2 — pages 13–14. "The number of re-takes … is at the sponsor's
+  discretion": the failed result now says what the count means and
+  links the published policy; sub-ii-b-1, "may not provide feedback":
+  still nothing per question on a failed attempt, asserted in both
+  variants.
+- 8.01.1 — page 20. The footer adds a second path to `/policies`; the
+  policies themselves are unchanged.
+
+**Decisions**
+- The reader's "read" state for an ungated section is browser state: the
+  payload can say which gates are passed and what is locked, not
+  whether a section between gates was read. Sections before the resume
+  point are marked read from the payload; sections this session moved
+  on from are marked read locally; nothing is written to the server. A
+  server-side reading position would be a new participant record and
+  needs a retention decision — not built, as the spec anticipated.
+- "Continue reading (Section 4 of 14)" on the course page and
+  `/my/courses` is rendered as "(lesson 2 of 3)": the enrollment payload
+  carries lessons and their question counts, not section counts, and the
+  spec says to add no field.
+- The contact address is served from the already-gated public `/sponsor`
+  payload rather than `/site` (which is public in coming_soon) — the
+  footer and the exhausted notice render only at open or with a
+  session, so the gate matches the surfaces.
+- `ReviewHeader` removed entirely rather than trimmed (see above).
+- `isExhausted` lives in `pages/MyCourse/exhausted.js` — oxlint's
+  react-refresh rule flags non-component exports from component files
+  (the 026 `stripeDashboard.js` precedent).
+- On the course page the exhausted allowance `N` is read from the
+  assessment info when needed; `failed_attempts - 1` is the fallback
+  while that read is in flight (exact under the current invariant that
+  `start_for_enrollment` refuses at zero sittings).
+
+**Known gaps**
+- Acceptance 1–5 (browser) and 7 (production): not yet run by the
+  operator.
+- `/policies#retakes` scrolls only if the section exists when the hash
+  is applied; the page loads its payload asynchronously, so a direct
+  navigation may land at the top — the same caveat as 016's
+  `/policies#refund` links.
+- The reader contents column and the 320px layout were verified by
+  tests and a production build, not by a screenshot; 025 used headless
+  Chrome for that and 027 did not.
+- `MyLesson.jsx` still resets its state synchronously inside its load
+  effect (a pre-existing pattern oxlint warns about); `Player.jsx`'s
+  unused `furthest` state variable predates this feature.
+- The reader clip's `ended` affordance scrolls to the open question or
+  opens the next section; it does not auto-advance, by design.
+- On a video-only lesson, "Answer the review questions" re-asks every
+  question in the lesson, not only the unanswered ones — the play
+  payload carries no `answered` flag and adding one is a payload change
+  this feature did not make.
+- `deploy/`, `docs/OPERATIONS.md`: unchanged.
+
+## 028 — Unlimited re-takes and free renewal after expiry
+Shipped: 2026-09-12
+
+**What changed**
+- `RETAKES_ALLOWED` in `backend/app/constants/assessment.py` is
+  `None` (unlimited), typed `int | None`, with the comment rewritten:
+  6.01.2 leaves the count to the sponsor; `None` is unlimited; an
+  integer is re-takes after the first sitting per enrollment; every
+  attempt is retained whatever the value; 011's policy text renders
+  whichever it is.
+- `enrollments.retakes_remaining` returns `None` when unlimited;
+  `assessment.start_for_enrollment` skips the sittings check on `None`
+  (the other refusals — completed, expired, voided, unanswered review
+  questions, open attempt — are unchanged and re-proven). The failed
+  result, the assessment info (enrollment and preview), and the
+  enrollment card carry `retakes_allowed` and `retakes_remaining` as
+  nullable, with `retakes_unlimited: bool` beside them.
+- `policies.retake_policy_text()` branches: unlimited renders "A
+  participant may re-take the qualified assessment as many times as
+  needed."; an integer renders the 010 sentence. The how-it-works page
+  (`services/instructions.py`) branches the same way and gains one
+  sentence on renewal at no charge.
+- Free renewal: `enrollments.renewal_refusals` (derived from `paid`
+  payment rows and enrollment statuses, never stored), `renewable`
+  (per expired card: the most recent enrollment on the course, and
+  eligible), and `renew` (the one constructor with
+  `source="renewal"`, no Stripe call, no payment row).
+  `POST /api/v1/courses/{code}/renew` in `routers/courses.py`, behind
+  the site gate and the participant role, one 422 line per failed
+  condition (no paid purchase; still active; already completed;
+  voided; no enrollment at all), 404 for an unknown course, 422 for an
+  unpublished one; answers the new enrollment as the `/my/courses`
+  card (`my.enrollment_summary`, now public).
+- `enrollments.source` CHECK gains `renewal`: migration
+  `c2d8e5f1a028_enrollment_source_renewal.py`, written by hand; no
+  other schema change; no FK from the renewal to the payment or the
+  expired enrollment.
+- 018 narrowed: `payments.start_checkout` refuses a participant with a
+  prior `paid` row for the course ("you have already purchased this
+  course; renew it from the course page instead of paying again"); the
+  active-enrollment refusal drops its "it can be purchased again after
+  it expires" clause. Pending-session reuse is unchanged.
+- Frontend: `MyEnrollmentSummary.renewable` drives a shared
+  `RenewEnrollment` component (`frontend/src/components/RenewEnrollment/`)
+  — "Start a new enrollment (no charge)" — on the course page's
+  Registration section (re-renders enrolled in place), the `/my/courses`
+  card and the enrollment page's next action (both navigate to the new
+  enrollment). A shared `retakeLabel` in `pages/MyLesson/nextStep.js`
+  drops the "(N left)" count when `retakes_remaining` is null; the
+  failed result shows score, threshold, and "Re-take the assessment"
+  with no count under the unlimited policy; the intro sentence says the
+  assessment may be re-taken as many times as needed. `RetakesExhausted`
+  and `isExhausted` are untouched and render only at
+  `retakes_remaining === 0`. The admin enrollments table gains a Source
+  column.
+- Tests: backend 465 → 481 (`tests/test_renewal.py` new: the
+  eligibility matrix, pinning to current packages, retention of the
+  expired enrollment's answers and attempts, admin sources, only the
+  latest expired card renewable, the gate; `set_retakes_allowed` in
+  `conftest.py` patches every module that binds the constant for the
+  finite tests). Frontend 73 → 82 (`CoursePage.test.jsx` and
+  `MyCourses.test.jsx` new; Assessment and nextStep tests extended).
+  Router walk green; `INTENTIONALLY_PUBLIC` untouched.
+
+**Task 0 answers**
+1. `enrollments_service.enroll` accepts `source="admin"` (default; the
+   admin enrollments router) and `"purchase"` (the Stripe webhook).
+   Constrained by CHECK `ck_enrollments_source` in
+   `backend/app/models/enrollment.py` and migration `b3e9c41a7f52`;
+   `ENROLLMENT_SOURCES` mirrors it. `renewal` needed a hand-written
+   migration (above).
+2. `retakes_remaining` was consumed by: `assessment.start_for_enrollment`
+   (`== 0` refusal), `assessment.result` (failed payload),
+   `routers/my.py` `_unavailable_reasons` (`== 0`), `_summary_fields`
+   (`retakes > 0` gating `assessment_available`, and the field),
+   `get_assessment` (`retakes > 0` gating `available`); schemas
+   `MyAssessmentInfo` and `MyEnrollmentSummary` typed it `int`, and
+   `AssessmentInfo.retakes_allowed: int`; `services/instructions.py`
+   interpolated `RETAKES_ALLOWED` into the how-it-works markdown;
+   `policies.retake_policy_text`. Frontend: `Assessment.jsx` (failed
+   branch and intro), `RetakesExhausted.jsx`, `MyCourse.jsx`,
+   `MyCourses.jsx`, `nextStep.js`, `exhausted.js`. The `> 0` gates became
+   `!= 0` so `None` passes; everything else handles null.
+3. Tests asserting the exhausted message or an integer:
+   `test_completion.py::test_start_refused_when_retakes_exhausted`
+   (looped `1 + RETAKES_ALLOWED`, asserted the number and the word
+   `RETAKES_ALLOWED` in the message) and
+   `::test_failed_enrollment_result_carries_no_feedback` (equality to
+   the constant); `test_policies.py::test_retake_text_carries_the_enforced_numbers`
+   and `::test_how_it_works_numbers_match_the_constants`
+   (`f"{RETAKES_ALLOWED} times"`); `test_assessment.py::test_failed_result_payload_has_no_feedback`
+   (equality, still true with `None`). Frontend: `Assessment.test.jsx`
+   (finite fixtures) and `nextStep.test.js` ("(3 left)"). The first
+   four became finite-policy tests under `set_retakes_allowed`; the
+   frontend ones keep their finite fixtures and gained unlimited cases.
+4. 018 on an expired participant calling checkout: refused only on an
+   *active* enrollment, so it minted a second Stripe session and a second
+   `payments` row, and the webhook created a second `purchase`
+   enrollment (`test_expired_enrollment_allows_a_fresh_purchase` proved
+   exactly this). Confirmed before narrowing.
+5. Policy text lives in `policy_versions` only; no seed. The test factory
+   `publish_test_policies` in `tests/conftest.py` publishes "Test {kind}
+   policy." for each kind. The admin path is `POST /api/v1/admin/policies`
+   (`policies.admin_router` → `policies_service.publish`, append-only,
+   effective-dated), reached from the admin sponsor page. Nothing in
+   code reads the body, so the factory does not need a policy that
+   mentions renewal.
+
+**Standards touched**
+- 6.01.2 — "The number of re-takes … is at the sponsor's discretion"
+  (page 13); unlimited chosen; sub-ii-b-1 on page 14 (no feedback on a
+  failed assessment) untouched and re-asserted by the same tests.
+- 9.02.2(3) — expiration "no longer than one year from the date of
+  purchase or enrollment" (page 24); a renewal is a new enrollment with
+  its own year; nothing is extended.
+- 8.01 items 8 and 9 — registration and refund policies (page 20); the
+  registration policy must state the renewal rule (operator, below);
+  the refund policy is unchanged.
+- 8.01.1 — policies "formalized, published, and made available" (read
+  on page 21, not page 20 as the spec said); the rule lives in the
+  published policy, linked, not restated.
+
+**Decisions**
+- **Reversal of 018's "re-purchase allowed after expiry":** checkout is
+  for a first purchase of a course only; a participant with a `paid`
+  row renews instead. The 018 test was rewritten as
+  `test_renewal_after_expiry_checkout_refused`, and the 018
+  active-enrollment refusal no longer promises a later re-purchase.
+- `retakes_unlimited: bool` was added beside the nullable numbers: the
+  failed result already used an absent `retakes_remaining` to mean "a
+  preview attempt, no enrollment", so null alone could not tell the
+  browser "unlimited" from "preview". The frontend keys the Re-take
+  button on the flag and the enrollment case on the key's presence.
+- `renewable` is true only on the participant's most recent enrollment
+  on the course; an older expired card never offers the button.
+- Eligibility lives in `services/enrollments.py` (it owns the
+  constructor) and imports the `Payment` model directly; the payments
+  service already imports the enrollments service, so the reverse
+  import would have been circular.
+- A renewal pins the course's *current* published packages. If the
+  course was re-reviewed and republished since the expired enrollment,
+  the participant reads the current guide; that is correct — the
+  expired enrollment keeps its own pin.
+- 029 subscriptions: a subscription source will be a second qualifying
+  condition beside `has_paid` in `renewal_refusals`; one comment names
+  it, nothing is built.
+- How-it-works (code, 4.05.3 instructions) gained one sentence on
+  renewal at no charge because a "None times" rendering would have been
+  a bug and the page must not contradict the policy the operator
+  publishes.
+- Drafted registration/attendance policy wording (operator publishes as
+  a new version):
+  > Enrollment. An enrollment in a course begins on the date of purchase
+  > or enrollment and expires one year later; the qualified assessment
+  > must be completed before the enrollment expires. An enrollment is
+  > never extended. A participant who purchased a course and did not
+  > complete it before the enrollment expired may start a new one-year
+  > enrollment in the same course at no additional charge from the
+  > course page. The new enrollment begins with no review questions
+  > answered and no assessment attempts, and uses the course's currently
+  > published materials.
+  >
+  > Attendance. There is no attendance requirement; a self-study course
+  > is completed by answering every review question and passing the
+  > qualified assessment.
+  >
+  > Re-takes. A participant who does not pass the qualified assessment
+  > may re-take it as many times as needed within the enrollment period.
+  > No feedback on individual questions is given for an assessment that
+  > was not passed.
+- Local test database: `tests/conftest.py` builds it once with
+  `create_all` and never alters an existing table, so the changed CHECK
+  required dropping `supercpe_test`; done as a routine step (test data
+  only).
+
+**COMPLIANCE.md**
+- Updated: four rows appended — 6.01.2 (re-takes), 9.02.2(3), 8.01
+  item 8, 8.01 item 9.
+
+**ROADMAP.md**
+- The "028 — exhausted enrollments" improvement note 027 added is struck
+  and superseded by this feature's line (append only).
+
+**Known gaps**
+- Acceptance 6 (operator publishes the new registration/attendance
+  policy version) and 7 (production deploy and re-run of 1 and 2): not
+  yet run by the operator.
+- Acceptance 1–4 were proven at the API layer by the backend suite
+  (five failures then a permitted start; renewal with a fresh year, no
+  answers, no attempts; checkout refused with the already-purchased
+  message and a first purchase of another course allowed; refunded then
+  voided then expired shows no renewal and checkout is allowed). The
+  browser walkthrough of the same steps was not performed in the build
+  session.
+- `assessment.result` for a *preview* attempt under the unlimited policy
+  reports `retakes_unlimited: true`; the preview never counted sittings
+  anyway.
+- The local `supercpe_test` database was dropped and rebuilt; any other
+  developer's test database needs the same once (the CHECK is not
+  altered by `create_all`).
+- Out of scope, reported not built: per-course retake limits; extending
+  `expires_at`; renewal of a completed enrollment; subscriptions (029);
+  any refund/void change; rewriting 027's exhausted wording. The
+  CLAUDE.md "Commands" block still says "<typecheck and lint commands —
+  fill in>"; this build used `npm run lint` (oxlint) and
+  `python -m pyflakes app tests` (the only linters present) — no
+  typechecker exists in either half.
+
+## 029 — Annual subscription
+Shipped: 2026-09-12
+
+**What changed**
+- Constants: `backend/app/constants/subscription.py` —
+  `SUBSCRIPTION_PRICE_CENTS = 14900` (ours), `SUBSCRIPTION_PERIOD_DAYS =
+  365` (ours; Stripe's yearly interval is the schedule), and the Stripe
+  status lists the two new CHECKs mirror.
+- Config: `STRIPE_SUBSCRIPTION_PRICE_ID` joined 012's all-or-nothing
+  `STRIPE_VARS` (`backend/app/config.py`), so 018's
+  `payments_not_configured` open-gate finding covers it; the "swap all
+  three in one edit" wording became "all four" in config, readiness,
+  preflight, `.env.example`, and OPERATIONS.md. `preflight`
+  (`backend/app/cli.py`) retrieves the Price once through the boundary
+  and, on an open site, refuses a deploy whose Price amount or currency
+  differs from the constant (naming both numbers) or whose Price cannot
+  be read; while coming-soon it prints a note. Not configured is silent
+  (the open gate owns that).
+- Data model, migration `d4b8e2a7c029`: `accounts.stripe_customer_id`
+  (nullable, unique, set once); `subscriptions` (status CHECK, period,
+  `cancel_at_period_end`, `canceled_at`, `credit_applied_cents`,
+  `livemode`, plus `checkout_url` for live-session reuse);
+  `subscription_invoices` (status CHECK, amount, currency, period,
+  `livemode`, plus `stripe_payment_intent_id` so a refund can find the
+  row); `payments.credited_to_subscription_id`; `enrollments.source`
+  CHECK gains `subscription`. All hand-written; docstrings say financial
+  record, never deleted, outlives `RETENTION_YEARS`.
+- Boundary: `services/stripe_gateway.py` gained `create_customer`,
+  `create_credit_coupon`, `create_subscription_checkout_session`
+  (`mode="subscription"`, `payment_method_collection="always"`,
+  `discounts=[{"coupon": …}]`, metadata on both the session and
+  `subscription_data`), `retrieve_subscription`, `create_portal_session`,
+  and `retrieve_price`. No second client.
+- `services/subscriptions.py`: `current` (status `active` and
+  `current_period_end` ahead, both as Stripe last reported; grace
+  decided once, as none — `past_due` is not current), `enroll_subscriber`
+  (010's constructor, `source="subscription"`, no Stripe call),
+  `subscription_enrollable` (the card's "Enroll again (included)"),
+  `credit_payments`/`credit_cents` (paid, uncredited, capped),
+  `start_subscribe` (customer ensured and committed first, coupon only
+  when credit > 0, row written `incomplete` before the URL returns,
+  live incomplete session reused), `portal_url`, and the webhook
+  handlers. Credit is consumed only by the completed-session handler,
+  from `total_details.amount_discount`, with the payment FKs in the
+  same transaction.
+- Webhook: `payments.handle_event` stays the one dispatch point.
+  `checkout.session.completed` with `mode == "subscription"` links the
+  Stripe subscription id, re-stamps `livemode`, records the discount and
+  the FKs, and copies status and period from one `retrieve_subscription`
+  (the session object carries neither); `customer.subscription.updated`
+  / `.deleted` copy status, period, `cancel_at_period_end`,
+  `canceled_at` (found by Stripe id, else by the row id in the metadata,
+  so an update that outruns the completion still lands); `invoice.paid`
+  upserts the invoice row and syncs the period from the lines;
+  `invoice.payment_failed` upserts the row as `open` and nothing else;
+  `charge.refunded` on a subscription invoice marks it `refunded` and
+  stops (018's `_handle_refunded` tries payments first, then invoices,
+  then logs unknown). Orphans log loudly and answer 200; each new type
+  is idempotent through the existing event table, recorded and committed
+  with the handler's changes in one transaction.
+- 028 join: `renewal_refusals` in `services/enrollments.py` — "or any
+  prior `subscription`-sourced enrollment for the course" beside
+  `has_paid`. 018 join: `start_checkout` refuses a current subscriber
+  ("your subscription covers this course; enroll directly"). The renew
+  route refuses a current subscriber the same way (the subscriber's
+  enroll takes precedence), and the card never offers both.
+- Routes: `POST /api/v1/courses/{code}/enroll` (201 the card; 422 per
+  condition; 404 unknown course); `GET/POST /api/v1/subscribe`,
+  `GET /api/v1/subscribe/me`, `POST /api/v1/subscribe/portal`,
+  `GET /api/v1/subscribe/{session_id}/status` (owner-only) in
+  `routers/subscribe.py`, all behind the site gate; `GET
+  /api/v1/admin/subscriptions` in `routers/admin_subscriptions.py`.
+  `MeOut` gained `subscription_current` (derived per read; false for
+  non-participants); `MyEnrollmentSummary` gained
+  `subscription_enrollable`; `AdminPaymentOut` gained
+  `credited_to_subscription_id`.
+- Frontend: `/subscribe` (offer from the payload, credit line only when
+  > 0, both policy links, Subscribe → Stripe, sign-in links for
+  visitors), `/subscribe/success` (polls, refreshes the session, links
+  the catalog, 018's ~30s honest-delay state), `/account` Subscription
+  section (none / current, renews on / cancels on / past due with
+  "Update payment method" / lapsed; credit consumed; Manage subscription
+  → Customer Portal), header Subscribe link for a participant without a
+  current subscription (only while `site_mode` is open; null in
+  coming-soon and under `/admin` as before), footer Subscribe link at
+  open, course page two-choice section / included-enroll button /
+  "Enroll again (included)" via the shared `SubscriptionEnroll`
+  component (also on the `/my/courses` card, checked before 028's
+  renewal), `/admin/subscriptions` (table, invoices, both flags, Void
+  beside each active enrollment of a refunded subscription, Stripe link
+  honoring `livemode`), `/admin/payments` credited marker, AdminNav
+  link.
+- Docs: OPERATIONS.md "Subscriptions (029)" (Product/Price, scopes,
+  four new event types on both endpoints, portal configuration, dunning
+  emails, Stripe Tax note, CLI walkthrough with its log table, the
+  subscription refund runbook) and the Payments (018) section's counts
+  and event list; four COMPLIANCE.md rows appended; `.env.example`.
+- Tests: backend 481 → 523 (`tests/test_subscriptions.py`, 38, plus 4
+  preflight price tests; 018's boot all-or-nothing test and 009's
+  exact `/me` payload test extended); frontend 82 → 104 (header,
+  course page, footer extended; Subscribe, Account, SubscribeSuccess
+  new). Router walk green; `INTENTIONALLY_PUBLIC` untouched; every new
+  route 404s anonymously in coming_soon; no new response carries a
+  course fact or "National Registry".
+
+**Task 0 answers**
+1. `create_checkout_session` did not accept a mode — `mode="payment"`
+   was hard-coded with inline `price_data`. Rather than a mode flag on
+   a function whose line items, customer handling, and return shape
+   differ, a separate `create_subscription_checkout_session` was added
+   to the same boundary. `stripe==12.4.0` (API version
+   `2025-07-30.basil`) supports Checkout `subscription` mode,
+   `payment_method_collection="always"`, and `discounts=[{"coupon":
+   …}]`, checked in its `Session.CreateParams`. Basil also moved
+   `current_period_*` to the subscription item, `invoice.subscription`
+   under `parent.subscription_details`, `invoice.payment_intent` under
+   `invoice.payments`, and removed `charge.invoice`; the handlers read
+   both shapes and copy whichever Stripe sends.
+2. 018 created Stripe guest customers per Checkout (`customer_email`,
+   no Customer object); no account carried a customer id. This feature
+   adds `accounts.stripe_customer_id`, creates the Customer on the
+   first subscription checkout, and never backfills guests.
+3. `handle_event` dispatched on `checkout.session.completed`,
+   `checkout.session.expired`, and `charge.refunded`; every other type
+   was logged by name at INFO and answered 200 without a record. New:
+   `checkout.session.completed` (subscription mode),
+   `customer.subscription.updated`, `customer.subscription.deleted`,
+   `invoice.paid`, `invoice.payment_failed`, and `charge.refunded` on a
+   subscription invoice. Each is idempotent by event id through
+   `stripe_webhook_events` (the replay check runs before dispatch; the
+   new handlers record the event and commit in the same transaction).
+   `customer.subscription.created` stays unhandled by design (below).
+4. `renewal_refusals` in `backend/app/services/enrollments.py`, the
+   `if not has_paid(db, account, course):` line; it became `if not
+   (has_paid(...) or any(e.source == "subscription" for e in rows))`.
+5. 026's key had Checkout Sessions Write and Payment Intents, Charges,
+   Refunds Read. Missing for Billing, to be added by the operator:
+   Customers Write, Subscriptions Read, Coupons Write, Billing Portal
+   Write (sessions), Invoices Read, and Prices/Products Read (for
+   preflight's `Price.retrieve`). Nothing was widened in code.
+6. `Registration` in `frontend/src/pages/CoursePage/CoursePage.jsx`
+   (018, revised by 028 for the renewal button); it gained the second
+   option, the included-enroll button, and the "Enroll again" branch.
+
+**Standards touched**
+- 9.02.2(3) — read on printed page 24: "no longer than one year from
+  the date of purchase or enrollment" for individual courses. A
+  subscription is not an enrollment; each course enrolled under it
+  carries its own year from enrollment through 010's constructor, and
+  a subscription ending touches no enrollment. COMPLIANCE row appended.
+- 8.01 items 8 and 9 — read on printed page 20; 8.01.1 on page 21
+  ("formalized, published, and made available"). The subscription is a
+  fee; `/subscribe` discloses price, term, renewal, cancellation, and
+  links both policies. COMPLIANCE row appended; the operator's new
+  policy versions are pending (below).
+- 9.02 — read on printed page 22. `subscriptions`,
+  `subscription_invoices`, and the credit FK are financial records
+  retained beyond `RETENTION_YEARS`; a lapse deletes nothing. Two
+  COMPLIANCE rows appended (retention; amounts as Stripe reported).
+
+**Decisions**
+- **Reversal of 018's "the webhook is the sole creator of
+  enrollments":** a current subscriber's enroll is a click —
+  `POST /courses/{code}/enroll` calls 010's constructor with no Stripe
+  call and no payment row. The webhook remains the sole creator of
+  *purchased* enrollments; `services/payments.py`'s docstring says so.
+- **Reversal of 018's "the refund policy covers course sales":** it
+  now also covers subscriptions. The webhook marks, the admin decides
+  (018's rule kept); the admin subscriptions view raises two loud flags
+  (refunded-with-current-subscription, refunded-with-active-enrollments);
+  cancelling in Stripe is the admin's separate act.
+- **Accepted sponsor exposure:** completed enrollments and issued
+  certificates are immutable 9.02 records a refund cannot unmake. A
+  participant who subscribes, completes courses, and is then refunded in
+  full keeps that credit. Recorded here, and in the refund runbook.
+- Status and period are never taken from the Checkout Session object
+  (it carries neither): the completed-session handler retrieves the
+  subscription once through the boundary and copies from it; if the
+  retrieve fails the row stays `incomplete`, loudly, until
+  `customer.subscription.updated` arrives. This keeps the registered
+  event list at the four the spec named and keeps "copy, never infer"
+  honest. `customer.subscription.created` is therefore unhandled.
+- Two columns beyond the spec's list: `subscriptions.checkout_url`
+  (the live-session reuse the spec asks for needs the URL, as
+  `payments` keeps it) and `subscription_invoices.stripe_payment_intent_id`
+  (`charge.refunded` carries a payment intent and, under basil, no
+  `invoice`; without it a refund could not find the row).
+- The status CHECK lists all eight Stripe subscription statuses, not
+  the six the spec expected: `trialing` and `paused` cannot arise from
+  this configuration, but a CHECK that refused a status Stripe sent
+  would 500 the webhook and make Stripe retry forever. Neither is ever
+  current.
+- `past_due` is not current: no grace period, decided in `current`'s
+  docstring. Stripe's dunning and the participant's "update your
+  payment method" state are the whole handling.
+- The header and footer Subscribe links render only while `site_mode`
+  is open, not merely while the header's face is open: a signed-in
+  participant on a coming-soon site sees the header (025) but not an
+  offer whose page names a price.
+- `subscription_current` rides on `/auth/me` (derived per read) so the
+  header needs no second request; the success page calls the session's
+  `refresh()` on landing.
+- A current subscriber's expired course is re-started through the
+  subscriber's enroll; the 028 renew route refuses them by name and the
+  card never offers both buttons. A lapsed subscriber gets 028's
+  renewal for courses started under the subscription.
+- The `/admin/subscriptions` page reuses `AdminPayments.module.css`
+  and the existing void endpoint; no new admin action exists.
+- `tests/test_payments.py`'s `pay` helper reuses one event id and one
+  intent id; the new suite's `pay_course` gives each purchase its own
+  so multi-course credit can be computed. The local `supercpe_test`
+  database was dropped and rebuilt for the new columns and CHECKs
+  (test data only); the migration was applied to the local dev
+  database with `alembic upgrade head` and the CHECKs inspected.
+- Drafted registration/attendance policy wording (operator publishes as
+  a new version, appended to 028's text):
+  > Annual subscription. A subscription begins on the date of purchase,
+  > runs for one year, and renews automatically at the end of each year
+  > until cancelled. While a subscription is current, the subscriber may
+  > enroll in any published course at no additional charge. Each course
+  > enrolled in under a subscription is a separate enrollment with its
+  > own one-year completion window from the date of enrollment; the end
+  > of a subscription does not shorten or extend any enrollment already
+  > started. If a subscription lapses, every enrollment, completion, and
+  > certificate is retained, and the subscriber may subscribe again at
+  > any time. Course purchases made before a first subscription are
+  > credited, dollar for dollar and once, against the first subscription
+  > payment, up to the subscription price.
+- Drafted refund and cancellation policy wording (operator publishes as
+  a new version):
+  > Courses. A course purchase is refundable in full on request, with no
+  > questions asked. When a purchase is refunded, access to that
+  > enrollment ends; a completed course and its certificate stand.
+  >
+  > Subscriptions. The current subscription payment is refundable in
+  > full on request, with no questions asked; refunds are never
+  > pro-rated. A subscriber may cancel at any time from their account;
+  > access continues to the end of the paid period and the subscription
+  > does not renew. When a subscription payment is refunded, the
+  > subscription is cancelled and access to enrollments still in
+  > progress under it ends. Courses completed and certificates issued
+  > before the refund stand; they are permanent records.
+- The 018 restricted-key scopes the operator must add: Customers Write,
+  Subscriptions Read, Coupons Write, Billing Portal Write, Invoices
+  Read, Prices/Products Read (OPERATIONS.md "Subscriptions (029)").
+
+**COMPLIANCE.md**
+- Updated: four rows appended — 9.02.2(3); 8.01 items 8 and 9 with
+  8.01.1; 9.02 (retention); 9.02 (018 payment row, amounts as reported).
+
+**Known gaps**
+- Acceptance 7 (Stripe test-mode walkthrough with the CLI), 8 (publish
+  both policy versions), and 9 (deploy and repeat 1 and 2 on
+  production in test mode): not yet run by the operator.
+- Acceptance 1–5 were proven at the API layer by the backend suite and
+  the page states by the frontend suite; the browser walkthrough of the
+  same steps was not performed in the build session.
+- Preflight on an open site now needs Stripe reachable (one
+  `Price.retrieve`); a transient outage refuses a deploy, as 026's
+  bucket-versioning check does. Coming-soon is unaffected.
+- The webhook's completed-session handler makes one outbound Stripe
+  call. If Stripe is unreachable at that moment the row stays
+  `incomplete` until the next subscription event; no retry of our own.
+- Stripe Tax on subscriptions is a note in OPERATIONS.md, not built.
+- Out of scope, reported not built: monthly or other intervals; team or
+  multi-seat plans; gifting; plan switching, trials, promo codes, any
+  coupon but the per-account credit; automatic voiding or automatic
+  cancellation on refund; any billing email of superCPE's own; a grace
+  period for `past_due` (decided: none); Google sign-in (030);
+  `customer.subscription.created` handling; automatic tax.
+- pyflakes reports two pre-existing unused imports
+  (`app/routers/checkout.py`, `app/models/enrollment.py`) untouched by
+  this feature; oxlint's remaining warnings are all on untouched files.
+
+## 030 — Sign in with Google
+Shipped: 2026-09-12
+
+**What changed**
+- Task 0 (recon), answered before code was written:
+  1. Password login sets the session in `backend/app/routers/auth.py`:
+     `auth_service.authenticate` → `auth_service.open_session` (the
+     random token whose sha256 is the `sessions` row) →
+     `_set_session_cookie` (`supercpe_session`, HttpOnly, SameSite=Lax,
+     Secure unless `DEV`, path `/`, max-age `SESSION_ABSOLUTE_HOURS`) →
+     `_me` for the body. Google sign-in lives in the same router and
+     calls the same three functions; nothing is copied.
+  2. `deploy/Caddyfile` sets exactly one security header today:
+     `Strict-Transport-Security`. There is no Content-Security-Policy,
+     no Cross-Origin-Opener-Policy, no frame header, on the Caddyfile,
+     the API, or `index.html`. Nothing must be added for Google's
+     script, popup, or iframe to work, so **no header line was added**
+     — the smallest change that works is none, and adding a CSP would
+     be a feature of its own. The directives a future CSP would need
+     are recorded in OPERATIONS.md "Google sign-in (030)". The one
+     Caddyfile change is the rate limit: `path /api/v1/auth/login
+     /api/v1/auth/google` in `zone login` (017's limiter is Caddy, not
+     the backend).
+  3. `accounts.password_hash` was NOT NULL; the migration makes it
+     nullable. Passwords are verified in exactly two places, both in
+     `backend/app/services/auth.py`: `authenticate` (login) and
+     `change_password`. Both now go through one `password_matches`,
+     which treats a null hash as a wrong password after spending one
+     argon2 verification against the throwaway hash, so the refusal
+     costs the same and reads the same (`LOGIN_FAILED`, or 009's "The
+     current password is incorrect"). `registration.register` hashes
+     but never verifies.
+  4. **PyJWT with its cryptography extra, overruling the spec's
+     default of google-auth.** `pip install --dry-run` in the venv:
+     `google-auth` 2.58.0 would install three packages (google-auth,
+     pyasn1, pyasn1-modules) and its `id_token.verify_oauth2_token`
+     needs an HTTP transport object — `requests` (present here only
+     through moto, a test dependency) or urllib3 — and refetches
+     Google's certificates on every call with no cache. `PyJWT[crypto]`
+     2.14.0 installs one package (cryptography is already present),
+     `PyJWKClient` caches Google's JWKS with a lifespan and refetches on
+     an unknown key id using stdlib urllib, and the issuer, audience,
+     expiry, and required-claims checks are explicit in our thirty
+     lines rather than inside a helper. Only
+     `services/google_identity.py` imports it.
+  5. 017 requires name (non-blank), email, and password; state of
+     licensure is optional; there is no terms checkbox (the form says
+     registering means agreeing to the registration policy). The name
+     matters: `completions.py` snapshots `display_name` as the 9.01
+     participant name. A Google-created account takes its name from
+     the ID token's `name` claim, which Google's button always
+     requests (`openid email profile`); the account is created complete
+     with no extra step. If a token carries no `name`, `display_name`
+     stays empty exactly as an admin-created account's can; no
+     "finish your account" step was built (see Known gaps).
+  6. vitest/jsdom tolerates the loader: an appended external `<script>`
+     is inert (jsdom fetches no resources), so `onload` never fires and
+     the promise stays pending. The mock is at the module boundary:
+     tests `vi.mock` `src/auth/googleIdentity.js` to resolve a fake
+     `{ initialize, renderButton }` and read the callback back out of
+     `initialize`'s argument; one test drives the real loader and pins
+     that two calls append one tag.
+- Config: `GOOGLE_CLIENT_ID` (optional, alone, default unset) in
+  `config.py` (`google_configured`), `.env.example`, and
+  `deploy/env.production.example`; preflight prints a
+  "configured / not configured" note either way, never a violation.
+  Not in any all-or-nothing group, not a readiness finding.
+- Data model: `accounts.google_sub` (nullable, unique, set once) and
+  `accounts.password_hash` nullable; hand-written migration
+  `e7c2a9f4b130_google_sign_in`.
+- `backend/app/services/google_identity.py`: the boundary —
+  `verify(credential) -> GoogleIdentity(sub, email, email_verified,
+  name)` or `GoogleIdentityError`; RS256 against Google's JWKS,
+  `iss` in Google's two values, `aud == GOOGLE_CLIENT_ID`, `exp`, and
+  `sub`/`iat`/`aud`/`iss` required. Tests stub it as 018 stubs
+  `stripe_gateway`.
+- `auth_service.sign_in_with_google` (one function): verify; unverified
+  email refused; account by `google_sub` → active participant signs
+  in; else account by case-folded email → active participant not yet
+  linked gets `google_sub` set (once) and `email_verified_at` if null,
+  signs in; else a participant is created with email, `google_sub`,
+  `email_verified_at = now`, `display_name` from the token, no
+  password, `must_change_password` false. Every refusal raises the same
+  `AuthenticationFailed(GOOGLE_SIGN_IN_FAILED)`.
+- Routes, both behind `require_site_open_or_session`:
+  `GET /api/v1/auth/google/config` → `{"client_id": "…" | null}`;
+  `POST /api/v1/auth/google` `{"credential"}` → the password-login
+  shape (`MeOut`) with the same cookie, or 401
+  `{"detail": "Sign in with Google did not succeed"}`. `MeOut` gains
+  `signin_methods` (derived: `["password"]`, `["google"]`, or both), so
+  `/auth/me`, `/auth/login`, and `/auth/google` all carry it.
+- Frontend: `src/auth/googleIdentity.js` (the one place the GIS
+  `<script>` is written — once, lazily; never `index.html`),
+  `src/components/GoogleSignIn/` (renders nothing unless
+  `siteFace() === OPEN` and the config's client id is non-null; then an
+  "or" divider and Google's rendered button, `ux_mode: "popup"`,
+  `auto_select: false`, no One Tap; the callback POSTs the credential
+  and hands the account to the page), mounted on `Login` (routes
+  through the same `finishSignIn` as the password form, `from`
+  redirect included) and `Register` (`signup_with` wording, then
+  `roleHome`). `/account` gains a "Sign-in methods" card (Password /
+  Google / Password and Google) and offers "Change your password" only
+  when a password exists; a Google-only account reads "This account has
+  no password; it signs in with Google."
+- Tests: backend 523 → 540 (`tests/test_google_sign_in.py`, 15: the
+  three outcomes, response shape identical to password login, linking
+  once then matching by `sub` with a changed Google email creating no
+  second row, an unverified registration verified by Google, eight
+  refusal cases byte-identical with no row created or changed,
+  `GOOGLE_CLIENT_ID` unset → null config and the constant 401 not 404,
+  404 anonymously in coming-soon and answering with a session,
+  password login and change-password on a no-password account, a
+  password set later giving both methods, `google_sub` unique,
+  `signin_methods` derived; plus two preflight note tests). The router
+  walk and `INTENTIONALLY_PUBLIC` are untouched and green. Frontend
+  104 → 122 (`Login.test.jsx` 6, `Register.test.jsx` 3,
+  `GoogleSignIn.test.jsx` 4 through the real App: coming-soon landing,
+  coming-soon `/login`, and `/admin/courses` at open never ask for the
+  config or load GIS; `/login` at open loads it once;
+  `googleIdentity.test.js` 2; `Account.test.jsx` +3 for the three
+  `signin_methods` variants).
+- Ops: OPERATIONS.md "Google sign-in (030)" (OAuth client creation,
+  origins, no redirect URIs, the env value, the header note, the
+  consent screen, Testing mode, the walkthrough, turning it off) and
+  Opening day gains step 6 with both lines (client id deployed and
+  walked; privacy policy decided); steps 6–10 became 7–11 and the two
+  in-document references were updated.
+
+**Standards touched**
+- None. Identity verification is not a Standards requirement; 9.02's
+  participant records are unchanged (one nullable column on the
+  account row, and `password_hash` may now be null). COMPLIANCE.md is
+  not changed: no locator's requirement or satisfaction moved, and the
+  file keeps no "not touched" line to append to.
+
+**Decisions**
+- One constant refusal for every failed Google sign-in, distinct from
+  the password constant: `"Sign in with Google did not succeed"`. A
+  Google account holder for `x@y` gets that body whether `x@y` has no
+  account, a deactivated one, an admin's, a reviewer's, one linked to a
+  different Google account, or whether the token itself was bad or
+  unverified — so the endpoint cannot be used to learn whether `x@y` is
+  a superCPE account or what kind. The tests assert the bodies are
+  byte-identical and that no row changed.
+- An account already linked to a different `google_sub` is refused on
+  the email branch rather than relinked: `google_sub` is set once.
+- Google sign-in does not consult `locked_until` or `failed_logins`;
+  those belong to the password door. It does refuse `is_active` false.
+- The privacy-policy dependency is an operator decision, not a page:
+  the consent screen stays in Testing mode (listed test accounts only)
+  until a privacy policy exists somewhere; recorded in OPERATIONS.md and
+  the opening-day checklist, not built.
+- A session loaded from a pre-030 payload with no `signin_methods` is
+  read by the account page as password-only.
+
+**Known gaps**
+- Acceptance 7 (production client id, deploy, repeat 1 and 2 on
+  production with the consent screen in Testing mode): not yet run by
+  the operator.
+- Acceptance 1–5 were proven at the API layer by the backend suite and
+  the page states by the frontend suite; the browser walkthrough with a
+  real client id and Google's popup was not performed in the build
+  session (no client id in `.env`). Two parts of it cannot run at all
+  yet: acceptance 1's "the accounts admin list shows the row with
+  `email_verified_at` set" — `AccountOut` and `/admin/accounts` do not
+  expose `email_verified_at` for any account, so it is visible only in
+  the database; and acceptance 4's "run the reset flow" — see next.
+- **017a (password reset) does not exist.** The spec reads as if it
+  does; ROADMAP.md records it as never built. Consequences: a
+  Google-only account has no way to add a password today; the
+  `/account` line "To add a password, use Forgot password" was not
+  rendered (there is nothing to link) and reads "This account has no
+  password; it signs in with Google." instead; and the test for "017a
+  reset sets a password and password login then works" is stood in
+  for by `test_a_password_set_later_makes_both_methods_work`, which
+  stores what a reset would store. When 017a ships it must write
+  `password_hash` through `auth_service._hasher` and nothing else
+  changes here.
+- No participant-facing way to set or correct `display_name` exists
+  for any account type, Google-created or not; a token with no `name`
+  claim leaves it empty until an admin edits it. A "finish your
+  account" step was not built (Task 0.5).
+- Out of scope, reported not built: redirect/code flow, refresh tokens,
+  storing any Google token; Google sign-in for admin or reviewer roles
+  or any role change by Google; unlinking or changing the linked
+  Google account; One Tap, auto sign-in, Apple or Microsoft sign-in;
+  waiting-list invitation (021) via Google; a privacy policy page; any
+  change to 017's verification email or the constant-response bodies;
+  a Content-Security-Policy for the site.
+- pyflakes reports pre-existing unused imports on untouched files
+  (`app/routers/checkout.py`, `app/models/enrollment.py`, and six test
+  modules); oxlint's remaining warnings are all on untouched files.
+- The working tree already carried the operator's uncommitted edits to
+  CHANGELOG.md (027–029 entries), CLAUDE.md (rule 5), OPERATIONS.md
+  (Stripe sandbox notes), and current-feature.md when this session
+  began; they are not this feature's changes and were left as found.

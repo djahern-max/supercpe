@@ -410,6 +410,16 @@ def preflight() -> int:
             else:
                 print(f"note: {problem}")
 
+    # 030: optional and alone — a note either way, never a violation
+    # and never a readiness finding; the site opens without it.
+    if settings.google_configured:
+        print("note: GOOGLE_CLIENT_ID is configured; Google sign-in is offered.")
+    else:
+        print(
+            "note: GOOGLE_CLIENT_ID is not configured; the Google sign-in "
+            "button does not render."
+        )
+
     if violations:
         print("preflight FAILED — the app would refuse to boot:", file=sys.stderr)
         for violation in violations:

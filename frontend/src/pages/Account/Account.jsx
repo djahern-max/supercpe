@@ -8,6 +8,7 @@ import { formatUsd } from "../../constants/money";
 import { US_JURISDICTIONS } from "../../constants/jurisdictions";
 import usePageTitle from "../../hooks/usePageTitle";
 import styles from "./Account.module.css";
+import { signinMethodsLabel } from "./signinMethods";
 
 function formatDate(iso) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -135,6 +136,27 @@ function SubscriptionSection() {
 }
 
 /**
+ * 030: the account's sign-in methods, derived by the server from the row
+ * (a stored password, a linked Google account). A Google-only account has
+ * no password to change, so the change-password link is not offered; no
+ * unlink or settings UI beyond that.
+ */
+function SigninMethodsSection({ methods }) {
+  const googleOnly = !methods.includes("password") && methods.includes("google");
+  return (
+    <section className={styles.card}>
+      <h2 className={styles.label}>Sign-in methods</h2>
+      <p>{signinMethodsLabel(methods)}</p>
+      {googleOnly && (
+        <p className={styles.muted}>
+          This account has no password; it signs in with Google.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
  * 020: the participant's account page — their state of licensure, which
  * the course pages' "For your board" hint keys on (their claim about
  * themselves, changeable and clearable at will), and 029's subscription.
@@ -142,6 +164,8 @@ function SubscriptionSection() {
 function Account() {
   usePageTitle("Account");
   const { account } = useSession();
+  // A session loaded before 030 carries no list; treat it as password.
+  const signinMethods = account?.signin_methods ?? ["password"];
   const [state, setState] = useState(null);
   const [status, setStatus] = useState("loading");
   const [saved, setSaved] = useState(false);
@@ -231,9 +255,13 @@ function Account() {
 
       <SubscriptionSection />
 
-      <p className={styles.muted}>
-        <Link to="/change-password">Change your password</Link>
-      </p>
+      <SigninMethodsSection methods={signinMethods} />
+
+      {signinMethods.includes("password") && (
+        <p className={styles.muted}>
+          <Link to="/change-password">Change your password</Link>
+        </p>
+      )}
     </main>
   );
 }
