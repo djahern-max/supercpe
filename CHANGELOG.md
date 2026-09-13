@@ -4113,3 +4113,213 @@ Shipped: 2026-09-13
   readiness, video-tool.
 - pyflakes still reports the pre-existing unused imports 030 listed;
   oxlint's 11 remaining warnings are all on untouched files.
+
+## 032 — Certificate redesign: render from an HTML template
+Shipped: 2026-09-13
+
+**Task 0 answers**
+1. *Current library.* `render` used fpdf2 (010/011). Its only callers
+   were `services/certificates.py` and the `positioned_runs` ruler in
+   `tests/test_certificates.py` (fpdf2 as a width-measuring stand-in for
+   the renderer's own metrics). The audit bundle never rendered; it
+   copies the stored PDF. fpdf2 is removed with this feature; the ruler
+   now measures with fontTools, which WeasyPrint depends on. Pillow,
+   which the identity script needs, stays as a WeasyPrint dependency
+   the way it was an fpdf2 one.
+2. *What the tests pin.* `test_certificates.py`: every 9.01 item as
+   text (`test_certificate_text_carries_every_item`), the non-Latin
+   name and DejaVu-only embedded fonts, re-render text identity, item 8
+   printing when the snapshot carries it, a state registration line,
+   the admin render refusal and the late legal name not printing, the
+   participant download, and the 023c D1 placement test (one page,
+   letter media box, every run's x/y/end-x inside the 20 mm margins,
+   the wrapped title's two halves each in one run, and the exact
+   labelled lines `Completion date: …`, `Location: Not applicable
+   (self study)`, `Type of learning program: Self study`, `CPE credit:
+   0.4 in Accounting`, `Certificate number: …`, the token and the
+   verify wording). `test_audit_bundle.py`: the stored PDF and its
+   snapshot JSON are in the zip (no text assertion on the PDF).
+   `test_certificate_delivery.py`: the attachment name and that the
+   render happened. All pass unchanged except `positioned_runs`, whose
+   measurement was swapped (WeasyPrint draws in CSS px under a page
+   transform; the helper composes `cm` and `tm` and sums advance
+   widths from the vendored faces).
+3. *Palette and mark.* `generate_identity.py` reads
+   `frontend/src/styles/global.css` with a regex per `--color-*` token
+   and writes the favicon.ico, touch icon, manifest icons, `og.png`,
+   and manifest. The favicon SVG is **not** a monogram any more: 024
+   swapped in a Flaticon graphic whose license permits favicon use and
+   forbids logo use — it may not appear on a certificate. So the mark
+   is drawn as code: the script gained one step (`write_brand`) that
+   writes `backend/app/assets/brand/palette.py` (the tokens as a dict)
+   and `backend/app/assets/brand/monogram.svg` ("sC" glyph outlines
+   lifted from DejaVu Sans Bold with fontTools, on a rounded accent
+   square — pure paths, no `<text>`, no font needed where it is drawn).
+   Both are committed, because the backend never imports from
+   `frontend/` and the image build copies `backend/` only; a test
+   re-runs the two functions and refuses a committed file that differs.
+4. *Renderer.* WeasyPrint 70.0 on `python:3.12-slim`. ffmpeg already
+   pulls the Pango, HarfBuzz, and fontconfig libraries into the image;
+   the only new apt package is `libharfbuzz-subset0` (one package,
+   under a megabyte). The apt step took 21 s and the pip step 20 s in
+   the build run; the built image is 1.55 GB, of which the WeasyPrint
+   wheels (pydyf, tinycss2, cssselect2, tinyhtml5, pyphen, brotli,
+   zopfli, fonttools) are a few megabytes. No fallback needed; nothing
+   is fetched at render time (the fetcher admits only data: URIs and
+   files under `app/assets/`).
+5. *Fonts.* The three vendored DejaVu files are declared with
+   `@font-face` under the family name `DejaVuSans` (no space — so a
+   system "DejaVu Sans" can never be chosen over them, and because
+   WeasyPrint names the embedded font after the family, which the
+   011 test asserts). Kerning is off in the stylesheet: a kerned "Ty"
+   extracts as "T ype", and every item must extract as written. No
+   second display face: DejaVu Sans only, as the spec's default.
+6. *Snapshot keys read.* `sponsor_name`, `sponsor_legal_name`,
+   `participant_name`, `participant_email`, `course_title`,
+   `course_code`, `completed_at`, `program_type`, `credit`,
+   `field_of_study`, `time_statement`, `national_registry_id`,
+   `state_registrations`, `other_statements`, `developed_by`,
+   `reviewed_by`, `certificate_number`, `verification_token`. Not
+   read: `location` (item 5 prints the fixed self-study line),
+   `knowledge_level`, `package_versions`, `passing_pct`, `score_pct`,
+   `recommended_credit_basis`, `snapshot_version`. The template
+   context is built from exactly that set (`_context`), plus the
+   palette and the mark.
+
+**What changed**
+- `render(snapshot, logo=None)` fills `backend/app/templates/
+  certificate.html` with Jinja2 and lays it out with WeasyPrint;
+  `certificate.css` beside it holds the whole look. One framed page in
+  the site's palette: the mark top centre, "Certificate of Completion"
+  over the sponsor name, the participant's name as the focal point,
+  the course title, the credit award set off in a bordered block with
+  the time statement beneath it, the completion date, location, and
+  program type lines, the sponsor block ("Authorized by <legal name>"
+  over a rule, then item 8 when present, item 9 as held, item 11 as
+  stored, developer and reviewer), and a footer band with the
+  certificate number and the 019 verify line. Every 9.01 item is one
+  whole line in one element so it extracts as one run. The frame is a
+  fixed-height box with overflow clipped, so the document is one page
+  whatever the snapshot holds. What shipped: `docs/certificate-sample.png`.
+- `sponsor_profile.logo_path` (nullable, migration `a3f9c2e17b54`),
+  `PUT /api/v1/admin/sponsor/logo` (multipart PNG or SVG, sniffed from
+  the bytes, `LOGO_MAX_BYTES` cap, stored at `sponsor/logo.<ext>` via
+  the existing storage service) and `DELETE …/logo` (back to the
+  monogram; the object stays). `ensure_rendered` passes
+  `sponsor.load_logo(db, storage)` into `render`; the snapshot is
+  untouched and `render` with the dict alone still works (pinned).
+- `GET /api/v1/admin/sponsor/certificate-preview.pdf`: a sample from
+  `certificates.sample_snapshot` (fixed fake participant and course,
+  today's date, the sponsor's facts as they stand, item 8 only when
+  `may_claim_registry`, the same keys as a real snapshot — pinned)
+  rendered on the fly and returned inline. No completion row, no
+  storage object, nothing logged.
+- `/admin/sponsor` gained a "Certificate" card: logo upload, clear,
+  and a "Preview certificate" link that opens the PDF in a new tab.
+- Boot, preflight, and `/health` check the renderer the way they check
+  ffprobe: `ensure_renderer_available` lays out a trivial page;
+  `/health` reports `renderer` (smoke-rendered once per process) and
+  it contributes to the 503 like the others. `deploy/Dockerfile`
+  installs `libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0`.
+- Tests: backend 559 → 579 (`test_certificates.py`: toolchain renders
+  a minimal page; snapshot-only render; item 8 absent prints neither
+  the ID nor the words, present prints from the dict alone; item 9
+  empty prints nothing, two registrations print; forty statements stay
+  on one page; the monogram is the mark and leaves no raster image;
+  an uploaded PNG is embedded at its pixel size; the fetcher serves a
+  vendored font and refuses http, https, and a file outside
+  `app/assets/`; the committed palette equals global.css's tokens; the
+  committed palette and monogram equal what the identity script
+  writes and the monogram carries no text, image, or href; the sample
+  snapshot has exactly the real snapshot's keys; the preview is
+  admin-only, returns inline PDF, stores nothing, respects
+  `may_claim_registry` and prints registrations; a logo shows in the
+  preview and the next real certificate, clearing it returns the
+  monogram, and the stored PDF's bytes do not change.
+  `test_sponsor.py`: PNG upload and clear, SVG upload, three
+  non-images refused, oversize refused. `test_health.py`: `renderer`
+  ok.) Frontend 133 → 137 (`AdminSponsor.test.jsx`: the preview link's
+  href and target, upload calls the logo route with the chosen file
+  and shows the stored key, clear calls the delete route and returns
+  to the monogram wording, a 422 is shown).
+- Docs: COMPLIANCE.md Notes edited on the 003/010 rows for 9.01 items
+  1/8/9/10/11, 9.01.1, and 9.02 (no new rows). OPERATIONS.md gained
+  "Certificate look (032)" and a `renderer: error` line under "When
+  /health goes red".
+
+**Standards touched**
+- 9.01 — printed page 21. The eleven items, read again against the
+  template: nothing added, dropped, or reworded; item 5 still prints
+  "Not applicable (self study)", item 8 only from the snapshot.
+  COMPLIANCE.md Notes updated.
+- 9.01.1 — printed pages 21–22. The awarding entity is the "Authorized
+  by" line, from `sponsor_legal_name` in the snapshot. COMPLIANCE.md
+  Notes updated.
+- 9.02 / 9.02.2 — printed page 22. The stored PDF is the retained
+  record and is never re-rendered; the new look applies from the next
+  render on. COMPLIANCE.md Notes updated.
+
+**Decisions**
+- **HTML-template rendering** (WeasyPrint, Jinja2) replaces the
+  primitive-by-primitive drawing of 010. Layout is CSS beside the
+  template; the palette is the site's own through a generated module.
+- **The logo is presentation, not a snapshot fact.** It is an optional
+  argument to `render`, read from the profile at render time, never
+  frozen — re-rendering a stored certificate is not a thing this
+  system does, so there is nothing to freeze.
+- **No re-render of stored PDFs.** Certificates issued before 032 keep
+  the 010 layout; the record is what was handed to the participant.
+- **The monogram is drawn as code, not taken from the favicon.** 024's
+  Flaticon icon may not be a logo; the "sC" mark is DejaVu Bold
+  outlines on an accent square, generated by the identity script and
+  committed with the palette. Palette sync mechanism: the script is
+  the one writer of `palette.py` and `monogram.svg`, and
+  `test_committed_brand_assets_are_what_the_identity_script_writes`
+  refuses a drift.
+- **Font family declared as `DejaVuSans`, kerning off** — for the
+  011 font assertion and for text extraction that reads as written.
+- **The sample snapshot lives beside `render`, not in `create`.**
+  `create` is out of scope; the sample dict is a second copy of the
+  key set, held equal by test.
+- **Clearing a logo leaves the object in storage.** Nothing at the
+  storage boundary deletes; the next upload of the same type
+  overwrites it. Presentation, so no retention question either way.
+- **Wording of the connective lines** ("This certifies that", "has
+  successfully completed the qualified assessment for") follows the
+  spec's layout; every 9.01 item and the verify line are verbatim.
+
+**Known gaps**
+- Acceptance 3 (browser: preview from `/admin/sponsor`, upload a logo,
+  preview again, clear it) and 4 (complete the ATO course locally and
+  compare the emailed and downloaded PDFs to the preview) were not
+  performed in a browser in the build session; the same sequences are
+  proven in `test_certificates.py` (preview, upload, preview, clear,
+  and a real completion's download carrying the logo) and
+  `test_certificate_delivery.py` (the attachment is the rendered PDF).
+  Acceptance 5 (deploy, preview on production, a production
+  completion's email through Resend with the new PDF): not yet run by
+  the operator.
+- Acceptance 2: `docker build` succeeded and `python -m app.cli
+  preflight` passed inside the image against the local database
+  (Stripe and Google settings blanked for the run, so nothing touched
+  the network); a smoke render inside the image produced a PDF.
+- The Docker image was not compared byte-for-byte against the
+  previous build; the apt simulation shows one new package, and the
+  Python additions are a few megabytes.
+- The heading's letter-spacing is not counted by the placement test's
+  width measurement (advance widths only); the line is centred and
+  well inside the margins, so the check is loose by a few dozen points
+  on that one line only.
+- `test_no_new_route_carries_a_course_fact` (029) failed once in the
+  final run and passed on three re-runs: it asserts the course's
+  credit "0.4" is absent from response bodies, and a timestamp ending
+  in `…30.428536Z` contained it. Pre-existing, time-dependent, not
+  touched here. Report, not build.
+- Local development now needs Pango (`brew install pango`); recorded
+  in OPERATIONS.md.
+- Out of scope, reported not built: snapshot contents, `create`,
+  delivery, the verification page, the audit bundle's file set, any
+  re-render or backfill, the Registry logo, multi-page or per-course
+  templates, a second display face, signature images or signer names.
+- pyflakes still reports the pre-existing unused imports 030 listed;
+  oxlint's 11 remaining warnings are all on untouched files.

@@ -174,3 +174,79 @@ def test_second_profile_row_cannot_be_inserted(db_session):
 def test_admin_endpoints_require_token(client):
     assert client.get("/api/v1/admin/sponsor").status_code == 401
     assert client.put("/api/v1/admin/sponsor", json=full_profile()).status_code == 401
+
+
+# --- 032: the certificate mark -----------------------------------------------
+
+
+LOGO_URL = "/api/v1/admin/sponsor/logo"
+
+
+def png_bytes(width=40, height=20) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGBA", (width, height), "#1f4e8c").save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def test_logo_upload_png_then_clear(client, admin_headers, db_session, storage_root):
+    assert client.get("/api/v1/admin/sponsor", headers=admin_headers).json()[
+        "logo_path"
+    ] is None
+    response = client.put(
+        LOGO_URL,
+        headers=admin_headers,
+        files={"file": ("anything.bin", png_bytes(), "application/octet-stream")},
+    )
+    assert response.status_code == 200, response.json()
+    assert response.json()["logo_path"] == "sponsor/logo.png"
+    assert (storage_root / "sponsor" / "logo.png").read_bytes() == png_bytes()
+    assert get_profile(db_session).logo_path == "sponsor/logo.png"
+
+    cleared = client.delete(LOGO_URL, headers=admin_headers)
+    assert cleared.status_code == 200
+    assert cleared.json()["logo_path"] is None
+    db_session.refresh(get_profile(db_session))
+    assert get_profile(db_session).logo_path is None
+    # Nothing at the storage boundary deletes; the object is simply unused.
+    assert (storage_root / "sponsor" / "logo.png").exists()
+
+
+def test_logo_upload_svg(client, admin_headers, storage_root):
+    svg = b'<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>'
+    response = client.put(
+        LOGO_URL,
+        headers=admin_headers,
+        files={"file": ("logo.svg", svg, "image/svg+xml")},
+    )
+    assert response.status_code == 200, response.json()
+    assert response.json()["logo_path"] == "sponsor/logo.svg"
+    assert (storage_root / "sponsor" / "logo.svg").read_bytes() == svg
+
+
+def test_logo_refuses_anything_but_png_or_svg(client, admin_headers, db_session):
+    for name, content, declared in (
+        ("photo.jpg", b"\xff\xd8\xff\xe0" + b"0" * 100, "image/jpeg"),
+        ("logo.png", b"not really a png", "image/png"),
+        ("notes.txt", b"<html>not svg</html>", "image/svg+xml"),
+    ):
+        response = client.put(
+            LOGO_URL, headers=admin_headers, files={"file": (name, content, declared)}
+        )
+        assert response.status_code == 422, name
+        assert "PNG or an SVG" in response.json()["errors"][0]
+    assert get_profile(db_session).logo_path is None
+
+
+def test_logo_refuses_an_oversize_file(client, admin_headers):
+    from app.constants.certificate import LOGO_MAX_BYTES
+
+    content = b"\x89PNG\r\n\x1a\n" + b"0" * LOGO_MAX_BYTES
+    response = client.put(
+        LOGO_URL, headers=admin_headers, files={"file": ("big.png", content, "image/png")}
+    )
+    assert response.status_code == 422
+    assert "MB or smaller" in response.json()["errors"][0]

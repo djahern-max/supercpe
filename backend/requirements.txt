@@ -6,8 +6,16 @@ psycopg[binary]==3.2.3
 pydantic-settings==2.7.0
 argon2-cffi==25.1.0
 python-multipart==0.0.20
-# Certificate rendering (010): pure Python, no system dependencies.
-fpdf2==2.8.3
+# Certificate rendering (032): an HTML/CSS template filled by Jinja2 and
+# laid out by WeasyPrint, so the certificate's look lives in CSS beside
+# the template and the palette is the site's own. WeasyPrint needs the
+# Pango stack from apt (deploy/Dockerfile); nothing is fetched at render
+# time. Replaced fpdf2 (010), which drew the page primitive by primitive
+# and had no other caller. Pillow and fontTools, which the identity
+# script relies on, arrive as WeasyPrint dependencies as they did with
+# fpdf2.
+jinja2==3.1.6
+weasyprint==70.0
 # Spaces is S3-compatible and boto3 is the reference client (012);
 # hand-rolling SigV4 presigning would be more code and less trustworthy.
 boto3==1.43.83

@@ -60,6 +60,9 @@ class SponsorProfileAdmin(BaseModel):
     contact_phone: str
     address: str
     other_certificate_statements: str
+    # 032: storage key of the uploaded certificate mark, or null for the
+    # monogram.
+    logo_path: str | None
     updated_at: datetime
     missing_fields: list[str]
     missing_for_issuance: list[str]

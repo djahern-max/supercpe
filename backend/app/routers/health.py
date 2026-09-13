@@ -22,6 +22,7 @@ from app.constants.storage import (
 )
 from app.db import get_db
 from app.schemas.health import HealthResponse
+from app.services import certificates
 from app.storage import LocalStorage, SpacesStorage, Storage, get_storage
 
 router = APIRouter()
@@ -115,6 +116,9 @@ def health(
         "database": _database_check(db),
         "storage": _storage_check(storage),
         "ffprobe": "ok" if shutil.which("ffprobe") else "error",
+        # 032: the certificate renderer's Pango stack, smoke-rendered once
+        # per process.
+        "renderer": certificates.renderer_check(),
         "bucket_versioning": _versioning_check(storage),
         "last_backup_at": _last_backup_at(storage),
         "last_offsite_backup_at": _last_offsite_backup_at(storage),
@@ -123,6 +127,7 @@ def health(
         body["database"],
         body["storage"],
         body["ffprobe"],
+        body["renderer"],
         body["bucket_versioning"],
     ):
         return JSONResponse(status_code=503, content=body)

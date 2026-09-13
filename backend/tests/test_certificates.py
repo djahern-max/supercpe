@@ -1,12 +1,22 @@
 """Feature 010: certificate rendering from the snapshot alone (9.01), the
 issuance split, the 60-day finding, and the deletion/unpublish guarantees.
+032: the same assertions against the HTML-template renderer, plus the
+mark (logo or monogram), the palette sync, the toolchain, and the admin
+preview.
 """
 
+import importlib.util
+import re
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from pathlib import Path
 
+from PIL import Image
 from pypdf import PdfReader
+from weasyprint import HTML
 
+from app.assets.brand.palette import PALETTE
+from app.models.enrollment import Completion
 from app.services import certificates, completions, enrollments, readiness
 from app.services import courses as courses_service
 from app.services import sponsor as sponsor_service
@@ -294,18 +304,36 @@ _MARGIN_PT = 20 * 72 / 25.4  # the renderer's 20 mm margin
 
 
 def positioned_runs(pdf_bytes: bytes) -> list[dict]:
-    """Every text run on page one with its start x/y (from the text
-    matrix) and its end x, measured with the same font metrics the
-    renderer used. Text extraction alone ignores the page boundary — this
-    is what let 2026-000001 ship with most 9.01 items past x=612."""
-    from fpdf import FPDF
+    """Every text run on page one with its start x/y and its end x, in
+    PDF points, measured with the same font files the renderer embeds.
+    Text extraction alone ignores the page boundary — this is what let
+    2026-000001 ship with most 9.01 items past x=612.
+
+    032: WeasyPrint draws in CSS px under a page transform (the `cm`
+    that scales to pt and flips y), so the visitor's `cm` and `tm` are
+    composed here. Widths are the faces' advance widths (fontTools);
+    the stylesheet turns kerning off, so the sum is the drawn width.
+    Letter-spacing on the heading adds width this does not count, which
+    only makes the boundary check stricter on the left and looser on
+    the right by a few dozen points for that one centred line."""
+    from fontTools.ttLib import TTFont
 
     from app.services.certificates import _FONTS_DIR
 
-    ruler = FPDF()
-    ruler.add_font("DejaVu", "", _FONTS_DIR / "DejaVuSans.ttf")
-    ruler.add_font("DejaVu", "B", _FONTS_DIR / "DejaVuSans-Bold.ttf")
-    ruler.add_font("DejaVu", "I", _FONTS_DIR / "DejaVuSans-Oblique.ttf")
+    faces = {
+        "": TTFont(_FONTS_DIR / "DejaVuSans.ttf"),
+        "B": TTFont(_FONTS_DIR / "DejaVuSans-Bold.ttf"),
+        "I": TTFont(_FONTS_DIR / "DejaVuSans-Oblique.ttf"),
+    }
+
+    def width_pt(text: str, style: str, size_pt: float) -> float:
+        face = faces[style]
+        cmap = face.getBestCmap()
+        widths = face["hmtx"]
+        units = sum(
+            widths[cmap.get(ord(character), ".notdef")][0] for character in text
+        )
+        return units * size_pt / face["head"].unitsPerEm
 
     reader = PdfReader(BytesIO(pdf_bytes))
     assert len(reader.pages) == 1
@@ -314,18 +342,20 @@ def positioned_runs(pdf_bytes: bytes) -> list[dict]:
     runs = []
 
     def visit(text, cm, tm, font_dict, font_size):
+        text = text.rstrip("\n")
         if not text.strip():
             return
         base_font = str(font_dict["/BaseFont"])
-        style = "B" if "Bold" in base_font else "I" if "Oblique" in base_font else ""
-        ruler.set_font("DejaVu", style, font_size)
-        width_pt = ruler.get_string_width(text) * 72 / 25.4
+        style = "B" if "Bold" in base_font else "I" if "Italic" in base_font else ""
+        x = cm[0] * tm[4] + cm[2] * tm[5] + cm[4]
+        y = cm[1] * tm[4] + cm[3] * tm[5] + cm[5]
+        size_pt = font_size * abs(cm[0]) * abs(tm[0])
         runs.append(
             {
                 "text": text,
-                "x": float(tm[4]),
-                "y": float(tm[5]),
-                "end_x": float(tm[4]) + width_pt,
+                "x": float(x),
+                "y": float(y),
+                "end_x": float(x) + width_pt(text, style, size_pt),
             }
         )
 
@@ -377,3 +407,289 @@ def test_every_text_run_lies_inside_the_page(db_session):
     # line's right edge: the widest run is the wrapped title, and even it
     # starts well right of the margin.
     assert all(run["x"] > _MARGIN_PT for run in runs)
+
+
+# --- 032: the template renderer -------------------------------------------
+
+
+REPO = Path(__file__).resolve().parents[2]
+GLOBAL_CSS = REPO / "frontend" / "src" / "styles" / "global.css"
+BRAND_DIR = REPO / "backend" / "app" / "assets" / "brand"
+
+
+def raster_images(pdf_bytes: bytes) -> list[tuple[int, int]]:
+    """(width, height) of every raster image object on page one, Form
+    XObjects included. An SVG mark is drawn as paths and leaves none."""
+    reader = PdfReader(BytesIO(pdf_bytes))
+    found = []
+
+    def walk(resources):
+        for xobject in (resources.get("/XObject") or {}).values():
+            xobject = xobject.get_object()
+            if xobject.get("/Subtype") == "/Image":
+                found.append((int(xobject["/Width"]), int(xobject["/Height"])))
+            elif xobject.get("/Subtype") == "/Form":
+                walk(xobject.get("/Resources") or {})
+
+    walk(reader.pages[0]["/Resources"])
+    return found
+
+
+def png_logo(width: int = 40, height: int = 20) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGBA", (width, height), PALETTE["accent"]).save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def bare_snapshot(**overrides) -> dict:
+    """A snapshot written by hand — no session, no profile row, no
+    course — with every key `create` writes. Pins the contract that
+    `render` needs nothing but the dict."""
+    snapshot = {
+        "sponsor_name": "superCPE",
+        "sponsor_legal_name": "RYZE.AI LLC",
+        "participant_name": "Pat Smith",
+        "participant_email": "pat@supercpe.test",
+        "course_title": "Course GOLD",
+        "course_code": "GOLD",
+        "completed_at": "2026-09-13T15:30:00+00:00",
+        "location": None,
+        "program_type": "Self study",
+        "credit": "0.4",
+        "field_of_study": "Accounting",
+        "national_registry_id": None,
+        "state_registrations": [],
+        "time_statement": "CPE credits have been granted based on a 50-minute hour.",
+        "other_statements": [],
+        "knowledge_level": "Basic",
+        "package_versions": {},
+        "passing_pct": "70",
+        "score_pct": "100",
+        "recommended_credit_basis": "Word count formula, 2026 Standards 7.02.6",
+        "developed_by": None,
+        "reviewed_by": None,
+        "certificate_number": "2026-000001",
+        "verification_token": "a" * 64,
+    }
+    snapshot.update(overrides)
+    return snapshot
+
+
+def test_toolchain_renders_minimal_html_to_one_page():
+    """The renderer is installed with its system stack: a trivial page
+    lays out (this is what preflight and boot check)."""
+    pdf = HTML(string="<html><body><p>ok</p></body></html>").write_pdf()
+    assert pdf.startswith(b"%PDF")
+    assert len(PdfReader(BytesIO(pdf)).pages) == 1
+    certificates.ensure_renderer_available()
+    assert certificates.renderer_check() == "ok"
+
+
+def test_render_needs_only_the_snapshot():
+    """No session, no profile row, no course: the dict is the whole
+    input, and the result is one page carrying the items."""
+    pdf = certificates.render(bare_snapshot())
+    assert len(PdfReader(BytesIO(pdf)).pages) == 1
+    text = pdf_text(pdf)
+    assert "Pat Smith" in text
+    assert "Authorized by RYZE.AI LLC" in text
+    assert "Certificate number: 2026-000001" in text
+
+
+def test_item_8_absent_prints_neither_the_id_nor_the_words():
+    text = pdf_text(certificates.render(bare_snapshot(national_registry_id=None)))
+    assert "National Registry" not in text
+    assert "Sponsors ID" not in text
+
+
+def test_item_8_present_prints_from_the_snapshot_alone():
+    text = pdf_text(certificates.render(bare_snapshot(national_registry_id="112233")))
+    assert "National Registry of CPE Sponsors ID: 112233" in text
+
+
+def test_item_9_prints_only_the_registrations_held():
+    text = pdf_text(certificates.render(bare_snapshot(state_registrations=[])))
+    assert "sponsor registration number" not in text
+    text = pdf_text(
+        certificates.render(
+            bare_snapshot(
+                state_registrations=[
+                    {"state": "NH", "number": "NH-42"},
+                    {"state": "TX", "number": "TX-7"},
+                ]
+            )
+        )
+    )
+    assert "NH sponsor registration number: NH-42" in text
+    assert "TX sponsor registration number: TX-7" in text
+
+
+def test_long_content_stays_on_one_page():
+    """The frame clips: a snapshot with many statements still yields
+    exactly one page (the 9.02 record is a one-page PDF)."""
+    pdf = certificates.render(
+        bare_snapshot(
+            other_statements=[f"Board statement number {n}." for n in range(40)],
+            state_registrations=[
+                {"state": f"S{n}", "number": f"R-{n}"} for n in range(20)
+            ],
+        )
+    )
+    assert len(PdfReader(BytesIO(pdf)).pages) == 1
+
+
+def test_monogram_is_the_mark_without_a_logo():
+    html = certificates.render_html(bare_snapshot())
+    assert certificates.mark_data_uri(None) in html
+    assert (BRAND_DIR / "monogram.svg").read_bytes() == certificates.MONOGRAM_PATH.read_bytes()
+    # Drawn as paths: no raster image in the PDF.
+    assert raster_images(certificates.render(bare_snapshot())) == []
+
+
+def test_uploaded_logo_is_embedded():
+    logo = certificates.Logo(png_logo(40, 20), "image/png")
+    pdf = certificates.render(bare_snapshot(), logo=logo)
+    assert raster_images(pdf) == [(40, 20)]
+    # And the text is untouched by the mark.
+    assert "Pat Smith" in pdf_text(pdf)
+
+
+def test_renderer_fetches_nothing_but_assets():
+    fetcher = certificates._AssetsOnlyFetcher()
+    fonts_dir = certificates._FONTS_DIR
+    response = fetcher.fetch((fonts_dir / "DejaVuSans.ttf").as_uri())
+    assert response.read(4) == b"\x00\x01\x00\x00"  # a TrueType file
+    response.close()
+    for url in (
+        "http://example.test/logo.png",
+        "https://example.test/logo.png",
+        (REPO / "README.md").as_uri(),
+    ):
+        try:
+            fetcher.fetch(url)
+        except ValueError:
+            continue
+        raise AssertionError(f"fetched {url}")
+
+
+def test_committed_palette_matches_global_css():
+    """The certificate reads the site's colours: the committed module
+    is exactly global.css's --color-* tokens."""
+    tokens = dict(
+        re.findall(r"--color-([a-z-]+):\s*(#[0-9a-fA-F]+)", GLOBAL_CSS.read_text())
+    )
+    assert tokens == PALETTE
+    assert "accent" in PALETTE and "accent-contrast" in PALETTE
+
+
+def test_committed_brand_assets_are_what_the_identity_script_writes():
+    """The identity script is the one writer of palette.py and
+    monogram.svg; a palette edit without a script run fails here."""
+    spec = importlib.util.spec_from_file_location(
+        "generate_identity", REPO / "frontend" / "scripts" / "generate_identity.py"
+    )
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    assert (BRAND_DIR / "palette.py").read_text() == script.palette_module()
+    assert (BRAND_DIR / "monogram.svg").read_text() == script.monogram_svg()
+    # The monogram is paths on a square in the palette — no <text>, no
+    # <image>, nothing to fetch, and not the Flaticon favicon.
+    svg = (BRAND_DIR / "monogram.svg").read_text()
+    assert "<text" not in svg and "<image" not in svg and "href" not in svg
+    assert PALETTE["accent"] in svg and PALETTE["accent-contrast"] in svg
+
+
+def test_sample_snapshot_has_exactly_the_real_snapshot_keys(db_session):
+    _, enrollment, _ = make_completed(db_session)
+    profile = sponsor_service.get_profile(db_session)
+    sample = certificates.sample_snapshot(
+        profile, sponsor_service.get_state_registrations(db_session)
+    )
+    assert set(sample) == set(enrollment.completion.certificate_snapshot)
+    assert sample["participant_name"] == "Sample Participant"
+    assert sample["national_registry_id"] is None  # not registered
+
+
+# --- 032: the admin preview -----------------------------------------------
+
+
+PREVIEW_URL = "/api/v1/admin/sponsor/certificate-preview.pdf"
+
+
+def test_preview_is_admin_only(client, db_session):
+    assert client.get(PREVIEW_URL).status_code == 401
+    make_account(
+        db_session, "p@supercpe.test", PARTICIPANT_PASSWORD, "participant"
+    )
+    login(client, "p@supercpe.test", PARTICIPANT_PASSWORD)
+    assert client.get(PREVIEW_URL).status_code == 403
+
+
+def test_preview_renders_a_sample_and_stores_nothing(
+    client, admin_headers, db_session, storage_root
+):
+    complete_profile(db_session)
+    response = client.get(PREVIEW_URL, headers=admin_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"].startswith("inline")
+    text = pdf_text(response.content)
+    assert "Sample Participant" in text
+    assert "Sample Course Title" in text
+    assert "superCPE" in text
+    assert "Authorized by RYZE.AI LLC" in text
+    assert "Certificate of Completion" in text
+    assert "National Registry" not in text  # not registered
+    assert len(PdfReader(BytesIO(response.content)).pages) == 1
+    assert raster_images(response.content) == []  # the monogram
+
+    assert db_session.query(Completion).count() == 0
+    assert list(storage_root.rglob("*.pdf")) == []
+
+
+def test_preview_respects_may_claim_registry(client, admin_headers, db_session):
+    complete_profile(db_session)
+    profile = sponsor_service.get_profile(db_session)
+    profile.registry_status = "registered"
+    profile.national_registry_id = "112233"
+    db_session.commit()
+    sponsor_service.set_state_registrations(
+        db_session,
+        [{"state": "NH", "registration_number": "NH-42", "notes": ""}],
+    )
+    text = pdf_text(client.get(PREVIEW_URL, headers=admin_headers).content)
+    assert "National Registry of CPE Sponsors ID: 112233" in text
+    assert "NH sponsor registration number: NH-42" in text
+
+
+def test_preview_and_real_certificate_carry_the_uploaded_logo(
+    client, admin_headers, db_session, storage_root
+):
+    """The mark comes from the profile at render time, for the preview
+    and for a real certificate alike; clearing it brings the monogram
+    back for the next render — and never touches a stored PDF."""
+    complete_profile(db_session)
+    upload = client.put(
+        "/api/v1/admin/sponsor/logo",
+        headers=admin_headers,
+        files={"file": ("logo.png", png_logo(64, 32), "image/png")},
+    )
+    assert upload.status_code == 200, upload.json()
+    assert raster_images(client.get(PREVIEW_URL, headers=admin_headers).content) == [
+        (64, 32)
+    ]
+
+    _, enrollment, _ = make_completed_without_profile(db_session)
+    login(client, PARTICIPANT_EMAIL, PARTICIPANT_PASSWORD)
+    download = client.get(
+        f"/api/v1/my/completions/{enrollment.completion.id}/certificate.pdf"
+    )
+    assert download.status_code == 200
+    assert raster_images(download.content) == [(64, 32)]
+    stored = (storage_root / enrollment.completion.certificate_key).read_bytes()
+
+    login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
+    assert client.delete("/api/v1/admin/sponsor/logo").status_code == 200
+    assert raster_images(client.get(PREVIEW_URL).content) == []
+    # The issued certificate is not re-rendered.
+    assert (storage_root / enrollment.completion.certificate_key).read_bytes() == stored

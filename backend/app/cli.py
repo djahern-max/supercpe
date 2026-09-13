@@ -79,6 +79,10 @@ from app.services import site as site_service
 from app.services import stripe_gateway
 from app.services.auth import AuthRuleViolation
 from app.services.stripe_gateway import StripeGatewayError
+from app.services.certificates import (
+    RendererUnavailable,
+    ensure_renderer_available,
+)
 from app.services.ffprobe import FfprobeNotFoundError, ensure_ffprobe_available
 from app.storage import SpacesStorage, ensure_bucket_versioning, get_storage
 
@@ -357,6 +361,11 @@ def preflight() -> int:
     try:
         ensure_ffprobe_available()
     except FfprobeNotFoundError as error:
+        violations.append(str(error))
+    # 032: the certificate renderer, checked the same way.
+    try:
+        ensure_renderer_available()
+    except RendererUnavailable as error:
         violations.append(str(error))
 
     # 026: the open gate refuses test keys at the flip; this is the

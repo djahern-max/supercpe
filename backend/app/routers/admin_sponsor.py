@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, UploadFile
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app.auth import require_role
+from app.constants.certificate import LOGO_MAX_BYTES
 from app.db import get_db
 from app.models.sponsor import SponsorProfile
 from app.schemas.package import ValidationErrors
@@ -12,8 +13,9 @@ from app.schemas.sponsor import (
     SponsorProfileUpdate,
     StateRegistration,
 )
-from app.services import readiness, sponsor
-from app.services.sponsor import SponsorRuleViolation
+from app.services import certificates, readiness, sponsor
+from app.services.sponsor import LOGO_TOO_LARGE, SponsorRuleViolation
+from app.storage import Storage, get_storage
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_role("admin"))])
 
@@ -29,6 +31,7 @@ def _admin_view(db: Session, profile: SponsorProfile) -> SponsorProfileAdmin:
         contact_phone=profile.contact_phone,
         address=profile.address,
         other_certificate_statements=profile.other_certificate_statements,
+        logo_path=profile.logo_path,
         updated_at=profile.updated_at,
         missing_fields=profile.missing_fields(),
         missing_for_issuance=profile.missing_fields(for_issuance=True),
@@ -81,3 +84,51 @@ def put_state_registrations(
     except SponsorRuleViolation as violation:
         return JSONResponse(status_code=422, content={"errors": violation.errors})
     return rows
+
+
+# --- the certificate mark and preview (032) ---------------------------------
+
+
+@router.put(
+    "/sponsor/logo",
+    response_model=SponsorProfileAdmin,
+    responses={422: {"model": ValidationErrors}},
+)
+def put_logo(
+    file: UploadFile,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+):
+    # One byte past the cap is enough to refuse; the rest is never read.
+    content = file.file.read(LOGO_MAX_BYTES + 1)
+    if len(content) > LOGO_MAX_BYTES:
+        return JSONResponse(status_code=422, content={"errors": [LOGO_TOO_LARGE]})
+    try:
+        profile = sponsor.set_logo(db, storage, content)
+    except SponsorRuleViolation as violation:
+        return JSONResponse(status_code=422, content={"errors": violation.errors})
+    return _admin_view(db, profile)
+
+
+@router.delete("/sponsor/logo", response_model=SponsorProfileAdmin)
+def delete_logo(db: Session = Depends(get_db)):
+    return _admin_view(db, sponsor.clear_logo(db))
+
+
+@router.get("/sponsor/certificate-preview.pdf")
+def certificate_preview(
+    db: Session = Depends(get_db), storage: Storage = Depends(get_storage)
+):
+    """A sample certificate from the sponsor's facts as they stand — the
+    look the next real certificate will have, and the NASBA application's
+    sample. Rendered on the fly: no completions row, no stored object,
+    nothing logged as issued."""
+    snapshot = certificates.sample_snapshot(
+        sponsor.get_profile(db), sponsor.get_state_registrations(db)
+    )
+    pdf = certificates.render(snapshot, logo=sponsor.load_logo(db, storage))
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="certificate-preview.pdf"'},
+    )

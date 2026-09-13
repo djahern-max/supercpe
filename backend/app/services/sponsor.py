@@ -5,10 +5,21 @@ the router to wrap in a 422 `{"errors": [...]}`, the same response shape as
 package ingest.
 """
 
+from io import BytesIO
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.constants.certificate import LOGO_MAX_BYTES, LOGO_MEDIA_TYPES
 from app.models.sponsor import SponsorProfile, SponsorStateRegistration
+from app.services.certificates import Logo
+from app.storage import Storage
+
+LOGO_KEY_PREFIX = "sponsor/logo"
+LOGO_NOT_AN_IMAGE = (
+    "The logo must be a PNG or an SVG file; the upload was neither."
+)
+LOGO_TOO_LARGE = f"The logo must be {LOGO_MAX_BYTES // (1024 * 1024)} MB or smaller."
 
 REGISTERED_NEEDS_ID = (
     "registry_status is 'registered' but national_registry_id is blank. "
@@ -81,3 +92,62 @@ def set_state_registrations(
     db.add_all(SponsorStateRegistration(**row) for row in rows)
     db.commit()
     return get_state_registrations(db)
+
+
+# --- the certificate mark (032) ---------------------------------------------
+
+
+def _logo_extension(content: bytes) -> str | None:
+    """"png" or "svg" from the bytes themselves, never the filename or
+    the declared content type."""
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    head = content[:4096].lstrip().lower()
+    if head.startswith(b"<?xml") or head.startswith(b"<svg") or head.startswith(b"<!"):
+        if b"<svg" in head:
+            return "svg"
+    return None
+
+
+def set_logo(db: Session, storage: Storage, content: bytes) -> SponsorProfile:
+    """Store the uploaded mark at `sponsor/logo.<ext>` and point the
+    profile at it. Presentation only: nothing here touches a snapshot or
+    a stored certificate."""
+    if len(content) > LOGO_MAX_BYTES:
+        raise SponsorRuleViolation([LOGO_TOO_LARGE])
+    extension = _logo_extension(content)
+    if extension is None:
+        raise SponsorRuleViolation([LOGO_NOT_AN_IMAGE])
+    key = f"{LOGO_KEY_PREFIX}.{extension}"
+    storage.put(key, BytesIO(content))
+    profile = get_profile(db)
+    profile.logo_path = key
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+def clear_logo(db: Session) -> SponsorProfile:
+    """Back to the monogram. The stored object is left in place — it is
+    overwritten by the next upload of the same type, and nothing at the
+    storage boundary deletes."""
+    profile = get_profile(db)
+    profile.logo_path = None
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+def load_logo(db: Session, storage: Storage) -> Logo | None:
+    """The uploaded mark as bytes for `certificates.render`, or None for
+    the monogram. A profile row absent (create_all databases) or a key
+    whose object is gone both read as None: a certificate is never
+    refused for want of decoration."""
+    profile = db.get(SponsorProfile, 1)
+    if profile is None or not profile.logo_path:
+        return None
+    if not storage.exists(profile.logo_path):
+        return None
+    extension = profile.logo_path.rsplit(".", 1)[-1]
+    with storage.open(profile.logo_path) as file:
+        return Logo(file.read(), LOGO_MEDIA_TYPES[extension])

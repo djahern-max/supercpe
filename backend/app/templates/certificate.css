@@ -1,0 +1,198 @@
+/*
+  Certificate layout (032). Units are pt and mm: the page is US letter
+  (612 × 792 pt). Text must stay inside a 20 mm margin on every side —
+  test_every_text_run_lies_inside_the_page measures every run — so the
+  frame sits at 12 mm and its padding carries the text past 20 mm.
+  Colours are the site's tokens, injected by the template from
+  app/assets/brand/palette.py. The three DejaVu faces are the vendored
+  files (011); the family is declared as "DejaVuSans" (no space) so a
+  system "DejaVu Sans" can never be picked over them, and because
+  WeasyPrint names the embedded font after the family — the tests
+  assert every embedded face is a DejaVuSans one. Kerning is off: a
+  kerned pair such as "Ty" extracts as "T ype", and every 9.01 item
+  must extract as written.
+*/
+
+@font-face {
+  font-family: "DejaVuSans";
+  src: url("../assets/fonts/DejaVuSans.ttf");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "DejaVuSans";
+  src: url("../assets/fonts/DejaVuSans-Bold.ttf");
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: "DejaVuSans";
+  src: url("../assets/fonts/DejaVuSans-Oblique.ttf");
+  font-weight: normal;
+  font-style: italic;
+}
+
+@page {
+  size: letter;
+  margin: 12mm;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "DejaVuSans", sans-serif;
+  font-kerning: none;
+  font-size: 10pt;
+  line-height: 1.35;
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+p, h1 {
+  margin: 0;
+  text-align: center;
+}
+
+/* The page area is 612 − 2×34 = 544 pt by 792 − 2×34 = 724 pt. The
+   frame fills it exactly; overflow is clipped so the document is one
+   page whatever the snapshot holds. */
+.frame {
+  box-sizing: border-box;
+  width: 544pt;
+  height: 724pt;
+  border: 2pt solid var(--color-accent);
+  padding: 3pt;
+  position: relative;
+}
+
+.inner {
+  box-sizing: border-box;
+  height: 100%;
+  border: 0.75pt solid var(--color-border);
+  /* 34 + 2 + 3 + 0.75 + 17 = 56.75 pt ≥ the 20 mm (56.7 pt) text margin. */
+  padding: 17pt 17pt 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.masthead {
+  padding-top: 6pt;
+}
+
+.mark {
+  display: block;
+  width: 52pt;
+  height: 52pt;
+  margin: 0 auto 12pt;
+}
+
+.heading {
+  font-size: 20pt;
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  color: var(--color-accent);
+}
+
+.sponsor {
+  margin-top: 4pt;
+  font-size: 12pt;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+}
+
+.award {
+  margin-top: 30pt;
+}
+
+.lead {
+  font-size: 10.5pt;
+  color: var(--color-text-muted);
+}
+
+.participant {
+  margin: 8pt 0 10pt;
+  font-size: 26pt;
+  font-weight: bold;
+  line-height: 1.2;
+}
+
+.course {
+  margin-top: 8pt;
+  font-size: 15pt;
+  font-weight: bold;
+  line-height: 1.3;
+}
+
+.course-meta {
+  margin-top: 3pt;
+  font-size: 9.5pt;
+  color: var(--color-text-muted);
+}
+
+.credit {
+  margin: 26pt auto 0;
+  width: 360pt;
+  padding: 12pt 14pt 11pt;
+  border: 1pt solid var(--color-accent);
+  border-radius: 6pt;
+  background: var(--color-bg);
+}
+
+.credit-line {
+  font-size: 15pt;
+  font-weight: bold;
+  color: var(--color-accent);
+}
+
+.time-statement {
+  margin-top: 5pt;
+  font-size: 9.5pt;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.details {
+  margin-top: 22pt;
+  font-size: 10.5pt;
+  line-height: 1.6;
+}
+
+.sponsor-block {
+  margin-top: 30pt;
+  font-size: 9.5pt;
+  line-height: 1.6;
+  color: var(--color-text);
+}
+
+.authorized {
+  width: 260pt;
+  margin: 0 auto 8pt;
+  padding-top: 6pt;
+  border-top: 1pt solid var(--color-text);
+  font-size: 10pt;
+}
+
+.people {
+  margin-top: 6pt;
+  color: var(--color-text-muted);
+}
+
+.band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 12pt 17pt 16pt;
+  background: var(--color-bg);
+  border-top: 1pt solid var(--color-border);
+  font-size: 9pt;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.verify {
+  font-size: 8pt;
+}

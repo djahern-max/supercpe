@@ -11,6 +11,8 @@ class HealthResponse(BaseModel):
     database: Check
     storage: Check
     ffprobe: Check
+    # 032: WeasyPrint can lay out a page (the apt Pango stack is present).
+    renderer: Check
     # Object versioning on the bucket (013): "error" the moment it is not
     # Enabled, and it contributes to the 503 like the other components.
     # LocalStorage reports "ok" — there is nothing to version on a

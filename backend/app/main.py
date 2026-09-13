@@ -35,6 +35,7 @@ from app.routers import (
     stripe_webhook,
     subscribe,
 )
+from app.services.certificates import ensure_renderer_available
 from app.services.ffprobe import ensure_ffprobe_available
 from app.storage import ensure_bucket_versioning, get_storage
 
@@ -47,6 +48,9 @@ async def lifespan(app: FastAPI):
     if settings.env == "prod":
         ensure_bucket_versioning(get_storage())
     ensure_ffprobe_available()
+    # 032: and not at a participant's first download if the Pango stack
+    # the certificate renderer needs is missing from the image.
+    ensure_renderer_available()
     yield
 
 

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+{#
+  The certificate of completion (9.01), filled from `certificate_snapshot`
+  alone — see services/certificates.py for the context it is given. Every
+  9.01 item below is a whole line of text in one element, so the item
+  extracts from the PDF as one run (test_certificates.py pins each).
+  Layout lives in certificate.css; the palette tokens come from
+  app/assets/brand/palette.py, the same values the site's global.css holds.
+#}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Certificate {{ certificate_number }}</title>
+  <style>
+    :root {
+    {%- for name, value in palette.items() %}
+      --color-{{ name }}: {{ value }};
+    {%- endfor %}
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="inner">
+
+      <header class="masthead">
+        <img class="mark" src="{{ mark_src }}" alt="">
+        <h1 class="heading">Certificate of Completion</h1>
+        {# 9.01 item 1 #}
+        <p class="sponsor">{{ sponsor_name }}</p>
+      </header>
+
+      <section class="award">
+        <p class="lead">This certifies that</p>
+        {# item 2 #}
+        <p class="participant">{{ participant }}</p>
+        <p class="lead">has successfully completed the qualified assessment for</p>
+        {# item 3 #}
+        <p class="course">{{ course_title }}</p>
+        <p class="course-meta">Course code: {{ course_code }}</p>
+      </section>
+
+      <section class="credit">
+        {# item 7 #}
+        <p class="credit-line">CPE credit: {{ credit }} in {{ field_of_study }}</p>
+        {# item 10, verbatim from the snapshot #}
+        <p class="time-statement">{{ time_statement }}</p>
+      </section>
+
+      <section class="details">
+        {# item 4 #}
+        <p>Completion date: {{ completed_on }}</p>
+        {# item 5: self study #}
+        <p>Location: Not applicable (self study)</p>
+        {# item 6 #}
+        <p>Type of learning program: {{ program_type }}</p>
+      </section>
+
+      <section class="sponsor-block">
+        {# 9.01.1: the awarding entity, as a labelled rule #}
+        <p class="authorized">Authorized by {{ awarding_entity }}</p>
+        {# item 8: only when the snapshot carries it #}
+        {% if national_registry_id %}
+        <p>National Registry of CPE Sponsors ID: {{ national_registry_id }}</p>
+        {% endif %}
+        {# item 9: those held #}
+        {% for registration in state_registrations %}
+        <p>{{ registration.state }} sponsor registration number: {{ registration.number }}</p>
+        {% endfor %}
+        {# item 11: as stored #}
+        {% for statement in other_statements %}
+        <p>{{ statement }}</p>
+        {% endfor %}
+        {% if people %}
+        <p class="people">{{ people }}</p>
+        {% endif %}
+      </section>
+
+      <footer class="band">
+        <p>Certificate number: {{ certificate_number }}</p>
+        {# 019's verification line, wording unchanged #}
+        <p class="verify">Verify this certificate at supercpe.com/certificates/verify — code: {{ verification_token }}</p>
+      </footer>
+
+    </div>
+  </div>
+</body>
+</html>

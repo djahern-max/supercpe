@@ -181,7 +181,12 @@ def ensure_rendered(db: Session, storage: Storage, completion: Completion) -> Co
     missing = missing_for_issuance(db)
     if missing:
         raise IssuanceBlocked(missing)
-    pdf = certificates.render(completion.certificate_snapshot)
+    # 032: the mark is presentation — read live, never snapshotted — and
+    # the render is still from the snapshot alone.
+    pdf = certificates.render(
+        completion.certificate_snapshot,
+        logo=sponsor_service.load_logo(db, storage),
+    )
     key = f"certificates/{completion.certificate_number}.pdf"
     storage.put(key, BytesIO(pdf))
     completion.certificate_key = key

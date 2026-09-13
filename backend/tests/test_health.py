@@ -26,6 +26,7 @@ def test_health_reports_every_component_ok(client, storage_root):
     assert body["database"] == "ok"
     assert body["storage"] == "ok"
     assert body["ffprobe"] == "ok"
+    assert body["renderer"] == "ok"  # 032: the Pango stack is present
     # LocalStorage: nothing to version, so the 013 control reports ok.
     assert body["bucket_versioning"] == "ok"
     assert body["last_backup_at"] is None

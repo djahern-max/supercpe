@@ -4,10 +4,13 @@ import { useSession } from "../../auth/SessionContext.jsx";
 import { ApiError } from "../../api/client";
 import { getAdminPolicies, publishPolicy } from "../../api/admin";
 import {
+  certificatePreviewUrl,
+  clearSponsorLogo,
   getSponsor,
   sendTestEmail,
   setStateRegistrations,
   updateSponsor,
+  uploadSponsorLogo,
 } from "../../api/sponsor";
 import { getSite, listSiteModeChanges, setSiteMode } from "../../api/site";
 import styles from "./AdminSponsor.module.css";
@@ -276,6 +279,89 @@ function PoliciesCard({ onAuthFailure, onPublished }) {
         >
           {saving ? "Publishing…" : "Publish version"}
         </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 032: the certificate's look. The mark at the top of every certificate
+ * is the uploaded logo, else the monogram; "Preview certificate" renders
+ * a sample from the sponsor facts as they stand (nothing stored, nothing
+ * issued) — how the sponsor iterates on the look and how the NASBA
+ * application's sample certificate is produced.
+ */
+function CertificateCard({ logoPath, onProfile, onAuthFailure }) {
+  const [file, setFile] = useState(null);
+  const [errors, setErrors] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const inputId = "sponsor-logo-file";
+
+  const run = async (action) => {
+    setBusy(true);
+    setErrors(null);
+    try {
+      onProfile(await action());
+      setFile(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) onAuthFailure();
+      else if (err instanceof ApiError && err.status === 422 && err.data?.errors)
+        setErrors(err.data.errors);
+      else setErrors(["The request failed. Try again."]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className={styles.registrations}>
+      <h2 className={styles.subheading}>Certificate</h2>
+      <p className={styles.muted}>
+        {logoPath
+          ? `Certificates carry the uploaded logo (${logoPath}).`
+          : "Certificates carry the superCPE monogram; upload a logo to replace it."}{" "}
+        The logo is presentation only: certificates already issued are
+        never re-rendered.
+      </p>
+      <div className={styles.field}>
+        <label className={styles.label} htmlFor={inputId}>
+          Logo (PNG or SVG)
+        </label>
+        <input
+          id={inputId}
+          type="file"
+          accept="image/png,image/svg+xml,.png,.svg"
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+        />
+      </div>
+      <ErrorPanel errors={errors} />
+      <div className={styles.registrationActions}>
+        <button
+          className={styles.button}
+          type="button"
+          disabled={busy || !file}
+          onClick={() => run(() => uploadSponsorLogo(file))}
+        >
+          {busy ? "Working…" : "Upload logo"}
+        </button>
+        {logoPath && (
+          <button
+            className={styles.linkButton}
+            type="button"
+            disabled={busy}
+            onClick={() => run(clearSponsorLogo)}
+          >
+            Clear logo
+          </button>
+        )}
+        <a
+          className={styles.button}
+          href={certificatePreviewUrl()}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Preview certificate
+        </a>
       </div>
     </section>
   );
@@ -662,6 +748,12 @@ function AdminSponsor() {
               {saving ? "Saving…" : "Save profile"}
             </button>
           </form>
+
+          <CertificateCard
+            logoPath={profile.logo_path}
+            onProfile={setProfile}
+            onAuthFailure={handleAuthFailure}
+          />
 
           <PoliciesCard
             onAuthFailure={handleAuthFailure}

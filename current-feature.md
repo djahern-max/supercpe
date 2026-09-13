@@ -1,130 +1,137 @@
 # Current Feature
 
-## Feature 031 — Free seeking on the video player, up to the next unanswered review question
+## Feature 032 — Certificate redesign: render from an HTML template
 
-> Confirm 031 against the last entry in `CHANGELOG.md` before starting. 030a is the last entry as of this writing.
+> Confirm 032 against the last entry in `CHANGELOG.md` before starting. 031 (player seeking) may or may not have shipped; this feature does not depend on it.
 
 ## Goal
 
-The video-only player (`frontend/src/components/Player/Player.jsx`) lets a participant seek forward and backward freely, with one ceiling: the earliest review point in the lesson whose question is still unanswered. Reaching that point — by playback, by a forward seek, or by the new "Forward 15 s" button — pauses and asks the question, exactly as playback does today. Once every review question in the lesson is answered, the whole timeline is open.
+The certificate PDF is rendered from an HTML/CSS template instead of drawn by hand, and looks like a certificate: a framed one-page layout in the site's palette, the sponsor mark at the top, the participant's name and the course title as the focal point, the credit award set off, the Section 9 items grouped into a clean block, and a footer band with the certificate number and verification URL.
 
-Nothing about which questions are asked, how they are graded, how answers are recorded, or how lesson completion is derived changes.
+Nothing about what the certificate says changes. Every 9.01 item, the 9.01.1 awarding entity, the time statement, and the verify line print exactly as today, as extractable text, from the snapshot alone.
 
 ## Why
 
-006 built a forward-seek lock keyed on the furthest point watched and recorded it as "a sponsor design choice, not a Standards requirement (5.01.2.1 sets no such rule)." 023a dropped the lock on reader clips for that reason and left the video-only player's lock as "its own decision." 027 added "Rewind 15 s" and pinned the forward refusal with a test. This feature is that decision, made: the sponsor wants forward and backward controls, and wants the thing the lock actually protected — that no review question can be skipped — kept.
+The current `render(snapshot) -> bytes` in `backend/app/services/certificates.py` is a one-page PDF drawn primitive by primitive. It is correct and plain. Certificates are the one artifact a participant keeps and hands to a state board or employer; the sponsor wants them to look considered. Rendering from an HTML template puts layout in CSS where it is cheap to iterate, and lets the mark and palette come from the same sources the site already uses (022's identity script and `global.css`).
 
-What the Standards require, from the 2026 Statement:
+Standards this touches, from the 2026 Statement — cite from the PDF, not from memory:
 
-- 5.01.2.1 — review questions "must be placed throughout the program in sufficient intervals to allow the participant the opportunity to evaluate the material that needs to be re-studied," with the per-credit minimum. Placement is the requirement; the player's job is to present each placed question.
-- 5.01.2.2 — feedback on each review question, at minimum "correct" or "incorrect." Unchanged.
-- 6.01 — the sponsor must "verify individual successful program completion for self study … Self-certification of attendance/completion alone is not sufficient." Verification is the qualified assessment (6.01.2) plus the review-answer record; it is not playback behavior.
-- 7.02.6–7.02.7 — Method 2 credit is computed from the measured duration and word count, not from how a participant moves through the media. Seeking does not change the credit claim.
-
-So the ceiling-at-next-unanswered-question rule keeps everything the Standards ask for and removes only the sponsor's stricter reading. It also removes a real usability cost: a participant who reloads or returns later cannot today jump to where they left off past `furthest_seconds` without watching again.
+- 9.01 — the eleven certificate items. Nothing added, nothing dropped, nothing reworded. Item 5 still prints "Not applicable (self study)"; item 8 still prints only when the snapshot carries it (`may_claim_registry` at completion).
+- 9.01.1 — the awarding entity (`sponsor_legal_name` from the snapshot) stays on the page.
+- 9.02 / 9.02.2 — the PDF is a retained record. Already-rendered PDFs are stored once at `certificates/<number>.pdf` and are never re-rendered; the new look applies to certificates rendered after this ships. Pre-launch that is all test data.
 
 ## Read first
 
 - `CLAUDE.md`
-- `CHANGELOG.md` entries 006 (player design, in-flight-seek clamp on `seeked`), 010 (`lesson_progress.furthest_seconds`, `review_answers`), 023a (the supplemental-clip decision), 027 (Rewind 15 s, end panel, and the known gap that the video play payload carries no `answered` flag)
-- `COMPLIANCE.md` rows for 5.01.2, 5.01.2.1, 5.01.2.2, 6.01
-- `docs/decisions/` — find where 023a recorded the supplemental-clip decision; this feature records its counterpart there
-- 5.01.2.1, 5.01.2.2, and 6.01 in the 2026 Statement PDF before citing any of them. Do not cite from memory.
+- `CHANGELOG.md` entries 003 (sponsor profile, `may_claim_registry`), 010 (snapshot, `render`, lazy render), 011 (DejaVu fonts, non-Latin names, audit bundle contents), 019 (delivery, verify line wording), 022 (identity script, palette from `global.css`)
+- `COMPLIANCE.md` rows for 9.01, 9.01 items 1/8/9/10/11, 9.01.1, 9.02
+- `backend/app/services/certificates.py`, `backend/app/constants/certificate.py`, `backend/tests/test_certificates.py`, `backend/tests/test_audit_bundle.py`
+- `frontend/scripts/generate_identity.py` and `frontend/src/global.css` (palette source)
+- `deploy/Dockerfile` (base image `python:3.12-slim`; system packages)
+- 9.01 and 9.01.1 in the 2026 Statement PDF.
 
 ## Task 0 — recon, answered in the changelog before code is written
 
-1. **Review points.** Confirm how the player derives each review point's timestamp today (`after_block` → measured `video.blocks[].end_seconds`) and where that list lives in component state. Name the variable.
-2. **Answered state.** Confirm that the participant play payload (the route behind `/my/courses/:id/lessons/:packageId`) carries no per-question `answered` flag, and that the reader payload's `questions[]` does. Name the reader field and the serializer so the video payload can match it. Confirm what `review_answers` rows exist to derive it from.
-3. **Preview identity.** Confirm whether admin/reviewer preview review answers are persisted (007's `X-Preview-Id`) or held in component state only. The ceiling rule must work in both the enrollment and preview paths; say which source each uses.
-4. **`furthest_seconds`.** List every reader of `lesson_progress.furthest_seconds` and of the player's `furthest` state. Confirm whether lesson `done` derives from it or from `review_answered == review_total`. This feature must not change what `done` means; if `furthest` feeds it, stop and report.
-5. **The pinned refusal.** Name the 027 test in `Player.test.jsx` that pins the forward-seek refusal. It is replaced, not deleted silently — the new test asserts the new rule.
-6. **The unused `furthest` state variable** oxlint warned about in 027. Say whether it goes away as a consequence of this feature or stays.
+1. **Current library.** Name the PDF library `render` uses today and every other caller of it in the backend (the audit bundle? anything else?). If nothing else uses it, it is removed with this feature; if something does, it stays and only `render` changes.
+2. **What the tests pin.** List each assertion in `test_certificates.py` and `test_audit_bundle.py` that reads the PDF: text extraction of the 9.01 items, the non-Latin name test, the "National Registry" absence test, the verify-line wording, the page count, anything else. Every one must still pass against the new renderer unchanged, or with only the extraction helper swapped.
+3. **Palette and mark.** Confirm how `generate_identity.py` reads `global.css` and what it outputs (SVG monogram, PNGs). Name the function or file the backend can reuse for the mark. The backend must not import from `frontend/`; the mark is either copied into `backend/app/assets/` by the identity script or committed there — say which and why.
+4. **Renderer choice.** Confirm WeasyPrint installs on `python:3.12-slim` with the system packages it needs (pango, cairo, gdk-pixbuf, fonts) and what that adds to the image size and build time. If it is unreasonable, propose the alternative (headless Chromium via Playwright is the fallback) with its cost. Do not pick a renderer that needs a network call at render time.
+5. **Fonts.** Confirm the vendored DejaVu Sans files in `backend/app/assets/fonts/` can be declared via `@font-face` in the template so the non-Latin name test still passes. If a second display face is wanted for headings, it must be vendored with its license the same way DejaVu was in 011, or not used.
+6. **Snapshot fields.** List every key in `certificate_snapshot` the current `render` reads, so the template context is exactly that set and nothing from live tables.
 
 ## In scope
 
-- Play payload: each review question in the video play payload gains `answered: bool`, derived the same way the reader payload derives it (enrollment path) or from whatever the preview path already holds (preview path). If the preview path has no persistence, `answered` is `false` on load and tracked in state, which is the behavior today.
-- Player seek rule: replace the `[0, furthest]` clamp with `[0, ceiling]`, where `ceiling` is the timestamp of the earliest review point whose question is unanswered, or the media duration when none remain. A seek that lands on `ceiling` pauses and asks that question, the same code path playback uses when `currentTime` reaches a review point. The in-flight clamp stays on `seeked` (006's reason still holds).
-- Answering a question advances `ceiling` to the next unanswered review point. A wrong answer's "Re-watch this section" link still seeks to the block start and resumes; that is a backward seek and is unaffected.
-- "Forward 15 s" button (`FORWARD_SECONDS`, same constant pattern as `REWIND_SECONDS`), placed beside Rewind 15 s. Clamped to `ceiling` like any seek.
-- Arrow keys seek within `[0, ceiling]` instead of the watched range.
-- Progress bar: clicking anywhere in `[0, ceiling]` seeks there. The ticks at review points stay. Answered review points and unanswered ones should be visually distinct if the bar already has a style hook for it; if that needs new design work, leave the ticks as they are and note it under Known gaps.
-- `furthest_seconds` keeps being reported for resume. It no longer gates anything in the player. Resume on load still seeks to `min(furthest_seconds, ceiling)`.
-- 027's end panel behavior is unchanged: on `ended` with unanswered questions, the remaining questions are asked in place. With the ceiling rule this is only reachable when `ceiling == duration`, i.e. no unanswered questions, so the panel's "remaining questions" branch becomes dead for a participant who cannot skip. Keep it — a reload mid-question can still land there, and 027 documents that case. Say so in the changelog.
-- Update `COMPLIANCE.md` rows for 5.01.2 and 5.01.2.1 where they describe the player's forward lock; the "Notes" column records that forward seeking is open up to the next unanswered review question as of 031.
-- Record the decision in `docs/decisions/` alongside 023a's, and in the changelog's Decisions.
+- New renderer: `render(snapshot) -> bytes` keeps its signature and contract (snapshot only, no session, one page). Internally it fills a Jinja2 template at `backend/app/templates/certificate.html` with the snapshot and renders it to PDF. Jinja2 is already a FastAPI dependency; confirm, else add it.
+- The template and a `certificate.css` beside it. Palette values are read from a single Python constant module the identity script also writes (or a committed copy of the same values), so the certificate and the site cannot drift apart silently. Name the mechanism in the changelog.
+- Layout, in reading order:
+  1. Sponsor mark, top center. Source: `SponsorProfile.logo_path` if set, else the 022 monogram from `backend/app/assets/`. The mark is never rasterized text.
+  2. "Certificate of Completion" heading; the sponsor name (9.01 item 1) beneath it.
+  3. Participant name (item 2), large — the focal point. Must render non-Latin names.
+  4. "has successfully completed" line, then the course title (item 3), then field of study (item 4) and "Self study" (item 6, from `PROGRAM_TYPE`).
+  5. Credit award (item 7), set off — e.g. a bordered block: the number, "CPE credit(s)", and the `TIME_STATEMENT` (item 10) directly beneath it.
+  6. Completion date (item 11's date component as it prints today), location line (item 5, "Not applicable (self study)").
+  7. Sponsor block: awarding entity (9.01.1 `sponsor_legal_name`), NASBA sponsor ID (item 8, only when present in the snapshot), state registration numbers (item 9, only those in the snapshot), other required statements (item 11) as stored.
+  8. Footer band: certificate number, and the verify line with the exact wording 019 settled ("Verify this certificate at …"). Keep the URL as text, not only a link.
+- A signature line for the awarding entity is in scope only as a labeled rule ("Authorized by <legal_name>"); no signature image, no signer name field — the snapshot has none and the profile gets none here.
+- `sponsor_profile.logo_path` — new nullable column (migration), admin-editable on `/admin/sponsor` as an upload to storage under `sponsor/logo.<ext>` (Spaces in prod, local in dev, via the existing storage service). PNG or SVG. When null, the monogram is used. The snapshot does NOT gain the logo: the mark is presentation, not a Section 9 fact, and re-rendering an old certificate is not a thing this system does, so there is nothing to freeze.
+- Dockerfile: the system packages the renderer needs. Preflight (014a) must still pass; if the renderer needs a boot-time check the way ffprobe has one, add it to the same health/preflight path and say so.
+- Admin: a "Preview certificate" action on `/admin/sponsor` that renders a sample snapshot (fixed fake participant, fake course, today's date, current sponsor facts, `may_claim_registry` respected) and returns the PDF inline. Not stored, not logged as a certificate, no `completions` row. This is how the sponsor iterates on the look and how the NASBA application's sample certificate is produced.
+- Tests (see below), `COMPLIANCE.md` row updates, changelog.
 
 ## Out of scope
 
-- Reader clips (`Reader.jsx`). They have native controls and no seek handler since 023a; nothing changes.
-- The qualified assessment, `review_answers` schema, grading, feedback wording, or verdicts.
-- What lesson `done` means, or any change to `lesson_progress` columns.
-- Skipping to the next review point as a control, playback speed, captions, or a player library.
-- Any change to how review points are placed (`after_block`, contract rule 18 in `backend/app/services/packages.py`).
-- Re-asking already-answered questions on seek-back. Seeking back past an answered review point plays through it without re-asking (today's behavior).
-- Ingest, credit, readiness, or video-tool.
+- Any change to the snapshot's contents, `create` in `completions.py`, delivery (019), the verification page, or the audit bundle's file set.
+- Re-rendering certificates already stored. No backfill, no "re-render all" admin action.
+- The NASBA Registry logo or the words "National Registry" anywhere the snapshot does not already carry them. The existing absence test stays and must pass.
+- Multi-page certificates, per-course templates, per-jurisdiction variants, or a template editor.
+- A second display font unless recon finds a vendorable one with a compatible license and it adds real value; default is DejaVu Sans only.
+- Changing the favicon, og image, or the identity script's output for the site. If the identity script gains a step that copies the monogram into `backend/app/assets/`, that is the only change to it.
+- Signature images, signer names, or a "signed by" profile field.
 
 ## Locators
 
-- `frontend/src/components/Player/Player.jsx` — `seekTo`, `handleSeeked`, `REWIND_SECONDS`, the review-point pause, the progress bar, keyboard handler
-- `frontend/src/components/Player/Player.test.jsx` — backward seek, rewind, the pinned forward refusal
-- `frontend/src/pages/MyLesson.jsx` (or wherever the enrollment play payload is fetched) and the admin/reviewer preview page
-- Backend: the play-payload route and serializer for video lessons (Task 0 names it); the reader's `answered` derivation to copy from; `review_answers` model from 010
-- `backend/tests/test_player.py`
-- `COMPLIANCE.md`, `docs/decisions/`, `CHANGELOG.md`
+- `backend/app/services/certificates.py` — `render`
+- `backend/app/constants/certificate.py` — `TIME_STATEMENT`, `PROGRAM_TYPE`
+- `backend/app/models/sponsor.py`, `backend/app/routers/admin_sponsor.py`, the admin sponsor page in `frontend/src/`
+- `backend/app/assets/fonts/`, new `backend/app/assets/brand/` (monogram, palette)
+- `backend/app/templates/` (new)
+- `backend/tests/test_certificates.py`, `test_audit_bundle.py`, `test_sponsor.py`
+- `deploy/Dockerfile`, `backend/requirements*.txt`
+- `frontend/scripts/generate_identity.py`, `frontend/src/global.css`
+- `COMPLIANCE.md`, `CHANGELOG.md`, `docs/OPERATIONS.md`
 
 ## Data model
 
-No migration. One serializer change: `answered: bool` on each question in the video play payload, present in both the enrollment and preview responses (preview: whatever the recon found — persisted or `false`).
+- `sponsor_profile.logo_path` — nullable text, storage key. One Alembic migration, forward only.
+- No change to `completions.certificate_snapshot`.
 
 ## Tasks
 
-1. Task 0 recon; write the answers into the changelog draft first.
-2. Backend: add `answered` to the video play payload for both paths. One test per path in `test_player.py`: enrollment with one `review_answers` row → that question `true`, the rest `false`; preview → the recon's answer.
-3. Player: compute `ceiling` from the review-point list and answered state; replace the furthest clamp in `seekTo`, `handleSeeked`, the bar click handler, and the arrow-key handler with the ceiling clamp; ensure a seek that lands on `ceiling` enters the question state.
-4. Player: `FORWARD_SECONDS` and the "Forward 15 s" button.
-5. Player: answering a question recomputes `ceiling`; the wrong-answer re-watch link is verified as a backward seek.
-6. Resume on load: `min(furthest_seconds, ceiling)`.
-7. Replace the 027 forward-refusal test with the tests below.
-8. `COMPLIANCE.md` rows, `docs/decisions/` entry, changelog.
+1. Task 0 recon; write the answers into the changelog draft.
+2. Renderer dependency and Dockerfile packages; a unit test that renders a minimal HTML string to a one-page PDF proves the toolchain works in CI and in the image.
+3. Palette and monogram into `backend/app/assets/brand/`, with the mechanism that keeps them in sync with the frontend named and tested (a test that the committed palette matches `global.css`, or that the identity script writes both).
+4. Template and CSS; `render` rebuilt on it. Every existing certificate test passes.
+5. `logo_path`: migration, model, admin route (upload/clear), admin UI, `render` fallback to the monogram.
+6. Admin preview route and button.
+7. Visual check: render the sample certificate locally, open it, and commit a PNG of it under `docs/` so the changelog can point at what shipped. (Rasterize with the pdf tooling already in the venv or `pdftoppm` if present; do not add a dependency for this.)
+8. `COMPLIANCE.md`, changelog, OPERATIONS.md note on the new system packages.
 9. pyflakes, oxlint, both suites.
 
 ## Tests
 
-Frontend (`Player.test.jsx`):
-- Forward seek past the first unanswered review point is clamped to that point and the question renders.
-- Forward seek within `[0, ceiling]` is honored, including past `furthest`.
-- Forward 15 s from `ceiling - 5` lands on `ceiling` and asks; from earlier lands 15 s later and keeps playing.
-- After answering the first question, a forward seek past its review point is honored and clamps at the second unanswered point.
-- With every question answered (`answered: true` on load), a seek to `duration - 1` is honored.
-- Load with `answered` flags and `furthest_seconds` past `ceiling`: resume lands on `ceiling` and asks.
-- Wrong answer → "Re-watch this section" seeks to block start and resumes (existing test, kept).
-- Backward seek and Rewind 15 s (existing tests, kept).
+Backend:
+- All existing `test_certificates.py` assertions pass unchanged (9.01 items extractable, non-Latin name, "National Registry" absent when `may_claim_registry` was false, verify-line wording, one page).
+- With item 8 present in the snapshot, the sponsor ID prints; with it absent, neither the ID nor the words appear.
+- State registrations in the snapshot print; an empty list prints nothing for item 9.
+- `render` with a snapshot only (no session, no profile row) succeeds — pins the snapshot-only contract.
+- `logo_path` set → the PDF embeds an image from that key; unset → the monogram is embedded. (Assert on the PDF's image XObjects or on a rendered-pixel hash; either is fine.)
+- Preview route: admin-only; returns `application/pdf`; creates no `completions` row and no storage object; respects `may_claim_registry`.
+- Audit bundle tests unchanged.
 
-Backend (`test_player.py`):
-- Enrollment play payload carries `answered` per question, derived from `review_answers`.
-- Preview play payload carries `answered` (value per recon).
-- Existing grading and verdict tests unchanged.
+Frontend:
+- Admin sponsor page: logo upload, clear, and Preview certificate button call the right routes.
 
 ## COMPLIANCE.md rows
 
-Edit the Notes of the existing rows, do not add new ones:
+Edit Notes on existing rows, no new rows:
 
-| Para | Change to Notes |
+| Para | Change |
 |---|---|
-| 5.01.2 | Player: seeking is open in both directions up to the earliest unanswered review point (031); each placed question is still asked in place before playback continues past it. |
-| 5.01.2.1 | Placement is unchanged. Add: "The 006 forward lock keyed on furthest-watched was a sponsor choice beyond this paragraph and was replaced in 031 by a ceiling at the next unanswered review question; the paragraph's requirement — every placed question presented — is what the ceiling enforces." |
-| 6.01 | Add: completion verification is the review-answer record plus the qualified assessment; playback position never was and is not a completion signal. |
+| 9.01 items 1, 8, 9, 10, 11 | `render` now fills an HTML template (`backend/app/templates/certificate.html`) from the snapshot; the item set and gating are unchanged (032). |
+| 9.01.1 | Awarding entity printed as the "Authorized by" line (032). |
+| 9.02 | Add: rendered PDFs are never re-rendered; certificates issued before 032 keep the earlier layout. Sponsor logo is presentation and is not part of the snapshot. |
 
 ## Acceptance
 
 Locally runnable:
-1. Both suites green; pyflakes and oxlint show only warnings recorded in 030a or earlier.
-2. Admin preview of a video lesson with two review points: drag the bar past the first tick → pauses at the tick, question appears; answer; drag past the second tick → pauses there; answer; drag to the end → honored. Rewind and Forward 15 s behave as tested.
-3. Reload the enrollment lesson mid-lesson: resume lands no further than the first unanswered review point.
+1. Both suites green; lint shows only warnings recorded in earlier entries.
+2. `docker build` of the api image succeeds and `preflight` passes inside it.
+3. Preview certificate from `/admin/sponsor` opens a one-page PDF with the monogram; upload a logo, preview again, the logo appears; clear it, the monogram returns.
+4. Complete the ATO course locally as a test participant; the emailed and downloaded PDFs match the preview layout and the 9.01 text extracts.
 
-Operator, listed under Known gaps as "not yet run by the operator":
-4. Same walkthrough on production with the ATO video lesson after deploy.
+Operator, under Known gaps as "not yet run by the operator":
+5. Deploy; preview on production; complete a course on production and check the emailed certificate arrives through Resend with the new PDF attached.
 
 ## When done
 
-Append the 031 changelog entry with Task 0 answers, what was built, verification table, Known gaps, and the Decisions section naming this as the reversal of 006's lock and the counterpart of 023a's reader-clip decision. Report, do not build, anything found out of scope — in particular any dependency of lesson `done` on `furthest_seconds`.
+Append the 032 changelog entry with Task 0 answers, the renderer chosen and why, the palette-sync mechanism, the path to the committed sample PNG, verification table, Known gaps, and Decisions (HTML-template rendering; logo as presentation not snapshot; no re-render of stored PDFs). Report, do not build, anything out of scope.

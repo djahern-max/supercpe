@@ -1146,6 +1146,40 @@ reload. `robots.txt` is a static file in `frontend/public/` and welcomes
 indexing — the coming-soon page being indexed before opening day is the
 point.
 
+## Certificate look (032)
+
+Certificates are rendered from `backend/app/templates/certificate.html`
+and `certificate.css` by WeasyPrint, in the site's palette
+(`backend/app/assets/brand/palette.py`, written by the identity script
+above from `global.css` — a palette change is one script run, and the
+test suite refuses a palette that drifted). What a certificate *says*
+is the frozen snapshot and nothing else; what it *looks like* is CSS.
+
+- **The mark.** Top of the page: the logo uploaded on `/admin/sponsor`
+  ("Certificate" card, PNG or SVG, 2 MB cap, stored at
+  `sponsor/logo.<ext>`), else the "sC" monogram
+  (`backend/app/assets/brand/monogram.svg`). The logo is presentation:
+  it is not in the snapshot, and uploading or clearing it changes only
+  certificates rendered from then on. Never the Flaticon favicon — its
+  license forbids logo use.
+- **Preview.** "Preview certificate" on `/admin/sponsor` renders a
+  sample (fixed fake participant and course, today's date, the sponsor
+  facts as they stand, item 8 only if `may_claim_registry`) and opens
+  it inline. Nothing is stored or issued. This is the NASBA
+  application's sample certificate.
+- **Issued certificates are never re-rendered.** A PDF stored at
+  `certificates/<number>.pdf` keeps the layout it was issued with; a
+  redesign applies from the next render on. The look that shipped with
+  032 is `docs/certificate-sample.png`.
+- **System packages.** The api image installs `libpango-1.0-0
+  libpangoft2-1.0-0 libharfbuzz-subset0` beside ffmpeg; preflight, boot,
+  and `/health` (`renderer`) all check that WeasyPrint can lay out a
+  page. Fonts are vendored (`backend/app/assets/fonts/`), so no font
+  package and no network at render time.
+- **Local development** needs Pango too: `brew install pango` on a
+  Mac (the build machine already has it); the suite's certificate tests
+  fail at import without it.
+
 ## When /health goes red
 
 The monitor alerts on non-200. Fields, in the order to check:
@@ -1166,6 +1200,12 @@ The monitor alerts on non-200. Fields, in the order to check:
 - `ffprobe: error` — the image is broken (ffmpeg is installed by the
   Dockerfile); a deploy with a modified Dockerfile is the likely cause.
   Roll back.
+- `renderer: error` — the certificate renderer (WeasyPrint, 032) could
+  not lay out a page: the Pango packages the Dockerfile installs
+  (`libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0`) are missing
+  or broken. Same cause and same fix as `ffprobe: error` — a modified
+  Dockerfile; roll back. Preflight refuses the deploy on the same
+  check, so this should never be the first place it shows.
 - `bucket_versioning: error` — someone suspended versioning on the
   bucket, or the versioning read itself failed. Nothing in the runtime
   can have done it (the Limited Access key cannot change versioning);

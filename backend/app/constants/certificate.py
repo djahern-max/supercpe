@@ -40,3 +40,10 @@ NASBA_SPONSOR_STATEMENT = (
     "be submitted to the National Registry of CPE Sponsors through its "
     "website: www.nasbaregistry.org."
 )
+
+# 032: the sponsor logo an admin may upload for the certificate's mark
+# (ours). Presentation only — it is not a Section 9 fact and is not in
+# the snapshot. PNG or SVG; the cap keeps a stray upload from becoming a
+# multi-megabyte embed in every certificate.
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+LOGO_MEDIA_TYPES = {"png": "image/png", "svg": "image/svg+xml"}

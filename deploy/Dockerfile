@@ -2,9 +2,16 @@
 FROM python:3.12-slim
 
 # ffprobe is a boot requirement (002): every uploaded video's duration is
-# measured with it (7.02.7).
+# measured with it (7.02.7). The Pango stack is the other one (032): the
+# certificate renderer (WeasyPrint) lays out text with it, and preflight
+# and boot refuse without it. Fonts are vendored in app/assets/fonts/,
+# so no font package is needed.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz-subset0 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /usr/sbin/nologin supercpe
