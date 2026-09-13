@@ -120,8 +120,8 @@ describe("AdminSponsor: the certificate card (032)", () => {
       /\/api\/v1\/admin\/sponsor\/certificate-preview\.pdf$/
     );
     expect(link.getAttribute("target")).toBe("_blank");
-    // No logo: the monogram is named, and there is nothing to clear.
-    expect(container.textContent).toContain("superCPE monogram");
+    // No upload: the brand logo is named, and there is nothing to clear.
+    expect(container.textContent).toContain("superCPE logo");
     expect(button("Clear logo")).toBeUndefined();
   });
 
@@ -158,7 +158,7 @@ describe("AdminSponsor: the certificate card (032)", () => {
       button("Clear logo").click();
     });
     expect(api.clearSponsorLogo).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain("superCPE monogram");
+    expect(container.textContent).toContain("superCPE logo");
     expect(button("Clear logo")).toBeUndefined();
   });
 

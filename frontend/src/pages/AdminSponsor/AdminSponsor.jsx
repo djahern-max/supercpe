@@ -286,7 +286,7 @@ function PoliciesCard({ onAuthFailure, onPublished }) {
 
 /**
  * 032: the certificate's look. The mark at the top of every certificate
- * is the uploaded logo, else the monogram; "Preview certificate" renders
+ * is the uploaded logo, else the superCPE brand logo (033); "Preview certificate" renders
  * a sample from the sponsor facts as they stand (nothing stored, nothing
  * issued) — how the sponsor iterates on the look and how the NASBA
  * application's sample certificate is produced.
@@ -319,7 +319,7 @@ function CertificateCard({ logoPath, onProfile, onAuthFailure }) {
       <p className={styles.muted}>
         {logoPath
           ? `Certificates carry the uploaded logo (${logoPath}).`
-          : "Certificates carry the superCPE monogram; upload a logo to replace it."}{" "}
+          : "Certificates carry the superCPE logo; upload a different mark to replace it."}{" "}
         The logo is presentation only: certificates already issued are
         never re-rendered.
       </p>

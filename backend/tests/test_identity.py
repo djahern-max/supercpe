@@ -116,21 +116,77 @@ def test_index_html_json_ld_is_valid_and_minimal():
 def test_identity_assets_replace_every_vite_default():
     html = rendered_index_html()
     assert "vite.svg" not in html
-    # 024: every icon is a fixed-name file in public/ — the SVG favicon
-    # too, since it is the source the other icons are rasterized from —
-    # including og.png, whose URL is baked into a static tag.
-    assert 'href="/favicon.svg' in html
+    # 033: every icon is a fixed-name file in public/ derived from brand/
+    # by sync_brand.py — PNG and ICO only, since the brand sources are
+    # raster; the Flaticon favicon.svg (024) is gone — including og.png
+    # and logo.png, whose URLs are baked into static tags.
+    assert "favicon.svg" not in html
+    assert "monogram" not in html
+    assert not (PUBLIC / "favicon.svg").exists()
+    assert 'href="/favicon.ico' in html
+    assert 'href="/favicon-32x32.png' in html
+    assert 'href="/favicon-16x16.png' in html
+    assert 'href="/apple-touch-icon.png' in html
     for name in (
-        "favicon.svg",
         "favicon.ico",
+        "favicon-16x16.png",
+        "favicon-32x32.png",
         "apple-touch-icon.png",
         "icon-192.png",
         "icon-512.png",
+        "logo.png",
         "og.png",
         "site.webmanifest",
         "robots.txt",
     ):
         assert (PUBLIC / name).exists(), name
+
+
+def test_icons_and_cards_are_the_pinned_sizes():
+    """033: the sizes index.html and the manifest promise, and the OG
+    card's 1200x630, are what the files hold; the JSON-LD logo resolves
+    to the brand logo, not the OG card."""
+    from PIL import Image
+
+    def size(name):
+        with Image.open(PUBLIC / name) as image:
+            return image.size
+
+    assert size("favicon-16x16.png") == (16, 16)
+    assert size("favicon-32x32.png") == (32, 32)
+    assert size("apple-touch-icon.png") == (180, 180)
+    assert size("icon-192.png") == (192, 192)
+    assert size("icon-512.png") == (512, 512)
+    assert size("og.png") == (1200, 630)
+    with Image.open(PUBLIC / "favicon.ico") as icon:
+        assert {(16, 16), (32, 32)} <= set(icon.ico.sizes())
+    html = rendered_index_html()
+    site = json.loads((FRONTEND / "site.config.json").read_text())
+    block = json.loads(
+        re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)[1]
+    )
+    assert block["logo"] == f"{site['origin']}/logo.png"
+    # The three copies of the logo are one file.
+    logo = (PUBLIC / "logo.png").read_bytes()
+    assert (FRONTEND / "src" / "assets" / "brand" / "logo.png").read_bytes() == logo
+    assert (
+        FRONTEND.parent / "backend" / "app" / "assets" / "brand" / "logo.png"
+    ).read_bytes() == logo
+
+
+def test_brand_assets_carry_no_registry_mark():
+    """003's rule on the brand files: no asset, source, or generated
+    file is named for the Registry, and no page or script names it."""
+    brand = FRONTEND.parent / "brand"
+    for path in (*brand.iterdir(), *PUBLIC.iterdir()):
+        assert "registry" not in path.name.lower(), path
+    for path in (
+        FRONTEND / "index.html",
+        FRONTEND / "scripts" / "sync_brand.py",
+        brand / "README.md",
+        PUBLIC / "site.webmanifest",
+    ):
+        assert "National Registry" not in path.read_text(), path
 
 
 def test_webmanifest_names_the_site_and_both_icons():
@@ -142,6 +198,8 @@ def test_webmanifest_names_the_site_and_both_icons():
         "192x192",
         "512x512",
     ]
+    # 033: the icons are padded for a maskable crop and declared so.
+    assert all(icon["purpose"] == "any maskable" for icon in manifest["icons"])
 
 
 def test_robots_allows_all_but_admin_and_names_the_sitemap():

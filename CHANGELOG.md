@@ -4323,3 +4323,230 @@ Shipped: 2026-09-13
   templates, a second display face, signature images or signer names.
 - pyflakes still reports the pre-existing unused imports 030 listed;
   oxlint's 11 remaining warnings are all on untouched files.
+
+## 033 — Brand assets: one source, used everywhere
+Shipped: 2026-09-13
+
+The spec was numbered 032 and said it superseded "the earlier 032 draft
+(certificate-only, 'sC' monogram for now)". That draft had already
+shipped as the 032 entry above (the WeasyPrint template, the admin
+preview, the sponsor logo upload, the generated monogram), so this
+entry is 033 and builds on 032 rather than replacing it. Nothing in the
+032 entry is edited; what 033 reverses is named under Decisions.
+
+**Recon answers**
+- `brand/` existed with six PNG/ICO files from Dane and no SVG, no
+  palette file, no typeface: `supercpe-logo.png` (2172×724, the primary
+  horizontal logo), `supercpe-icon.png` (1338×1338, the square mark),
+  `favicon.ico` (16/32/48), `favicon-16x16.png`, `favicon-32x32.png`,
+  `apple-touch-icon.png` (180). Both required roles are present; the
+  palette was sampled from the artwork and recorded in `brand/README.md`.
+- The certificate renderer was already WeasyPrint (032); Task 5 here is
+  the mark, the seal, the palette, the file: fetcher, determinism, and
+  the new tests — not a second renderer. `deploy/Dockerfile` and
+  `requirements.txt` are untouched: no new dependency.
+- The landing page has had no paragraphs, no policies footer, no
+  Registry block, and no `/api/v1/landing` read since 024 (a commit
+  without a changelog entry; its rule is in `COMPLIANCE.md`'s 8.01
+  rows and the CLAUDE.md house rule "nothing rendered while coming-soon
+  names a course … or 'National Registry'"). The spec's Task 4
+  structure and its "Registry block renders when true" test describe
+  015's page, not the page as it stands. 024 is kept: the page is the
+  logo, "Coming Soon", and the form. Open question 1 is therefore moot
+  — there is no ASC 842 sentence to replace, and the ComingSoon test
+  still asserts the word "course" is absent.
+- The open-mode root: `SiteGate` renders its children at `open`, so `/`
+  is the catalog. Left alone.
+- The spec's locator `frontend/src/favicon.svg` did not exist; the
+  Flaticon SVG lived at `frontend/public/favicon.svg`. Deleted.
+- `sponsor_profile.logo_path` (032) exists and stays as an override;
+  see Decisions.
+
+**What changed**
+- `brand/README.md`: every file mapped to a role, source formats and
+  dimensions, the sampled palette with the contrast arithmetic, and the
+  ownership line ("Assets created by Dane for superCPE, LLC. Owned
+  outright; no third-party license.").
+- `frontend/scripts/sync_brand.py` replaces `generate_identity.py`
+  (deleted with its monogram and DejaVu-drawn OG code). It derives
+  fourteen files from `brand/`, `site.config.json`, and `global.css`:
+  the four favicon files copied verbatim, `icon-192.png` and
+  `icon-512.png` (the mark on opaque white, inset to 64% so a maskable
+  crop keeps it whole; the manifest declares `any maskable`),
+  `logo.png` (800×251, the artwork cropped to its alpha box), `og.png`
+  (1200×630: the logo and "Coming Soon" from `site.config.json`,
+  nothing else), `site.webmanifest`, the hashed-pipeline copies
+  `frontend/src/assets/brand/logo.png` and `mark.png` (128), and the
+  backend's `backend/app/assets/brand/logo.png` (the same bytes as the
+  public one), `mark.png` (512, the seal), and `palette.py`. Every
+  output is a pure function of the inputs; `--check` compares bytes
+  and exits 1 naming stale files. Pillow only — no `cairosvg`, because
+  every source is raster. `monogram.svg` is deleted.
+- `global.css`: `--color-brand-blue #006afc`, `--color-brand-navy
+  #012c6b`, `--color-brand-teal #01b6af` (the artwork's colours, for
+  marks, rules, and fills), `--color-accent #0066f4` (text and links),
+  `--color-bg #f5f7fb`, `--color-text #14213d`, `--color-text-muted
+  #51607a`, `--color-border #d5dcea`; success/error/warning unchanged.
+  Contrast (WCAG AA): accent on white 4.99:1 and on bg 4.65:1; text
+  15.97:1; muted 6.36:1; white on accent 4.99:1, on brand blue 4.70:1,
+  on navy 13.34:1; the status colours on their tints 4.74–5.71:1. The
+  substitution: the brand blue is 4.70:1 on white but 4.42:1 on the page
+  ground, so text uses the `#0066f4` tint and marks use the true blue;
+  the teal (2.53:1) is never text. `theme-color` follows `--color-accent`
+  through `siteMeta`.
+- `index.html`: the icon links are `favicon.ico`, `favicon-32x32.png`,
+  `favicon-16x16.png`, and `apple-touch-icon.png` at `?v=3`; no SVG
+  favicon (no SVG source); JSON-LD `logo` is `/logo.png` instead of
+  `og.png`. No Vite default, no monogram reference.
+- `SiteHeader`: the text wordmark is `<img alt="superCPE">` from the
+  hashed logo, height-capped at 2rem so the row does not grow, same link
+  targets; a 3px brand-blue rule along the top. 025's tests still hold
+  (no header in coming_soon, no course fact, no Registry string) and
+  now assert the image and its alt on three surfaces.
+- `ComingSoon`: redesigned — a white card with a brand-blue top rule on
+  a soft blue/teal wash, the logo as the `<h1>` image, "COMING SOON" in
+  navy, the unchanged form, single column at every width (the card
+  stops at 28rem). No analytics, no third-party script, no font or
+  image from another origin; the test walks every `src`/`href` and
+  asserts none is absolute. `GET /api/v1/landing` gained no field.
+- Certificate: the top mark is `backend/app/assets/brand/logo.png` by a
+  `file:` URL (an uploaded logo is still a data: URI and still wins);
+  the brand mark is a 6%-opacity seal behind the award; the frame is
+  brand blue, the inner rule teal, the heading and credit line navy,
+  the sponsor rule navy, the footer rule teal. `<meta
+  name="dcterms.created">` carries the snapshot's `completed_at`, so
+  the PDF's `/CreationDate` is the completion instant and two renders
+  are byte-identical (the 032 renders already were, by accident of
+  WeasyPrint writing no date; now it is by design and pinned). The
+  fetcher is unchanged (data: and files under `app/assets/`). A render
+  with the seal, the logo, three DejaVu faces, and a full snapshot is
+  195 KB. `docs/certificate-sample-033.png` is what shipped.
+- `AdminNav`: `useMediaQuery("(max-width: 720px)")` (a new
+  `useSyncExternalStore` hook, `frontend/src/hooks/useMediaQuery.js`;
+  answers false and never subscribes where `matchMedia` is missing)
+  decides the layout. Narrow: the brand mark and "Admin", a Menu
+  button (`aria-expanded`, `aria-controls`), Sign out; the button
+  toggles a vertical list of the nine links and the email. Wide: one
+  wrapping row (`flex-wrap: wrap` on the row and the link group), the
+  email, Sign out. Sign out behaviour unchanged (`/login`). The screen-
+  shot run caught that `hidden` lost to the panel's `display: flex`;
+  `.menu[hidden] { display: none }` fixes it.
+- `AdminSponsor`: the "Certificate" card now says "Certificates carry
+  the superCPE logo; upload a different mark to replace it."; comments
+  in `sponsor.py`, the model, the schema, and `api/sponsor.js` follow.
+- Docs: OPERATIONS.md "Site identity (022)" replaced by "Brand assets
+  (033)" (the source, the script, `--check`, the cache facts, the
+  Flaticon retirement, the renderer's system deps under "Certificate
+  look (032)", which is edited to name the brand logo). CLAUDE.md rule
+  4 and the Commands block gain the lint line (pyflakes, oxlint,
+  `sync_brand.py --check`). `docs/decisions/2026-09-13-brand-assets.md`.
+  ROADMAP improvement note on the superseded 032 draft and the deferred
+  `logo_path` slot. COMPLIANCE.md: four rows appended (below).
+- Tests: backend 579 → 584 (`test_identity.py`: the PNG/ICO favicon
+  set, no `favicon.svg` or monogram in `index.html`, pinned sizes for
+  every icon and the OG card, the JSON-LD logo resolves to `logo.png`
+  and the three logo copies are one file, maskable purpose in the
+  manifest, no Registry-named asset or Registry words in the brand
+  files; `test_certificates.py`: the brand logo and seal are the mark
+  without an upload and embed at their pixel sizes, an upload replaces
+  the logo and keeps the seal, byte-identical double render with the
+  snapshot's date and under 500 KB, self-contained (every font
+  embedded and DejaVuSans, no annotations, no URI, no http, no external
+  file spec), no Registry words without the claim, and `sync_brand.py
+  --check` run as a subprocess replaces the identity-script equality
+  test). Frontend 137 → 144 (`AdminNav.test.jsx`: narrow hides the
+  links until Menu, Menu opens them with the email, Sign out present in
+  both states and called once, wide has no button, no matchMedia falls
+  back to wide, the mark has empty alt; `ComingSoon.test.jsx`: the
+  logo is the heading, nothing from another origin, no link at all,
+  the form submits; `SiteHeader.test.jsx` and `AdminSponsor.test.jsx`
+  follow the wording). All existing certificate text-extraction tests
+  pass unchanged.
+
+**Standards touched**
+- 9.01 — printed page 21. The eleven items, read again against the
+  template after the mark and colour changes: nothing added, dropped,
+  or reworded; every item still extracts as one line. COMPLIANCE.md
+  row added.
+- 9.01.1 — printed pages 21–22. The awarding entity is still the
+  "Authorized by" line from `sponsor_legal_name`. Same row.
+- 8.01 — printed page 20. The landing page and the OG card were
+  redesigned and disclose no item; the payload key set is unchanged.
+  COMPLIANCE.md row added; the Registry-claim rule on the brand assets
+  is its own row (9.01 item 8).
+- 9.02 / 9.02.2 — printed page 22. Stored PDFs are never re-rendered;
+  from 033 on they are self-contained and byte-comparable to their
+  snapshot. COMPLIANCE.md note row added.
+
+**Decisions**
+- **One source, copy by script** (`docs/decisions/2026-09-13-brand-
+  assets.md`). Reverses the 022 decision to generate identity assets
+  from a placeholder and the 032 Decision "The monogram is drawn as
+  code, not taken from the favicon": both were stopgaps for the absence
+  of a brand, and the brand now exists. The Flaticon favicon is retired.
+- **The sponsor mark is the brand mark.** The default certificate mark
+  is the brand logo. `sponsor_profile.logo_path` (032) is not removed —
+  the spec lists a per-sponsor slot as out of scope, and removing a
+  shipped column and route would be a reversal it did not ask for —
+  but it is an override, not a multi-sponsor feature; a real slot
+  returns only with a second sponsor (001).
+- **PNG favicons, no SVG.** The sources are raster; wrapping a PNG in an
+  SVG would gain nothing. The 022 `favicon.svg` assertions were
+  rewritten rather than kept, since the spec's "SVG preferred" was a
+  preference and the alternative was drawing one.
+- **Accent text is a tint, true blue is for marks** — the recorded
+  values above.
+- **Creation date from the snapshot**, so the stored-once record is
+  checkable by comparison, and no `now()` reaches the bytes.
+- **The seal is decoration** at 6% opacity behind the award, drawn
+  before the text so extraction is unaffected; it costs 100 KB of the
+  195 KB PDF. Drop it if size ever matters.
+- **024 stands**: no paragraphs, no policies footer, no Registry block
+  on the landing page. The spec's "conditional Registry block … existing
+  behavior" was not existing behaviour, and its own hard rule says no
+  Registry text; re-adding a landing read would reverse 024 without
+  being asked to.
+- **`useMediaQuery` decides the admin layout in JavaScript**, not CSS
+  alone, so the narrow state is testable in jsdom and the menu button
+  exists only where it is needed.
+
+**Known gaps**
+- Acceptance 8 (deploy, hard-refresh production, the favicon and
+  `og.png`, a link previewer, a production certificate): not yet run by
+  the operator.
+- Acceptance 2's Safari "Add to Home Screen" and the OG card in a real
+  previewer were not exercised; the tab icon links and `/og.png` were
+  checked in headless Chrome against the dev server.
+- Acceptance 5's "opens with network disabled" is asserted structurally
+  (`test_certificate_is_self_contained`), not by opening the file in a
+  viewer with the network off.
+- Acceptance 3, 4, 6 were checked with headless Chrome driven over its
+  debugging protocol against the local API and dev server (screenshots
+  at 375, 720, and 1280; the admin menu closed, open, and Sign out from
+  the open menu landing on `/login`). The nav itself is 311 px wide at
+  375 and needs no horizontal scroll, but two admin page *bodies* are
+  wider than a phone and make Chrome's mobile viewport zoom out: the
+  create-course row on `/admin/courses` (514 px, the inputs and button
+  do not wrap) and the accounts table on `/admin/accounts` (949 px).
+  Pre-existing, outside the nav, report not build.
+- The header at 375 with a participant signed in wraps to two rows
+  (logo; then the three links, the email, and Sign out) with no
+  overflow, so it was left as 025 built it.
+- Dane's `apple-touch-icon.png` has a transparent ground, which iOS
+  composites over black. Copied verbatim as supplied; an opaque version
+  in `brand/` replaces it with one script run (noted in the README).
+- Two local-only accounts (`shot-admin@local.test`,
+  `shot-participant@local.test`) were created in the local dev database
+  for the screenshot run and left there (accounts are never deleted;
+  the dev database is test data).
+- The working tree also carries the operator's uncommitted edits to
+  `deploy/deploy.sh` and the OPERATIONS.md "Rollback" section (image
+  pruning after a healthy deploy) from before this session; not part of
+  033 and not touched.
+- Open question 2 (a brand typeface): none was supplied, so the system
+  stack and DejaVu stand, as the default said.
+- The image built (`docker build -f deploy/Dockerfile .`) and a smoke
+  render inside it produced a byte-stable PDF with both brand files
+  present; size 1.55 GB, the same as 032 — no new package.
+- pyflakes still reports the pre-existing unused imports 030 listed;
+  oxlint's remaining warnings are all on untouched files.

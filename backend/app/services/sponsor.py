@@ -128,7 +128,7 @@ def set_logo(db: Session, storage: Storage, content: bytes) -> SponsorProfile:
 
 
 def clear_logo(db: Session) -> SponsorProfile:
-    """Back to the monogram. The stored object is left in place — it is
+    """Back to the brand logo (033). The stored object is left in place — it is
     overwritten by the next upload of the same type, and nothing at the
     storage boundary deletes."""
     profile = get_profile(db)
@@ -140,7 +140,7 @@ def clear_logo(db: Session) -> SponsorProfile:
 
 def load_logo(db: Session, storage: Storage) -> Logo | None:
     """The uploaded mark as bytes for `certificates.render`, or None for
-    the monogram. A profile row absent (create_all databases) or a key
+    the brand logo. A profile row absent (create_all databases) or a key
     whose object is gone both read as None: a certificate is never
     refused for want of decoration."""
     profile = db.get(SponsorProfile, 1)

@@ -4,7 +4,8 @@
   test_every_text_run_lies_inside_the_page measures every run — so the
   frame sits at 12 mm and its padding carries the text past 20 mm.
   Colours are the site's tokens, injected by the template from
-  app/assets/brand/palette.py. The three DejaVu faces are the vendored
+  app/assets/brand/palette.py (033: the brand palette — the frame is the
+  brand blue, the heading the brand navy, the inner rule the teal). The three DejaVu faces are the vendored
   files (011); the family is declared as "DejaVuSans" (no space) so a
   system "DejaVu Sans" can never be picked over them, and because
   WeasyPrint names the embedded font after the family — the tests
@@ -63,7 +64,7 @@ p, h1 {
   box-sizing: border-box;
   width: 544pt;
   height: 724pt;
-  border: 2pt solid var(--color-accent);
+  border: 2pt solid var(--color-brand-blue);
   padding: 3pt;
   position: relative;
 }
@@ -71,29 +72,48 @@ p, h1 {
 .inner {
   box-sizing: border-box;
   height: 100%;
-  border: 0.75pt solid var(--color-border);
+  border: 0.75pt solid var(--color-brand-teal);
   /* 34 + 2 + 3 + 0.75 + 17 = 56.75 pt ≥ the 20 mm (56.7 pt) text margin. */
   padding: 17pt 17pt 0;
   position: relative;
   overflow: hidden;
 }
 
+/* The brand mark as a faint seal behind the award block. Decoration:
+   it carries no text and sits under everything (the text runs are
+   drawn after it, so extraction is unaffected). */
+.seal {
+  position: absolute;
+  left: 50%;
+  top: 250pt;
+  width: 220pt;
+  height: 220pt;
+  margin-left: -110pt;
+  opacity: 0.06;
+}
+
 .masthead {
+  position: relative;
   padding-top: 6pt;
 }
 
+/* The logo is 800 × 251 px; 170 pt wide keeps it well inside the
+   frame and over 4× the pixels it is drawn with. An uploaded mark
+   keeps its own aspect inside the same box. */
 .mark {
   display: block;
-  width: 52pt;
-  height: 52pt;
-  margin: 0 auto 12pt;
+  max-width: 170pt;
+  max-height: 60pt;
+  width: auto;
+  height: auto;
+  margin: 0 auto 14pt;
 }
 
 .heading {
   font-size: 20pt;
   font-weight: bold;
   letter-spacing: 0.12em;
-  color: var(--color-accent);
+  color: var(--color-brand-navy);
 }
 
 .sponsor {
@@ -104,6 +124,7 @@ p, h1 {
 }
 
 .award {
+  position: relative;
   margin-top: 30pt;
 }
 
@@ -133,10 +154,11 @@ p, h1 {
 }
 
 .credit {
+  position: relative;
   margin: 26pt auto 0;
   width: 360pt;
   padding: 12pt 14pt 11pt;
-  border: 1pt solid var(--color-accent);
+  border: 1pt solid var(--color-brand-blue);
   border-radius: 6pt;
   background: var(--color-bg);
 }
@@ -144,7 +166,7 @@ p, h1 {
 .credit-line {
   font-size: 15pt;
   font-weight: bold;
-  color: var(--color-accent);
+  color: var(--color-brand-navy);
 }
 
 .time-statement {
@@ -155,12 +177,14 @@ p, h1 {
 }
 
 .details {
+  position: relative;
   margin-top: 22pt;
   font-size: 10.5pt;
   line-height: 1.6;
 }
 
 .sponsor-block {
+  position: relative;
   margin-top: 30pt;
   font-size: 9.5pt;
   line-height: 1.6;
@@ -171,7 +195,7 @@ p, h1 {
   width: 260pt;
   margin: 0 auto 8pt;
   padding-top: 6pt;
-  border-top: 1pt solid var(--color-text);
+  border-top: 1pt solid var(--color-brand-navy);
   font-size: 10pt;
 }
 
@@ -187,7 +211,7 @@ p, h1 {
   bottom: 0;
   padding: 12pt 17pt 16pt;
   background: var(--color-bg);
-  border-top: 1pt solid var(--color-border);
+  border-top: 1pt solid var(--color-brand-teal);
   font-size: 9pt;
   color: var(--color-text-muted);
   line-height: 1.5;

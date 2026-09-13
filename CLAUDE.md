@@ -63,8 +63,9 @@ which is live rather than guessing.
    current-feature.md tells you which paragraphs matter; it does not replace
    them.
 4. Before writing the changelog entry: typecheck, lint, backend `pytest`,
-   and frontend tests all pass, and `git status --porcelain` is clean apart
-   from the feature's own changes.
+   frontend tests, and `frontend/scripts/sync_brand.py --check` all pass,
+   and `git status --porcelain` is clean apart from the feature's own
+   changes.
 5. When the acceptance criteria the build session can run pass, append
    the CHANGELOG.md entry and say the feature is done. Criteria that
    need the operator (a production deploy, a browser walkthrough, a
@@ -154,6 +155,8 @@ which is live rather than guessing.
     cd frontend && npm run dev
     cd backend && pytest
     cd frontend && npm test
-    <typecheck and lint commands — fill in>
+    cd backend && python -m pyflakes app tests        # lint (Python)
+    cd frontend && npm run lint                       # lint (oxlint)
+    backend/.venv/bin/python frontend/scripts/sync_brand.py --check   # brand assets in sync
 Production commands and the diagnostic sequence are in docs/OPERATIONS.md;
 do not run them from a build session.

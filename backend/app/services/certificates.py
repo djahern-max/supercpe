@@ -9,17 +9,23 @@ the same text content (asserted by test); byte identity is not required
 032: the page is an HTML template (app/templates/certificate.html) with
 its CSS beside it, filled by Jinja2 and laid out by WeasyPrint. Layout
 is CSS; the palette is the site's own (app/assets/brand/palette.py,
-written by the identity script from global.css); the mark at the top is
-the uploaded sponsor logo when the caller passes one, else the committed
-monogram. The logo is presentation, not a Section 9 fact: it is an
+written by frontend/scripts/sync_brand.py from global.css); the mark at
+the top is the uploaded sponsor logo when the caller passes one, else
+the superCPE brand logo (033: app/assets/brand/logo.png, derived from
+brand/ by the same script — the sponsor *is* superCPE, LLC, so the brand
+mark is the sponsor mark). The brand mark also sits behind the award as
+a faint seal. The logo is presentation, not a Section 9 fact: it is an
 optional argument, never a snapshot key, and a stored PDF is never
 re-rendered. The vendored DejaVu Sans faces (011, license alongside them
 in app/assets/fonts/) are declared with @font-face, so a participant
 named "Nguyễn" or "Michałowski" still gets their own name.
 
 Nothing is fetched at render time: the URL fetcher below admits only
-data: URIs and files under app/assets/, so an uploaded SVG that points
-at the network draws without that reference.
+data: URIs and files under app/assets/ (the brand images and the fonts),
+so an uploaded SVG that points at the network draws without that
+reference. The PDF's creation date is the snapshot's completion instant,
+never the clock, so two renders of one snapshot are byte-identical and
+the stored-once invariant (9.02) can be checked by comparison.
 """
 
 import base64
@@ -44,7 +50,9 @@ _APP_DIR = Path(__file__).resolve().parent.parent
 _ASSETS_DIR = _APP_DIR / "assets"
 _FONTS_DIR = _ASSETS_DIR / "fonts"
 _TEMPLATES_DIR = _APP_DIR / "templates"
-MONOGRAM_PATH = _ASSETS_DIR / "brand" / "monogram.svg"
+_BRAND_DIR = _ASSETS_DIR / "brand"
+BRAND_LOGO_PATH = _BRAND_DIR / "logo.png"
+BRAND_MARK_PATH = _BRAND_DIR / "mark.png"
 
 # 019's public verification page resolves the code. The path deliberately
 # avoids 017's /verify (email verification). Stored PDFs are immutable,
@@ -86,8 +94,7 @@ def render(snapshot: dict, logo: Logo | None = None) -> bytes:
 
 def render_html(snapshot: dict, logo: Logo | None = None) -> str:
     """The filled template, before layout. Exposed so tests can see the
-    mark the PDF was drawn from (an SVG monogram leaves no image
-    object in the PDF to assert on)."""
+    mark the PDF was drawn from."""
     return _env.get_template("certificate.html").render(_context(snapshot, logo))
 
 
@@ -101,7 +108,11 @@ def _context(snapshot: dict, logo: Logo | None) -> dict:
         people.append(f"Reviewed by {_person(snapshot['reviewed_by'])}")
     return {
         "palette": PALETTE,
-        "mark_src": mark_data_uri(logo),
+        "mark_src": mark_src(logo),
+        "seal_src": BRAND_MARK_PATH.as_uri(),
+        # WeasyPrint's dcterms.created → the PDF's /CreationDate: the
+        # completion instant from the snapshot, so the bytes carry no clock.
+        "created": snapshot["completed_at"],
         "sponsor_name": snapshot["sponsor_name"],  # item 1
         # 9.01.1: the awarding entity. Issuance never lets legal_name be
         # blank; the fallback only matters for a preview of a bare profile.
@@ -123,21 +134,22 @@ def _context(snapshot: dict, logo: Logo | None) -> dict:
     }
 
 
-def mark_data_uri(logo: Logo | None) -> str:
-    """The `<img src>` for the mark: the uploaded logo, else the committed
-    monogram. A data: URI either way, so the template never references
-    storage and the fetcher never has to admit anything but data."""
+def mark_src(logo: Logo | None) -> str:
+    """The `<img src>` for the mark at the top: the uploaded logo as a
+    data: URI (the template never references storage), else the brand
+    logo as a file: URL under app/assets/brand/, which the fetcher
+    admits."""
     if logo is None:
-        logo = Logo(MONOGRAM_PATH.read_bytes(), "image/svg+xml")
+        return BRAND_LOGO_PATH.as_uri()
     encoded = base64.b64encode(logo.content).decode("ascii")
     return f"data:{logo.media_type};base64,{encoded}"
 
 
 class _AssetsOnlyFetcher(URLFetcher):
     """WeasyPrint's URL fetcher, narrowed: data: URIs, and files under
-    app/assets/ (the @font-face sources). Anything else — an uploaded
-    SVG's external image, a stray http reference — is refused, and
-    WeasyPrint draws on without it."""
+    app/assets/ (the @font-face sources and the brand images). Anything
+    else — an uploaded SVG's external image, a stray http reference — is
+    refused, and WeasyPrint draws on without it."""
 
     def __init__(self):
         super().__init__(allowed_protocols={"data", "file"})

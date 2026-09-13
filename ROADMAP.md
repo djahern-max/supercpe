@@ -258,6 +258,15 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   reviewer's name and credentials — and recording on a reviewer's behalf
   from a signed attestation is a legitimate sponsor practice. Restricting
   it is a `docs/decisions/` entry, not a fix.
+- The earlier 032 draft ("Certificate redesign: render from an HTML
+  template", shipped 2026-09-13) was superseded the same day by the brand
+  feature (033, "Brand assets: one source, used everywhere"): its
+  renderer, template, preview, and logo upload stay; its generated "sC"
+  monogram and the Flaticon favicon are gone, replaced by Dane's assets
+  in `brand/`. `sponsor_profile.logo_path` (the 032 upload) remains as an
+  override, but the sponsor *is* superCPE, LLC and the brand mark is the
+  sponsor mark; a per-sponsor logo slot as a real feature is deferred to
+  a multi-sponsor feature, if a second sponsor ever exists (001).
 - Pin the Caddy base images (023c, 2026-09-10). The 2026-09-10 deploy
   spent 228 s rebuilding `xcaddy` because `caddy:2-builder` moved
   upstream; `deploy/Dockerfile.web` should name a digest or exact

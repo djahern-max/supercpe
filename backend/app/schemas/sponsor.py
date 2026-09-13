@@ -61,7 +61,7 @@ class SponsorProfileAdmin(BaseModel):
     address: str
     other_certificate_statements: str
     # 032: storage key of the uploaded certificate mark, or null for the
-    # monogram.
+    # brand logo (033).
     logo_path: str | None
     updated_at: datetime
     missing_fields: list[str]

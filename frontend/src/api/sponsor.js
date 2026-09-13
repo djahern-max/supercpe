@@ -32,7 +32,7 @@ export function getPublicSponsor() {
 }
 
 // 032: the certificate mark. PNG or SVG, stored at sponsor/logo.<ext>;
-// clearing it returns the certificate to the monogram. Presentation
+// clearing it returns the certificate to the brand logo (033). Presentation
 // only — the snapshot never carries it.
 export function uploadSponsorLogo(file) {
   const body = new FormData();

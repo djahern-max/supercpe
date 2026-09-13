@@ -1,11 +1,21 @@
 :root {
-  /* Colors */
-  --color-bg: #f7f8fa;
+  /* Colors. 033: the brand palette, sampled from brand/ (values and
+     the contrast arithmetic in brand/README.md). The three brand-*
+     tokens are the artwork's own colours, for marks, rules, and filled
+     buttons; --color-accent is the tint of the brand blue that clears
+     WCAG AA (4.5:1) as text on white and on --color-bg, which the true
+     blue does not on the page ground. The teal is never text. The
+     certificate reads the same tokens through the palette module that
+     sync_brand.py writes. */
+  --color-bg: #f5f7fb;
   --color-surface: #ffffff;
-  --color-text: #1a2233;
-  --color-text-muted: #5a6478;
-  --color-border: #d8dde6;
-  --color-accent: #1f4e8c;
+  --color-text: #14213d;
+  --color-text-muted: #51607a;
+  --color-border: #d5dcea;
+  --color-brand-blue: #006afc;
+  --color-brand-navy: #012c6b;
+  --color-brand-teal: #01b6af;
+  --color-accent: #0066f4;
   --color-accent-contrast: #ffffff;
   --color-success: #1e7a3c;
   --color-success-bg: #e6f4ea;

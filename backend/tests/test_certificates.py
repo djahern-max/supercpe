@@ -1,12 +1,13 @@
 """Feature 010: certificate rendering from the snapshot alone (9.01), the
 issuance split, the 60-day finding, and the deletion/unpublish guarantees.
 032: the same assertions against the HTML-template renderer, plus the
-mark (logo or monogram), the palette sync, the toolchain, and the admin
+mark (uploaded logo or the brand logo), the palette sync, the toolchain, and the admin
 preview.
 """
 
-import importlib.util
 import re
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
@@ -538,20 +539,85 @@ def test_long_content_stays_on_one_page():
     assert len(PdfReader(BytesIO(pdf)).pages) == 1
 
 
-def test_monogram_is_the_mark_without_a_logo():
+def image_size(path: Path) -> tuple[int, int]:
+    with Image.open(path) as image:
+        return image.size
+
+
+def test_brand_logo_is_the_mark_without_an_upload():
+    """033: no upload → the committed brand logo, referenced by a file:
+    URL under app/assets/brand/ (the fetcher admits it), and the brand
+    mark as the seal. Both are embedded at their pixel size."""
     html = certificates.render_html(bare_snapshot())
-    assert certificates.mark_data_uri(None) in html
-    assert (BRAND_DIR / "monogram.svg").read_bytes() == certificates.MONOGRAM_PATH.read_bytes()
-    # Drawn as paths: no raster image in the PDF.
-    assert raster_images(certificates.render(bare_snapshot())) == []
+    assert certificates.BRAND_LOGO_PATH.as_uri() in html
+    assert certificates.BRAND_MARK_PATH.as_uri() in html
+    assert certificates.BRAND_LOGO_PATH.is_relative_to(certificates._ASSETS_DIR)
+    assert "data:" not in html
+    pdf = certificates.render(bare_snapshot())
+    assert sorted(raster_images(pdf)) == sorted(
+        [image_size(certificates.BRAND_LOGO_PATH), image_size(certificates.BRAND_MARK_PATH)]
+    )
 
 
 def test_uploaded_logo_is_embedded():
     logo = certificates.Logo(png_logo(40, 20), "image/png")
     pdf = certificates.render(bare_snapshot(), logo=logo)
-    assert raster_images(pdf) == [(40, 20)]
+    # The upload replaces the brand logo at the top; the seal stays.
+    assert sorted(raster_images(pdf)) == sorted(
+        [(40, 20), image_size(certificates.BRAND_MARK_PATH)]
+    )
     # And the text is untouched by the mark.
     assert "Pat Smith" in pdf_text(pdf)
+
+
+def test_two_renders_of_one_snapshot_are_byte_identical():
+    """033: the creation date is the snapshot's completion instant, not
+    the clock, so the stored-once record (9.02) is checkable by
+    comparison."""
+    snapshot = bare_snapshot()
+    first, second = certificates.render(snapshot), certificates.render(snapshot)
+    assert first == second
+    metadata = PdfReader(BytesIO(first)).metadata
+    assert metadata["/CreationDate"].startswith("D:20260913")
+    assert len(first) < 500 * 1024
+
+
+def test_certificate_is_self_contained():
+    """Fonts and images are embedded and nothing points outside the
+    file: the PDF opens with the network off. Every embedded font is a
+    vendored DejaVu face; no annotation, URI action, or external stream
+    reference exists."""
+    pdf = certificates.render(bare_snapshot(national_registry_id="112233"))
+    reader = PdfReader(BytesIO(pdf))
+    [page] = reader.pages
+    fonts = page["/Resources"]["/Font"]
+    assert fonts, "no fonts embedded"
+    for font in fonts.values():
+        font = font.get_object()
+        descriptor = font.get("/FontDescriptor") or font["/DescendantFonts"][0].get_object()["/FontDescriptor"]
+        descriptor = descriptor.get_object()
+        assert any(key in descriptor for key in ("/FontFile", "/FontFile2", "/FontFile3")), font
+        assert "DejaVuSans" in str(font["/BaseFont"])
+    assert "/Annots" not in page
+    assert b"/URI" not in pdf and b"http://" not in pdf and b"https://" not in pdf
+    assert b"/F (" not in pdf  # no external file specification
+    assert len(raster_images(pdf)) == 2  # the logo and the seal, both inline
+
+
+def test_no_registry_words_without_the_claim():
+    """003's rule on the brand assets: the template, the CSS, the brand
+    images' names, and the rendered text carry no Registry words while
+    the snapshot does not claim item 8."""
+    text = pdf_text(certificates.render(bare_snapshot(national_registry_id=None)))
+    assert "National Registry" not in text
+    for path in (
+        certificates._TEMPLATES_DIR / "certificate.css",
+        certificates.BRAND_LOGO_PATH,
+        certificates.BRAND_MARK_PATH,
+    ):
+        assert "registry" not in path.name.lower()
+    css = (certificates._TEMPLATES_DIR / "certificate.css").read_text()
+    assert "Registry" not in css
 
 
 def test_renderer_fetches_nothing_but_assets():
@@ -582,21 +648,21 @@ def test_committed_palette_matches_global_css():
     assert "accent" in PALETTE and "accent-contrast" in PALETTE
 
 
-def test_committed_brand_assets_are_what_the_identity_script_writes():
-    """The identity script is the one writer of palette.py and
-    monogram.svg; a palette edit without a script run fails here."""
-    spec = importlib.util.spec_from_file_location(
-        "generate_identity", REPO / "frontend" / "scripts" / "generate_identity.py"
+def test_committed_brand_assets_are_what_sync_brand_writes():
+    """033: sync_brand.py is the one writer of palette.py, logo.png, and
+    mark.png (and of every frontend icon); `--check` refuses a drift.
+    Run the way the pre-changelog lint line runs it."""
+    result = subprocess.run(
+        [sys.executable, str(REPO / "frontend" / "scripts" / "sync_brand.py"), "--check"],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
     )
-    script = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(script)
-    assert (BRAND_DIR / "palette.py").read_text() == script.palette_module()
-    assert (BRAND_DIR / "monogram.svg").read_text() == script.monogram_svg()
-    # The monogram is paths on a square in the palette — no <text>, no
-    # <image>, nothing to fetch, and not the Flaticon favicon.
-    svg = (BRAND_DIR / "monogram.svg").read_text()
-    assert "<text" not in svg and "<image" not in svg and "href" not in svg
-    assert PALETTE["accent"] in svg and PALETTE["accent-contrast"] in svg
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "in sync" in result.stdout
+    assert not (BRAND_DIR / "monogram.svg").exists()
+    for token in ("brand-blue", "brand-navy", "brand-teal", "accent"):
+        assert token in PALETTE
 
 
 def test_sample_snapshot_has_exactly_the_real_snapshot_keys(db_session):
@@ -641,7 +707,7 @@ def test_preview_renders_a_sample_and_stores_nothing(
     assert "Certificate of Completion" in text
     assert "National Registry" not in text  # not registered
     assert len(PdfReader(BytesIO(response.content)).pages) == 1
-    assert raster_images(response.content) == []  # the monogram
+    assert len(raster_images(response.content)) == 2  # the brand logo and seal
 
     assert db_session.query(Completion).count() == 0
     assert list(storage_root.rglob("*.pdf")) == []
@@ -666,7 +732,7 @@ def test_preview_and_real_certificate_carry_the_uploaded_logo(
     client, admin_headers, db_session, storage_root
 ):
     """The mark comes from the profile at render time, for the preview
-    and for a real certificate alike; clearing it brings the monogram
+    and for a real certificate alike; clearing it brings the brand logo
     back for the next render — and never touches a stored PDF."""
     complete_profile(db_session)
     upload = client.put(
@@ -675,9 +741,7 @@ def test_preview_and_real_certificate_carry_the_uploaded_logo(
         files={"file": ("logo.png", png_logo(64, 32), "image/png")},
     )
     assert upload.status_code == 200, upload.json()
-    assert raster_images(client.get(PREVIEW_URL, headers=admin_headers).content) == [
-        (64, 32)
-    ]
+    assert (64, 32) in raster_images(client.get(PREVIEW_URL, headers=admin_headers).content)
 
     _, enrollment, _ = make_completed_without_profile(db_session)
     login(client, PARTICIPANT_EMAIL, PARTICIPANT_PASSWORD)
@@ -685,11 +749,11 @@ def test_preview_and_real_certificate_carry_the_uploaded_logo(
         f"/api/v1/my/completions/{enrollment.completion.id}/certificate.pdf"
     )
     assert download.status_code == 200
-    assert raster_images(download.content) == [(64, 32)]
+    assert (64, 32) in raster_images(download.content)
     stored = (storage_root / enrollment.completion.certificate_key).read_bytes()
 
     login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
     assert client.delete("/api/v1/admin/sponsor/logo").status_code == 200
-    assert raster_images(client.get(PREVIEW_URL).content) == []
+    assert (64, 32) not in raster_images(client.get(PREVIEW_URL).content)
     # The issued certificate is not re-rendered.
     assert (storage_root / enrollment.completion.certificate_key).read_bytes() == stored

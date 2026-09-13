@@ -46,7 +46,7 @@ class SponsorProfile(Base):
         String, nullable=False, default="coming_soon", server_default="coming_soon"
     )
     # 032: storage key of the uploaded certificate mark (`sponsor/logo.png`
-    # or `.svg`), or null for the monogram. Presentation, not a 9.01 fact:
+    # or `.svg`), or null for the brand logo (033). Presentation, not a 9.01 fact:
     # the snapshot does not carry it, and a stored PDF is never re-rendered.
     logo_path: Mapped[str | None] = mapped_column(String, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

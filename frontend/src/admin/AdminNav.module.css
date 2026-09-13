@@ -1,8 +1,50 @@
+/* 033: one wrapping row above 720px; a mark, a menu button, and Sign out
+   at and below it, with the links in a vertical list the button opens.
+   The 720px figure is the same one AdminNav.jsx hands matchMedia. */
 .nav {
   display: flex;
-  gap: var(--space-md);
+  flex-direction: column;
+  gap: var(--space-sm);
   border-bottom: 1px solid var(--color-border);
   padding-bottom: var(--space-sm);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 0 0 auto;
+  text-decoration: none;
+  color: var(--color-brand-navy);
+  font-weight: 700;
+}
+
+.mark {
+  display: block;
+  height: 1.75rem;
+  width: 1.75rem;
+}
+
+.title {
+  font-size: 1rem;
+}
+
+/* Takes whatever width the mark leaves; a tenth link wraps inside it
+   rather than pushing Sign out off-screen. */
+.links {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+  min-width: 0;
 }
 
 .link {
@@ -28,6 +70,44 @@
 .who {
   color: var(--color-text-muted);
   font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.menuButton {
+  margin-left: auto;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.menuButton[aria-expanded="true"] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0 0;
+  border-top: 1px solid var(--color-border);
+}
+
+/* `hidden` must win over the class's display: flex, or the closed menu
+   still shows (the browser's [hidden] rule loses to any authored
+   display). */
+.menu[hidden] {
+  display: none;
+}
+
+.menu .link,
+.menu .linkActive {
+  padding: var(--space-xs) 0;
 }
 
 .signOut {
@@ -39,4 +119,3 @@
   font-weight: 600;
   cursor: pointer;
 }
-

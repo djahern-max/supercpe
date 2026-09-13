@@ -2,13 +2,15 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { roleHome } from "../../auth/RequireRole.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
 import { SITE_FACE, useSite, useSiteFace } from "../../site/SiteContext.jsx";
+import logo from "../../assets/brand/logo.png";
 import styles from "./SiteHeader.module.css";
 
 const linkClass = ({ isActive }) => (isActive ? styles.linkActive : styles.link);
 
 /**
- * The site's chrome: wordmark, the links that belong to the viewer's
- * role, the signed-in email, and Sign out. It states no course fact and
+ * The site's chrome: the brand logo (033: the image derived from brand/
+ * by sync_brand.py, alt text the site's name), the links that belong to
+ * the viewer's role, the signed-in email, and Sign out. It states no course fact and
  * nothing about the Registry, and it decides nothing — SiteGate and
  * RequireRole own gating. It renders nothing:
  *
@@ -47,8 +49,8 @@ function SiteHeader() {
 
   return (
     <header className={styles.header}>
-      <Link className={styles.wordmark} to={account ? roleHome(account.role) : "/"}>
-        super<span className={styles.accent}>CPE</span>
+      <Link className={styles.brand} to={account ? roleHome(account.role) : "/"}>
+        <img className={styles.logo} src={logo} alt="superCPE" />
       </Link>
       <nav className={styles.nav} aria-label="Site">
         {!account && (

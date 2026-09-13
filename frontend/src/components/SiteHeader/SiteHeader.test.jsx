@@ -107,9 +107,13 @@ describe("SiteHeader", () => {
       "Create account",
     ]);
     expect(nav.querySelector("button")).toBeNull();
+    // 033: the wordmark is the brand logo image, named by its alt text.
     const wordmark = container.querySelector("header a");
-    expect(wordmark.textContent).toBe("superCPE");
     expect(wordmark.getAttribute("href")).toBe("/");
+    const logo = wordmark.querySelector("img");
+    expect(logo.getAttribute("alt")).toBe("superCPE");
+    expect(logo.getAttribute("src")).toMatch(/logo\.png$/);
+    expect(wordmark.textContent).toBe("");
 
     await click(nav.querySelector('a[href="/login"]'));
     expect(container.querySelector("#login-email")).not.toBeNull();
@@ -144,6 +148,9 @@ describe("SiteHeader", () => {
     expect(container.querySelector("header a").getAttribute("href")).toBe(
       "/my/courses"
     );
+    expect(container.querySelector("header a img").getAttribute("alt")).toBe(
+      "superCPE"
+    );
 
     const signOut = [...nav.querySelectorAll("button")].find(
       (b) => b.textContent === "Sign out"
@@ -176,6 +183,9 @@ describe("SiteHeader", () => {
       expect(nav.querySelector("button").textContent).toBe("Sign out");
       expect(container.querySelector("header a").getAttribute("href")).toBe(
         "/review"
+      );
+      expect(container.querySelector("header a img").getAttribute("alt")).toBe(
+        "superCPE"
       );
       await act(async () => {
         root.unmount();

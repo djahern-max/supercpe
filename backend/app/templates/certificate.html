@@ -6,11 +6,15 @@
   extracts from the PDF as one run (test_certificates.py pins each).
   Layout lives in certificate.css; the palette tokens come from
   app/assets/brand/palette.py, the same values the site's global.css holds.
+  033: the mark is the brand logo (or an uploaded one), the seal behind
+  the award is the brand mark at low opacity, and dcterms.created pins
+  the PDF's creation date to the snapshot so renders are byte-identical.
 #}
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <title>Certificate {{ certificate_number }}</title>
+  <meta name="dcterms.created" content="{{ created }}">
   <style>
     :root {
     {%- for name, value in palette.items() %}
@@ -22,6 +26,7 @@
 <body>
   <div class="frame">
     <div class="inner">
+      <img class="seal" src="{{ seal_src }}" alt="">
 
       <header class="masthead">
         <img class="mark" src="{{ mark_src }}" alt="">
