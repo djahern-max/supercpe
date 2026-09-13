@@ -97,7 +97,7 @@ p, h1 {
   padding-top: 6pt;
 }
 
-/* The logo is 800 × 251 px; 170 pt wide keeps it well inside the
+/* The logo is 800 px wide (about 252 px tall); 170 pt wide keeps it well inside the
    frame and over 4× the pixels it is drawn with. An uploaded mark
    keeps its own aspect inside the same box. */
 .mark {

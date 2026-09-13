@@ -4550,3 +4550,41 @@ entry is 033 and builds on 032 rather than replacing it. Nothing in the
   present; size 1.55 GB, the same as 032 — no new package.
 - pyflakes still reports the pre-existing unused imports 030 listed;
   oxlint's remaining warnings are all on untouched files.
+
+## 033a — Revised brand artwork
+Shipped: 2026-09-13
+
+**What changed**
+- Dane replaced all six files in `brand/` the same day 033 shipped: the
+  mark is now a navy shield holding the open book and the teal check,
+  and the wordmark is italic. `supercpe-logo.png` is 2079×756 and
+  `supercpe-icon.png` 1350×1350. `sync_brand.py` was run once and every
+  derived file (the favicon set, manifest icons, `logo.png`, `og.png`,
+  the hashed copies, the certificate logo and seal, `palette.py`) was
+  regenerated; `--check` passes.
+- The brand tokens follow the re-sampled artwork: `--color-brand-blue`
+  `#0066fc` (was `#006afc`), `--color-brand-navy` `#012761` (was
+  `#012c6b`), `--color-brand-teal` `#01b5a0` (was `#01b6af`).
+  `--color-accent` stays `#0066f4`: the new blue clears WCAG AA on both
+  surfaces (4.88:1 on white, 4.55:1 on the page ground) but the tint
+  keeps a margin (4.99:1, 4.65:1). `brand/README.md` records the new
+  dimensions, crop boxes, and figures; the palette values in the 033
+  entry above are superseded by these.
+- `docs/certificate-sample-033.png` re-rendered. A full certificate is
+  now 256 KB (the seal PNG grew with the shield's detail), under the
+  500 KB pin.
+
+**Standards touched**
+- None. What every surface says is unchanged; only the artwork and
+  three colour values moved. COMPLIANCE.md unchanged.
+
+**Decisions**
+- None new. 033's rule applied as written: replace the source, run the
+  script, commit the result.
+
+**Known gaps**
+- Acceptance 8 of 033 (production deploy and link-preview check) is
+  still not yet run by the operator, now with this artwork.
+- Not re-screenshotted in a browser; the identity and certificate
+  tests (42) and the frontend suite (144) pass, and the OG card, the
+  512 icon, and the rendered certificate were inspected as images.

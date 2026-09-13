@@ -15,14 +15,14 @@ is stale.
 
 | File | Role | Format | Notes |
 |------|------|--------|-------|
-| `supercpe-logo.png` | **Primary logo** (horizontal): site header, landing page, certificate top, JSON-LD `logo`, OG card | PNG, RGBA, 2172 × 724, transparent ground | The mark at left, "superCPE" wordmark at right. Artwork occupies (100, 103)–(2136, 706); the script crops to that box. |
-| `supercpe-icon.png` | **Mark** (square): manifest icons, admin-nav mark, certificate seal | PNG, RGBA, 1338 × 1338, transparent ground | The open book with the teal check; no words. Artwork occupies (80, 90)–(1258, 1248). |
+| `supercpe-logo.png` | **Primary logo** (horizontal): site header, landing page, certificate top, JSON-LD `logo`, OG card | PNG, RGBA, 2079 × 756, transparent ground | The shield mark at left, the italic "superCPE" wordmark at right. Artwork occupies (106, 127)–(2021, 730); the script crops to that box. |
+| `supercpe-icon.png` | **Mark** (square): manifest icons, admin-nav mark, certificate seal | PNG, RGBA, 1350 × 1350, transparent ground | The navy shield holding the open book and the teal check; no words. Artwork occupies (64, 131)–(1285, 1219). |
 | `favicon.ico` | Legacy favicon | ICO holding 16, 32, and 48 px | Copied verbatim to `frontend/public/favicon.ico`. |
 | `favicon-16x16.png`, `favicon-32x32.png` | PNG favicons | PNG 16 × 16 (palette), 32 × 32 (RGBA) | Copied verbatim to `frontend/public/`. |
 | `apple-touch-icon.png` | iOS home-screen icon | PNG, RGBA, 180 × 180 | Copied verbatim to `frontend/public/apple-touch-icon.png`. Note: the ground is transparent; iOS composites transparent pixels over black. Supplying an opaque version here replaces it with one script run. |
 
 Source format: raster only (PNG). No SVG was supplied. The largest
-dimension is 2172 px (the logo) and 1338 px (the mark); every derived
+dimension is 2079 px (the logo) and 1350 px (the mark); every derived
 raster is a downscale, never an upscale. There is no SVG favicon and no
 vector copy for the certificate; both use PNGs derived at more than 2×
 their rendered size.
@@ -42,9 +42,9 @@ carries as the brand tokens:
 
 | Token | Hex | Sampled from | Use |
 |-------|-----|--------------|-----|
-| `--color-brand-blue` | `#006afc` | Logo wordmark "CPE" and the right page of the book (`#006afc` in the logo, `#006ffc` in the icon; the logo's value is used) | Marks, borders, rules, filled buttons (white text on it: 4.70:1) |
-| `--color-brand-navy` | `#012c6b` | Left page of the book, the word "super" | Headings, the certificate heading |
-| `--color-brand-teal` | `#01b6af` | The check | Marks and borders only — 2.53:1 on white, never text |
-| `--color-accent` | `#0066f4` | A tint of the brand blue | Link and accent text: 4.99:1 on white, 4.70:1 on the page ground. The brand blue itself is 4.70:1 on white but 4.42:1 on the page ground (`#f5f7fb`), under WCAG AA's 4.5:1 for body text, so text uses this tint and marks use the true blue. |
+| `--color-brand-blue` | `#0066fc` | Logo wordmark "CPE" and the pages of the book (`#0066fc` in the logo, `#006dfc` in the icon; the logo's value is used) | Marks, borders, rules, filled buttons (white text on it: 4.88:1) |
+| `--color-brand-navy` | `#012761` | The shield, the word "super" | Headings, the certificate heading |
+| `--color-brand-teal` | `#01b5a0` | The check | Marks and borders only — 2.62:1 on white, never text |
+| `--color-accent` | `#0066f4` | A tint of the brand blue | Link and accent text: 4.99:1 on white, 4.65:1 on the page ground. The brand blue itself is 4.88:1 on white and 4.55:1 on the page ground (`#f5f7fb`) — a hair over WCAG AA's 4.5:1 for body text — so text keeps this slightly deeper tint for margin and marks use the true blue. |
 
-Confirmed against the artwork on 2026-09-13.
+Confirmed against the artwork on 2026-09-13; re-sampled the same day when the revised logo (shield mark, italic wordmark) replaced the first set.
