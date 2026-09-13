@@ -36,11 +36,11 @@ def identity(sub="sub-pat", email="Pat@Example.test", verified=True, name="Pat E
     return GoogleIdentity(sub=sub, email=email, email_verified=verified, name=name)
 
 
-@pytest.fixture
-def tokens(monkeypatch):
+def stub_google_tokens(monkeypatch):
     """The stubbed boundary: credential -> GoogleIdentity, or -> the
     GoogleIdentityError the real verifier would raise. Unknown credentials
-    are bad tokens. The client id is configured unless a test unsets it."""
+    are bad tokens. The client id is configured unless a test unsets it.
+    Shared with test_google_preview.py (030a)."""
     table = {}
 
     def fake_verify(credential):
@@ -56,6 +56,11 @@ def tokens(monkeypatch):
     monkeypatch.setattr(google_identity, "verify", fake_verify)
     monkeypatch.setattr(settings, "google_client_id", CLIENT_ID)
     return table
+
+
+@pytest.fixture
+def tokens(monkeypatch):
+    return stub_google_tokens(monkeypatch)
 
 
 @pytest.fixture

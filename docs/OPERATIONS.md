@@ -973,6 +973,54 @@ Turning it off is unsetting `GOOGLE_CLIENT_ID` and deploying: the
 button disappears and the endpoint refuses; linked accounts keep their
 `google_sub` and sign in with their password if they have one.
 
+### Preview before open (030a)
+
+While the site is coming-soon the two Google routes answer an anonymous
+request with the 009 gate's 404, and the open gate refuses to flip on
+test Stripe keys — so without this, the first time Google sign-in could
+be walked on supercpe.com would be opening day. Opening day is the wrong
+place to find a transport problem (a wrong origin on the OAuth client, a
+Caddy rate-limit line that does not match, an env value with a trailing
+space). The preview list lets the operator, and only the operator, walk
+it on the closed production site.
+
+1. Set `GOOGLE_PREVIEW_EMAILS` in `/srv/supercpe/.env` to the Gmail
+   address(es) that are also listed as **Test users** on the consent
+   screen, comma-separated (case does not matter; spaces around commas
+   are ignored). `GOOGLE_CLIENT_ID` must be set too — the list does
+   nothing without it, and preflight says so. Deploy. Preflight prints
+   `note: GOOGLE_PREVIEW_EMAILS lists N address(es); …`.
+2. On `/login` the Google button now appears **for everyone** who reaches
+   the page (the client id is public by construction — it ships in the
+   page's JavaScript — and reveals only that a Google client exists,
+   never a course, a price, or a participant; the closed catalog stays
+   closed). It **completes only for a listed address**: anyone else gets
+   Google's popup and then nothing — the API answers the gate's 404,
+   which the page renders as no change, and no row is created or
+   touched. Google's Testing mode limits who can finish the popup as
+   well, but the list is what the API enforces.
+3. Walk acceptance 1 and 2 of the section above on production as a
+   listed address: new address → `/my/courses`, `/account` says
+   "Sign-in methods: Google", `/admin/accounts` shows the row with a
+   Verified date and "Google" under Sign-in; then a password account
+   with the same address → same row, "Password and Google". Then, as a
+   Google account that is **not** listed: the popup completes and the
+   page does not change; check `/admin/accounts` shows no new row.
+   Log the run below.
+4. Unset `GOOGLE_PREVIEW_EMAILS` and deploy when done, or leave it until
+   the flip: once the site is open the list is never consulted
+   (preflight notes that it is inert). Unsetting it is Opening day step
+   6's third line.
+
+`/register` has no preview by design — it is behind the site gate and
+renders only at open, so the closed site never gains a "sign up"
+surface; a Google-created account is the endpoint's own third branch
+either way. Password login and 017 self-registration are not previewed.
+
+Production verification run (030a): _not yet run — record the date, the
+listed address, the three outcomes of step 3, and whether the list was
+unset afterwards._
+
 ## Opening day (021)
 
 The ordered checklist for the flip. Each step's full procedure lives in
@@ -1035,6 +1083,10 @@ its own section; this list only sequences them.
      public button then fails for everyone else, so either publish a
      privacy policy and move the app to In production, or leave
      `GOOGLE_CLIENT_ID` unset until then.
+   - **Unset `GOOGLE_PREVIEW_EMAILS`** (030a) if it was set for the
+     preview walkthrough, and deploy. Inert once the site is open —
+     preflight notes it, never refuses over it — but an opening-day env
+     file should carry nothing that is there only for the closed site.
 7. **`launch_findings` empty**: the gate on `/admin/sponsor` agrees the
    site can open — no block-level findings.
 8. **The flip**: set site mode to `open` (logged, with a note). This

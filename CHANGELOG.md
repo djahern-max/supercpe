@@ -3724,3 +3724,205 @@ Shipped: 2026-09-12
   CHANGELOG.md (027–029 entries), CLAUDE.md (rule 5), OPERATIONS.md
   (Stripe sandbox notes), and current-feature.md when this session
   began; they are not this feature's changes and were left as found.
+
+## 030a — Google sign-in preview on a closed site
+Shipped: 2026-09-13
+
+**What changed**
+- Task 0 (recon), answered before code was written:
+  1. The gate was applied per route in `backend/app/routers/auth.py`:
+     `dependencies=[Depends(require_site_open_or_session)]` on
+     `google_config`, and the same ahead of `require_json` on
+     `google_sign_in`. The router walk
+     (`test_router_walk_closed_site_hides_everything_not_intentionally_public`
+     in `tests/test_site.py`) requests every route anonymously while
+     coming_soon and asserts 401 or 404 unless the route is in
+     `INTENTIONALLY_PUBLIC`, and not-404 when it is — so a route that
+     drops the gate without joining the list fails by name. The bare
+     404 is `HTTPException(status_code=404, detail="Not found")`:
+     status 404, body exactly `{"detail":"Not found"}` (FastAPI's
+     default handler, no whitespace).
+  2. The gate reads `site_service.get_site_mode(db)` — one
+     `get_profile(db).site_mode` query — callable from any handler with
+     the request's `db`. `cli.stored_site_mode()` is the CLI's wrapper
+     that opens its own session and tolerates a missing table; it is
+     not for routes. Reused: the gate's own predicate, factored out of
+     the dependency as `site_open_or_session(request, db)` in
+     `app/auth.py`, alongside a `site_gate_refusal()` factory so the
+     handler raises the dependency's exception, not one of its own.
+  3. `CORS_ORIGINS` is the one comma-separated setting: stored as a
+     string, parsed by the `cors_origins_list` property (strip, drop
+     empties). `GOOGLE_PREVIEW_EMAILS` copies it as
+     `google_preview_email_set` (a frozenset, lower-cased the way
+     `accounts.email` is stored). 012's validator has no notion of a
+     note — `boot_violations` returns only refusals; notes existed only
+     as `print("note: …")` lines inside `cli.preflight`. So config.py
+     gains `boot_notes(settings) -> list[str]`, which preflight prints
+     behind `note:`; boot ignores it.
+  4. `AccountOut` carried id, email, role, display_name, is_active,
+     must_change_password, created_at, deactivated_at, last_sign_in,
+     open_sessions; built by `_account_out` in
+     `routers/admin_accounts.py`; rendered by
+     `frontend/src/pages/AdminAccounts/AdminAccounts.jsx` (Email, Role,
+     Active, Last sign-in, Open sessions, actions). `Account.
+     email_verified_at` exists under that name. Two fields, two
+     columns, one test each side — in scope, built.
+  5. `GoogleSignIn.test.jsx` "the sign-in page while coming-soon asks
+     nothing of Google" mounts the real App at `/login` with the site
+     coming_soon and no session, and asserts `getGoogleConfig` was not
+     called, `loadGoogleIdentity` was not called, and no GIS `<script>`
+     tag exists. The reversal is that first assertion
+     (`not.toHaveBeenCalled()` → `toHaveBeenCalledTimes(1)`), split
+     into the 404 case (still no GIS, no tag, no button) and the
+     answering case (GIS once). `Login.test.jsx` had a parallel "asks
+     nothing of Google while coming-soon" test, reversed the same way.
+- Config: `GOOGLE_PREVIEW_EMAILS` (optional, default empty) in
+  `config.py`, `.env.example`, `deploy/env.production.example`. Not in
+  any all-or-nothing group, not a readiness finding, never part of the
+  open gate. `boot_notes`: "GOOGLE_PREVIEW_EMAILS is set but
+  GOOGLE_CLIENT_ID is not; it has no effect." Preflight prints, in both
+  modes, "note: GOOGLE_PREVIEW_EMAILS lists N address(es); Google
+  sign-in on /login completes for them while the site is coming-soon."
+  (pluralised) or "note: GOOGLE_PREVIEW_EMAILS is not set."; on an open
+  site with the list set it adds "The site is open; the list is inert —
+  unset it (Opening day step 6)." Never a violation.
+- `.env.example` also gains `GOOGLE_CLIENT_ID`: the 030 entry says it
+  was added there, but the committed file never carried it
+  (`deploy/env.production.example` did). Corrected here, since the new
+  variable's comment refers to it.
+- Backend gate: both Google routes drop `require_site_open_or_session`
+  for `require_site_open_or_session_or_preview_list` (in the auth
+  router): passes when the list is non-empty, otherwise exactly the 009
+  gate — and it still runs before the body is parsed, so with the list
+  empty an anonymous malformed request on a closed site gets the 404 it
+  got in 030, never a 422. `google_config` is otherwise unchanged (the
+  dependency is the whole decision). `google_sign_in`: when the request
+  passes neither the open check nor a session, `_preview_listed`
+  verifies the token at the boundary and requires `email_verified` and
+  a lower-cased email on the list; anything else raises
+  `site_gate_refusal()`. Only then does the existing
+  `sign_in_with_google` run, untouched. Both routes joined
+  `INTENTIONALLY_PUBLIC` (exactly two additions) with the argument in
+  the comment; the walk is now parametrised to run with the list unset
+  (the two routes must be gated like everything else) and with an
+  address listed (they must answer).
+- `AccountOut` gains `email_verified_at` and `signin_methods` (the
+  latter through `auth_service.signin_methods`, the same helper `MeOut`
+  uses — not copied). `/admin/accounts` shows **Verified** (date or
+  "—") and **Sign-in** (Password / Google / Password and Google,
+  through the account page's `signinMethodsLabel`); no filter, no edit.
+- Frontend: `GoogleSignIn` no longer reads the site face; it asks for
+  the config on mount and renders on a non-null client id. GIS loading
+  is unchanged (once, lazily, only after a non-null config). `Login`
+  mounts it as before, in both modes; `Register` is untouched and
+  unreachable while closed (behind `SiteGate`). A 404 leaves the page
+  as it was; the constant 401 shows 030's one generic line.
+- Tests: backend 540 → 557 (`tests/test_google_preview.py`, 9: empty
+  list → both routes and a malformed body give the gate's 404 byte-
+  identical to `GET /api/v1/courses`' and nothing is written; a listed
+  address signs in while coming-soon with a body byte-identical to the
+  same token's at open; case-folding of a padded mixed-case env value
+  against an upper-cased token; six unlisted outcomes (new address,
+  existing unlisted account, unverified, expired, wrong audience, bad
+  token) all the gate's 404 with `sign_in_with_google` stubbed to fail
+  the test if reached and no row or session changed; listed admin,
+  reviewer, and deactivated accounts get the constant 401 not 404; at
+  open the list changes no answer across five cases; with a session in
+  coming-soon both routes answer regardless of the list; the two routes
+  are the only preview routes and are in `INTENTIONALLY_PUBLIC`; the
+  shared derivation. `test_site.py` router walk ×2; `test_preflight.py`
+  +4 (unset, set while coming-soon with the count, set while open with
+  the inert line, set without a client id); `test_config.py` +2
+  (parsing, never a violation); `test_auth.py` +1 (`AccountOut` fields
+  for the admin-created, Google-only, both, and unverified rows, still
+  admin-only). Frontend 122 → 127 (`GoogleSignIn.test.jsx` 4 → 5, the
+  reversal split in two; `Login.test.jsx` 6 → 7, the coming-soon 404
+  case and a listed-address success routing to `/my/courses` with no
+  register link; `AdminAccounts.test.jsx` new, 3).
+- Ops: OPERATIONS.md "Google sign-in (030)" gains "Preview before open
+  (030a)" with a placeholder line for the production run; Opening day
+  step 6 gains a third line, **unset `GOOGLE_PREVIEW_EMAILS`**.
+
+**Standards touched**
+- None. No paragraph was read for this feature and none is cited: 9.02
+  participant records are unchanged (no model change, no migration),
+  and no locator's requirement or satisfaction moved. COMPLIANCE.md is
+  not changed.
+
+**Decisions**
+- **An allowlist, not an exemption.** 026 exempted the Stripe webhook
+  from the gate because its answer discloses nothing the gate protects.
+  The Google sign-in route cannot make that argument on its own — a
+  successful answer is a session — so it is not exempted; it is given
+  one door, and the door is the operator's list. The 009 property in
+  this feature's words: a closed site must not tell an anonymous
+  visitor what is behind it. With the list empty, both routes are the
+  gate's 404 and nothing here exists. With the list set, the config
+  route says only that a Google client exists — a client id is in every
+  page that renders the button, so it is public by construction and
+  names no course, price, credit figure, or account — and the sign-in
+  route says nothing at all to anyone whose Google-verified email the
+  operator did not type into the env file: a bad token, an unverified
+  address, and an unlisted address get the same bytes a missing route
+  gets, and no row is created, linked, or changed before the check
+  passes. A listed address then sees exactly what an open site would
+  show it, refusals included (an admin's listed address gets the
+  constant 401, as at open). Google's Testing-mode test-user list also
+  limits who can finish the popup, but that is the operator's promise;
+  the allowlist is what the tests assert.
+- **The token is verified twice on the preview path**: once in
+  `_preview_listed` for the allowlist, once inside
+  `sign_in_with_google`. Accepted: the second check costs a signature
+  verification against PyJWKClient's cached keys, and the alternative —
+  threading a pre-verified identity into the service — would fork the
+  one function 030 built to have no forks.
+- **The gate dependency stays, in a variant, rather than moving the
+  whole decision into the handlers.** FastAPI parses the body before
+  the handler runs, so a handler-only 404 would have let an anonymous
+  malformed POST on a closed site with the list unset answer 422 where
+  030 answered 404. `require_site_open_or_session_or_preview_list`
+  runs first and keeps the empty-list case byte-identical; only with a
+  non-empty list does a malformed body reach validation — and in that
+  state the config route already says a Google client exists.
+- **Case-folding is `str.lower()`**, matching how `accounts.email` is
+  stored and compared (`get_account_by_email`), rather than
+  `str.casefold()`, so the env value, the token's email, and the stored
+  row all fold the same way.
+- **One frontend assertion reversed, deliberately.** 030 asserted that
+  the coming-soon `/login` never asks for the Google config; the
+  component made that decision from the site face. 030a moves the
+  decision to the server, which alone knows the list, so the page asks
+  once and the server's 404 is the "no". The property that mattered —
+  the closed site never loads Google's script unless a client id was
+  answered — is kept and asserted in both the 404 and the answering
+  case. The landing page and `/admin/courses` still never ask.
+- The preflight count is pluralised ("1 address", "2 addresses")
+  rather than printed as the spec's template "N address(es)".
+
+**Known gaps**
+- Acceptance 6 (production: set `GOOGLE_CLIENT_ID` and
+  `GOOGLE_PREVIEW_EMAILS`, deploy, repeat 2 and 3 on supercpe.com, then
+  030's acceptance 2, and log the run in OPERATIONS.md, closing 030's
+  Acceptance 7 early): not yet run by the operator. The consent-screen
+  Test-user setup is the operator's.
+- Acceptance 1–5 were proven at the API layer by the backend suite and
+  the page states by the frontend suite; the browser walkthrough with a
+  real client id and Google's popup (acceptance 2 and 3 locally) was not
+  performed in the build session.
+- A non-JSON body (not merely a malformed JSON object) on
+  `POST /auth/google` gets FastAPI's 422 from JSON decoding before any
+  dependency runs, on a closed site in either state. This was 030's
+  behavior too and is unchanged; it is noted, not fixed.
+- 017a (password reset) is still unbuilt; a Google-only account still
+  has no way to add a password.
+- `Register` has no preview by design: it is behind `SiteGate` and
+  renders only at open, so the closed site never gains a sign-up
+  surface.
+- Out of scope, reported not built: password login or 017
+  self-registration on a closed site; any preview for `/register`, the
+  catalog, or course pages; a general preview mode or staff-preview
+  cookie; any change to 026's open gate or to the constant-response or
+  404 bodies.
+- pyflakes still reports the pre-existing unused imports 030 listed
+  (`app/routers/checkout.py`, `app/models/enrollment.py`, six test
+  modules); oxlint's 12 remaining warnings are all on untouched files.

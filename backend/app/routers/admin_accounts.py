@@ -39,6 +39,8 @@ def _account_out(db: Session, account: Account) -> AccountOut:
         deactivated_at=account.deactivated_at,
         last_sign_in=auth_service.last_sign_in(db, account),
         open_sessions=auth_service.open_session_count(db, account),
+        email_verified_at=account.email_verified_at,
+        signin_methods=auth_service.signin_methods(account),
     )
 
 

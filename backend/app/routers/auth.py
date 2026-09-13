@@ -5,15 +5,24 @@ every mutating route here requires `Content-Type: application/json`, which
 a cross-site form cannot send. No CSRF token is needed on top of that.
 These routes are never gated on site mode: /login must work while the
 site is coming_soon. The two exceptions are 030's Google routes, which
-sit behind `require_site_open_or_session` like /register: 404 anonymously
-while coming_soon, public at open.
+answer the 009 gate's 404 anonymously while coming_soon and are public at
+open — with 030a's one door: while `GOOGLE_PREVIEW_EMAILS` names at
+least one address, the config route answers its public client id and
+the sign-in route completes for a Google-verified address on that list,
+so the operator can walk Google sign-in on the closed production site.
+Everyone else still meets the gate's 404, byte for byte.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.auth import current_account, require_role, require_site_open_or_session
+from app.auth import (
+    current_account,
+    require_role,
+    site_gate_refusal,
+    site_open_or_session,
+)
 from app.config import settings
 from app.constants.auth import SESSION_ABSOLUTE_HOURS, SESSION_COOKIE
 from app.constants.jurisdictions import US_JURISDICTIONS
@@ -30,7 +39,9 @@ from app.schemas.auth import (
 )
 from app.schemas.package import ValidationErrors
 from app.services import auth as auth_service
+from app.services import google_identity
 from app.services import subscriptions as subscriptions_service
+from app.services.google_identity import GoogleIdentityError
 from app.services.auth import AuthenticationFailed, AuthRuleViolation
 
 router = APIRouter(prefix="/auth")
@@ -42,6 +53,45 @@ def require_json(request: Request) -> None:
         raise HTTPException(
             status_code=415, detail="Content-Type must be application/json"
         )
+
+
+def require_site_open_or_session_or_preview_list(
+    request: Request, db: Session = Depends(get_db)
+) -> None:
+    """030a: the 009 gate on the two Google routes, with one difference —
+    while the operator has named an address in GOOGLE_PREVIEW_EMAILS the
+    routes answer past it and decide for themselves: the config route
+    gives its client id (public by construction: it ships in every page
+    that renders Google's button, and says nothing about a course, a
+    price, or a participant); the sign-in route repeats the gate's 404
+    unless the token's verified email is listed (`_preview_listed`). With
+    the list empty this *is* `require_site_open_or_session`, and it runs
+    before the body is parsed, so an anonymous malformed request on a
+    closed site still gets the 404 it got in 030, never a 422."""
+    if settings.google_preview_email_set:
+        return
+    if not site_open_or_session(request, db):
+        raise site_gate_refusal()
+
+
+def _preview_listed(credential: str) -> bool:
+    """030a: whether a Google-signed token names an address on the
+    operator's list. Verified at the boundary first; a bad token, an
+    unverified email, and an unlisted one all answer False, and the
+    caller gives the gate's 404 for each — the same body a route that
+    does not exist gives, so nothing is learned. Reads and writes no
+    database row: the allowlist decides before `sign_in_with_google`
+    (which verifies the token again — one cached-JWKS signature check,
+    accepted so the service stays untouched) ever runs."""
+    if not settings.google_preview_email_set:
+        return False
+    try:
+        identity = google_identity.verify(credential)
+    except GoogleIdentityError:
+        return False
+    if not identity.email_verified:
+        return False
+    return identity.email.strip().lower() in settings.google_preview_email_set
 
 
 def _me(db: Session, account: Account) -> MeOut:
@@ -97,18 +147,23 @@ def login(
 @router.get(
     "/google/config",
     response_model=GoogleConfigOut,
-    dependencies=[Depends(require_site_open_or_session)],
+    dependencies=[Depends(require_site_open_or_session_or_preview_list)],
 )
 def google_config():
     """030: the client id the button needs, or null — the frontend renders
-    Google's button only when it is non-null. Nothing else is exposed."""
+    Google's button only when it is non-null. Nothing else is exposed.
+    030a: answers anonymously on a closed site only while the preview
+    list is non-empty (the dependency decides)."""
     return GoogleConfigOut(client_id=settings.google_client_id or None)
 
 
 @router.post(
     "/google",
     response_model=MeOut,
-    dependencies=[Depends(require_site_open_or_session), Depends(require_json)],
+    dependencies=[
+        Depends(require_site_open_or_session_or_preview_list),
+        Depends(require_json),
+    ],
 )
 def google_sign_in(
     payload: GoogleSignInRequest,
@@ -118,7 +173,14 @@ def google_sign_in(
 ):
     """030: sign in (or create a participant account) from a Google ID
     token. Same session function, same cookie, same response shape as
-    password login; one constant 401 for every refusal."""
+    password login; one constant 401 for every refusal. 030a: a closed
+    site with no session completes only for a listed address; every
+    other token gets the gate's 404, and from here on nothing forks on
+    site mode."""
+    if not site_open_or_session(request, db) and not _preview_listed(
+        payload.credential
+    ):
+        raise site_gate_refusal()
     try:
         account = auth_service.sign_in_with_google(db, payload.credential)
     except AuthenticationFailed:

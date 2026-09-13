@@ -9,6 +9,7 @@ added the router-table walk with its intentionally-public list."""
 
 import re
 
+import pytest
 from fastapi.routing import APIRoute
 
 from app.config import settings
@@ -158,16 +159,46 @@ INTENTIONALLY_PUBLIC = {
     # own. Answering while coming_soon is what lets the transport be
     # proven against production with sandbox keys before the flip.
     ("POST", "/api/v1/stripe/webhook"),
+    # 030a: the two Google sign-in routes, public on a closed site only
+    # while GOOGLE_PREVIEW_EMAILS names at least one address, so the
+    # operator can walk Google sign-in on production before opening day.
+    # The config route answers a public client id — a value already in
+    # every page that renders Google's button — and nothing else; the
+    # sign-in route refuses with the gate's own 404 unless the token
+    # Google signed carries a verified email on the operator's list, so
+    # the closed site still advertises nothing to anyone the operator
+    # did not name. With the list unset both are the gate's 404 exactly
+    # as in 030; the walk below runs in both states.
+    ("GET", "/api/v1/auth/google/config"),
+    ("POST", "/api/v1/auth/google"),
+}
+
+GOOGLE_PREVIEW_ROUTES = {
+    ("GET", "/api/v1/auth/google/config"),
+    ("POST", "/api/v1/auth/google"),
 }
 
 
+@pytest.mark.parametrize("preview_listed", [False, True])
 def test_router_walk_closed_site_hides_everything_not_intentionally_public(
-    client,
+    client, monkeypatch, preview_listed
 ):
     """Walks the whole router table anonymously while coming_soon: every
     route must answer 404 (the site gate, or a miss like /media) or 401
     (a login wall) unless it is in INTENTIONALLY_PUBLIC — so an unguarded
-    new route fails here by name."""
+    new route fails here by name. 030a: once with GOOGLE_PREVIEW_EMAILS
+    unset, when the two Google routes must be gated like everything
+    else, and once with an address listed, when they must answer."""
+    monkeypatch.setattr(
+        settings,
+        "google_preview_emails",
+        "dane@example.test" if preview_listed else "",
+    )
+    public = (
+        INTENTIONALLY_PUBLIC
+        if preview_listed
+        else INTENTIONALLY_PUBLIC - GOOGLE_PREVIEW_ROUTES
+    )
     routes = [
         (method, re.sub(r"\{[^}]+\}", "1", route.path))
         for route in app.routes
@@ -181,7 +212,7 @@ def test_router_walk_closed_site_hides_everything_not_intentionally_public(
         # (415) does not stand in for the auth answer being asserted.
         body = {} if method in ("POST", "PUT", "PATCH") else None
         response = client.request(method, path, json=body)
-        if (method, path) in INTENTIONALLY_PUBLIC:
+        if (method, path) in public:
             assert response.status_code != 404, (method, path)
         else:
             assert response.status_code in (401, 404), (

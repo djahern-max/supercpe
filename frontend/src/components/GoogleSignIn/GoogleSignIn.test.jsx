@@ -3,12 +3,18 @@
  * button are exercised together — the coming-soon landing page and the
  * admin pages never ask for the Google config and never inject the GIS
  * script; the sign-in page at open does.
+ *
+ * 030a reverses one 030 assertion: the coming-soon sign-in page now asks
+ * for the config, because the server decides what a closed site answers
+ * (the gate's 404 unless the operator listed preview addresses). The
+ * property that survives is "never loads GIS unless the config answers".
  */
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../../App.jsx";
+import { ApiError } from "../../api/client";
 import { GIS_SCRIPT_SRC } from "../../auth/googleIdentity";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -99,13 +105,29 @@ describe("GIS script placement (030)", () => {
     expect(gisScripts()).toHaveLength(0);
   });
 
-  it("the sign-in page while coming-soon asks nothing of Google", async () => {
+  it("the sign-in page while coming-soon asks for the config; on the gate's 404 nothing loads (030a)", async () => {
+    api.getSite.mockResolvedValue({ site_mode: "coming_soon", sponsor_name: "S" });
+    api.getMe.mockRejectedValue(new Error("401"));
+    api.getGoogleConfig.mockRejectedValue(
+      new ApiError(404, { detail: "Not found" })
+    );
+    await mount("/login");
+    expect(api.getGoogleConfig).toHaveBeenCalledTimes(1);
+    expect(gis.load).not.toHaveBeenCalled();
+    expect(gisScripts()).toHaveLength(0);
+    expect(
+      Array.from(container.querySelectorAll("span")).some(
+        (span) => span.textContent === "or"
+      )
+    ).toBe(false);
+  });
+
+  it("the sign-in page while coming-soon loads GIS once when the config answers (030a)", async () => {
     api.getSite.mockResolvedValue({ site_mode: "coming_soon", sponsor_name: "S" });
     api.getMe.mockRejectedValue(new Error("401"));
     await mount("/login");
-    expect(api.getGoogleConfig).not.toHaveBeenCalled();
-    expect(gis.load).not.toHaveBeenCalled();
-    expect(gisScripts()).toHaveLength(0);
+    expect(api.getGoogleConfig).toHaveBeenCalledTimes(1);
+    expect(gis.load).toHaveBeenCalledTimes(1);
   });
 
   it("an admin page asks nothing of Google, even at open", async () => {

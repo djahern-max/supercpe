@@ -67,14 +67,25 @@ def require_role(*roles: str):
     return dependency
 
 
+def site_gate_refusal() -> HTTPException:
+    """The gate's one answer: 404 — not 401 — so a closed site does not
+    advertise what is behind it. A route that refuses on the gate's
+    behalf from inside its handler (030a's Google sign-in) raises this,
+    never a 404 of its own, so the two cannot drift apart."""
+    return HTTPException(status_code=404, detail="Not found")
+
+
+def site_open_or_session(request: Request, db: Session) -> bool:
+    """The gate's predicate: open site, or any valid session. Callable
+    from a handler as well as from the dependency below (030a)."""
+    if site_service.get_site_mode(db) == "open":
+        return True
+    return _resolve_account(request, db) is not None
+
+
 def require_site_open_or_session(
     request: Request, db: Session = Depends(get_db)
 ) -> None:
-    """The Phase B gate on public routes: open site, or any valid session.
-    Refuses with 404 — not 401 — so a closed site does not advertise what
-    is behind it."""
-    if site_service.get_site_mode(db) == "open":
-        return
-    if _resolve_account(request, db) is not None:
-        return
-    raise HTTPException(status_code=404, detail="Not found")
+    """The Phase B gate on public routes: open site, or any valid session."""
+    if not site_open_or_session(request, db):
+        raise site_gate_refusal()

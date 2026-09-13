@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getGoogleConfig, loginWithGoogle } from "../../api/auth";
 import { loadGoogleIdentity } from "../../auth/googleIdentity";
-import { SITE_FACE, useSiteFace } from "../../site/SiteContext.jsx";
 import styles from "./GoogleSignIn.module.css";
 
 // One line for every failure: the server's 401 is constant and says
@@ -11,17 +10,21 @@ export const GOOGLE_SIGN_IN_FAILED =
 
 /**
  * 030: Google's rendered "Sign in with Google" button under an "or"
- * divider. Renders nothing unless the site face is open and the server
- * reports a client id; only then is the GIS script loaded. ID-token
- * flow in a popup — no One Tap, no auto-select, no redirect. On success
- * the caller decides where to go (the login page routes exactly as
- * password login does).
+ * divider. Renders nothing unless the server's config answers a client
+ * id; only then is the GIS script loaded. ID-token flow in a popup — no
+ * One Tap, no auto-select, no redirect. On success the caller decides
+ * where to go (the login page routes exactly as password login does).
+ *
+ * 030a: the render rule is the config response alone, not the site
+ * face. The server decides what a closed site answers: the gate's 404
+ * unless the operator has listed preview addresses, in which case the
+ * client id — so on a closed site with nothing listed this still asks
+ * once, gets the 404, and renders nothing; GIS never loads. The pages
+ * that mount this (Login, Register) already decide who reaches them.
  *
  * `text` is GIS's button wording key: "signin_with" or "signup_with".
  */
 function GoogleSignIn({ text = "signin_with", onSuccess }) {
-  const face = useSiteFace();
-  const open = face === SITE_FACE.OPEN;
   const [clientId, setClientId] = useState(null);
   const [failed, setFailed] = useState(false);
   const buttonRef = useRef(null);
@@ -33,22 +36,22 @@ function GoogleSignIn({ text = "signin_with", onSuccess }) {
   });
 
   useEffect(() => {
-    if (!open) return undefined;
     let cancelled = false;
     getGoogleConfig()
       .then((config) => {
         if (!cancelled) setClientId(config.client_id ?? null);
       })
       .catch(() => {
-        // No config, no button — the page works without it.
+        // No config (or the closed site's 404), no button — the page
+        // works without it.
       });
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, []);
 
   useEffect(() => {
-    if (!open || !clientId) return undefined;
+    if (!clientId) return undefined;
     let cancelled = false;
     loadGoogleIdentity()
       .then((gis) => {
@@ -82,9 +85,9 @@ function GoogleSignIn({ text = "signin_with", onSuccess }) {
     return () => {
       cancelled = true;
     };
-  }, [open, clientId, text]);
+  }, [clientId, text]);
 
-  if (!open || !clientId) return null;
+  if (!clientId) return null;
 
   return (
     <div className={styles.wrapper}>

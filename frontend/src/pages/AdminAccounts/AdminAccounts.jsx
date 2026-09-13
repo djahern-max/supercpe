@@ -10,6 +10,7 @@ import {
   revokeAccountSessions,
   setAccountRole,
 } from "../../api/accounts";
+import { signinMethodsLabel } from "../Account/signinMethods";
 import styles from "./AdminAccounts.module.css";
 
 const ROLES = ["participant", "reviewer", "admin"];
@@ -183,6 +184,8 @@ function AdminAccounts() {
                 <th>Email</th>
                 <th>Role</th>
                 <th>Active</th>
+                <th>Verified</th>
+                <th>Sign-in</th>
                 <th>Last sign-in</th>
                 <th>Open sessions</th>
                 <th></th>
@@ -214,6 +217,14 @@ function AdminAccounts() {
                     </select>
                   </td>
                   <td>{row.is_active ? "yes" : "deactivated"}</td>
+                  {/* 030a: read-only — when the address was verified and
+                      how the account signs in, derived by the server. */}
+                  <td>
+                    {row.email_verified_at
+                      ? new Date(row.email_verified_at).toLocaleDateString()
+                      : "—"}
+                  </td>
+                  <td>{signinMethodsLabel(row.signin_methods ?? ["password"])}</td>
                   <td>
                     {row.last_sign_in
                       ? new Date(row.last_sign_in).toLocaleString()

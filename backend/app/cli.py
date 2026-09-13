@@ -58,6 +58,7 @@ from app.config import (
     SPACES_VARS,
     STRIPE_LIVE_KEY_PREFIXES,
     ConfigurationError,
+    boot_notes,
     boot_violations,
     settings,
     stripe_non_live_key_vars,
@@ -419,6 +420,28 @@ def preflight() -> int:
             "note: GOOGLE_CLIENT_ID is not configured; the Google sign-in "
             "button does not render."
         )
+
+    # 030a: the preview list — a note in both modes, never a violation.
+    # Once the site is open the list is never consulted; the note says
+    # so and points at the opening-day step that unsets it.
+    for note in boot_notes(settings):
+        print(f"note: {note}")
+    preview = settings.google_preview_email_set
+    if preview:
+        count = len(preview)
+        line = (
+            f"note: GOOGLE_PREVIEW_EMAILS lists {count} "
+            f"address{'' if count == 1 else 'es'}; Google sign-in on /login "
+            "completes for them while the site is coming-soon."
+        )
+        if site_mode == "open":
+            line += (
+                " The site is open; the list is inert — unset it "
+                "(Opening day step 6)."
+            )
+        print(line)
+    else:
+        print("note: GOOGLE_PREVIEW_EMAILS is not set.")
 
     if violations:
         print("preflight FAILED — the app would refuse to boot:", file=sys.stderr)

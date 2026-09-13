@@ -284,3 +284,60 @@ def test_preflight_notes_google_sign_in_configured(
     out = capsys.readouterr().out
     assert "GOOGLE_CLIENT_ID is configured" in out
     assert "preflight ok" in out
+
+
+# --- 030a: GOOGLE_PREVIEW_EMAILS is a note in both modes, never a refusal ------
+
+
+def test_preflight_notes_the_preview_list_unset(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    enable_versioning(spaces)
+    monkeypatch.setattr(settings, "google_preview_emails", "")
+    assert cli.preflight() == 0
+    out = capsys.readouterr()
+    assert "GOOGLE_PREVIEW_EMAILS is not set" in out.out
+    assert "GOOGLE_PREVIEW_EMAILS" not in out.err
+
+
+def test_preflight_notes_the_preview_list_while_coming_soon(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    enable_versioning(spaces)
+    set_site_mode(db_session, "coming_soon")
+    monkeypatch.setattr(settings, "google_client_id", "1234-test.apps")
+    monkeypatch.setattr(
+        settings, "google_preview_emails", "a@example.test, B@example.test"
+    )
+    assert cli.preflight() == 0
+    out = capsys.readouterr()
+    assert "GOOGLE_PREVIEW_EMAILS lists 2 addresses" in out.out
+    assert "inert" not in out.out
+    assert "preflight ok" in out.out
+
+
+def test_preflight_notes_the_list_is_inert_on_an_open_site(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    enable_versioning(spaces)
+    set_site_mode(db_session, "open")
+    monkeypatch.setattr(settings, "google_client_id", "1234-test.apps")
+    monkeypatch.setattr(settings, "google_preview_emails", "a@example.test")
+    assert cli.preflight() == 0
+    out = capsys.readouterr()
+    assert "GOOGLE_PREVIEW_EMAILS lists 1 address;" in out.out
+    assert "the list is inert" in out.out
+    assert "Opening day step 6" in out.out
+    assert "preflight ok" in out.out
+
+
+def test_preflight_notes_a_preview_list_without_a_client_id(
+    prod_settings, spaces, db_session, monkeypatch, capsys
+):
+    enable_versioning(spaces)
+    monkeypatch.setattr(settings, "google_client_id", "")
+    monkeypatch.setattr(settings, "google_preview_emails", "a@example.test")
+    assert cli.preflight() == 0
+    out = capsys.readouterr()
+    assert "GOOGLE_PREVIEW_EMAILS is set but GOOGLE_CLIENT_ID is not" in out.out
+    assert "preflight ok" in out.out

@@ -83,6 +83,12 @@ class AccountOut(BaseModel):
     deactivated_at: datetime | None
     last_sign_in: datetime | None
     open_sessions: int
+    # 030a: when the address was verified (an admin's vouch at creation,
+    # 017's emailed token, or Google's claim at first Google sign-in),
+    # and how the account signs in — the same derivation MeOut carries.
+    # Read-only; /admin/accounts shows both.
+    email_verified_at: datetime | None
+    signin_methods: list[str]
 
 
 class RoleRequest(BaseModel):

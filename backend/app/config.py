@@ -126,10 +126,30 @@ class Settings(BaseSettings):
     # (it is in every page that renders the button), but it lives in
     # .env like every other environment value.
     google_client_id: str = ""
+    # Google sign-in preview on a closed site (030a): a comma-separated
+    # list of email addresses the operator names. While the site is
+    # coming_soon, an anonymous Google sign-in on /login completes only
+    # for a Google-verified address on this list; everyone else gets
+    # the 009 gate's 404 exactly as before. Default empty, which leaves
+    # every 030 behavior untouched. Not part of any all-or-nothing group
+    # and never consulted once the site is open (inert; unset it on
+    # opening day). Meaningless without GOOGLE_CLIENT_ID — a note, not a
+    # refusal (`boot_notes`).
+    google_preview_emails: str = ""
 
     @property
     def google_configured(self) -> bool:
         return bool(self.google_client_id)
+
+    @property
+    def google_preview_email_set(self) -> frozenset[str]:
+        """The listed addresses, stripped and lower-cased the way
+        accounts.email is stored, empties dropped."""
+        return frozenset(
+            address.strip().lower()
+            for address in self.google_preview_emails.split(",")
+            if address.strip()
+        )
 
     @property
     def stripe_configured(self) -> bool:
@@ -269,6 +289,20 @@ def boot_violations(settings: Settings) -> list[str]:
             )
 
     return violations
+
+
+def boot_notes(settings: Settings) -> list[str]:
+    """What is worth saying about the configuration without refusing
+    anything. Preflight prints each behind `note:`; boot ignores them.
+    First use is 030a's preview list, which does nothing without a
+    Google client to verify tokens against."""
+    notes: list[str] = []
+    if settings.google_preview_email_set and not settings.google_configured:
+        notes.append(
+            "GOOGLE_PREVIEW_EMAILS is set but GOOGLE_CLIENT_ID is not; it "
+            "has no effect."
+        )
+    return notes
 
 
 def ensure_boot_config(settings: Settings) -> None:

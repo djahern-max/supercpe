@@ -218,3 +218,35 @@ def test_ensure_boot_config_lists_every_violation_at_once():
     message = str(excinfo.value)
     for named in ("DEV", "CORS_ORIGINS", "STORAGE_BACKEND"):
         assert named in message
+
+
+# --- 030a: GOOGLE_PREVIEW_EMAILS ---------------------------------------------------
+
+
+def test_preview_emails_parse_to_a_folded_set():
+    parsed = make_settings(
+        google_preview_emails=" Dane@Example.test ,, other@x.test,"
+    )
+    assert parsed.google_preview_email_set == frozenset(
+        {"dane@example.test", "other@x.test"}
+    )
+    assert make_settings().google_preview_email_set == frozenset()
+
+
+def test_preview_emails_are_never_a_violation_only_a_note():
+    from app.config import boot_notes
+
+    alone = make_settings(google_preview_emails="a@example.test")
+    assert boot_violations(alone) == []
+    assert boot_notes(alone) == [
+        "GOOGLE_PREVIEW_EMAILS is set but GOOGLE_CLIENT_ID is not; it has "
+        "no effect."
+    ]
+    paired = make_settings(
+        google_preview_emails="a@example.test", google_client_id="cid.apps"
+    )
+    assert boot_violations(paired) == []
+    assert boot_notes(paired) == []
+    assert boot_notes(make_settings()) == []
+    prod = make_settings(**PROD_OK, google_preview_emails="a@example.test")
+    assert boot_violations(prod) == []

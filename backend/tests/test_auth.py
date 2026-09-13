@@ -11,6 +11,7 @@ from app.constants.auth import MAX_FAILED_LOGINS, SESSION_COOKIE
 from app.main import app
 from app.models.account import Account, AuthSession
 from app.models.review import CourseReview
+from app.services import auth as auth_service
 from tests.conftest import (
     ADMIN_EMAIL,
     ADMIN_PASSWORD,
@@ -456,3 +457,53 @@ def test_reactivate_restores_login(client, db_session, admin_headers):
         client.post(f"{ACCOUNTS_URL}/{account.id}/reactivate").status_code == 200
     )
     login(client, PARTICIPANT_EMAIL, PASSWORD)
+
+
+# --- 030a: AccountOut carries email_verified_at and signin_methods ----------------
+
+
+def test_accounts_list_shows_verification_and_signin_methods(
+    client, db_session, admin_headers
+):
+    """The three variants, derived exactly as MeOut derives them; the
+    admin-created row is verified at creation (the admin's vouch), a
+    Google-created row by Google, and 017's unverified registration
+    shows null until its token is used."""
+    google_only = auth_service.create_account(
+        db_session,
+        "g@example.test",
+        "participant",
+        None,
+        created_by=None,
+        must_change_password=False,
+        google_sub="sub-g",
+    )
+    both = make_account(db_session, "both@example.test", PASSWORD, "participant")
+    both.google_sub = "sub-both"
+    db_session.commit()
+    auth_service.create_account(
+        db_session,
+        "unverified@example.test",
+        "participant",
+        PASSWORD,
+        created_by=None,
+        must_change_password=False,
+        email_verified=False,
+    )
+
+    rows = {row["email"]: row for row in client.get(ACCOUNTS_URL).json()}
+    assert rows[ADMIN_EMAIL]["signin_methods"] == ["password"]
+    assert rows[ADMIN_EMAIL]["email_verified_at"] is not None
+    assert rows["g@example.test"]["signin_methods"] == ["google"]
+    assert rows["g@example.test"]["email_verified_at"] is not None
+    assert rows["both@example.test"]["signin_methods"] == ["password", "google"]
+    assert rows["unverified@example.test"]["signin_methods"] == ["password"]
+    assert rows["unverified@example.test"]["email_verified_at"] is None
+    for email, row in rows.items():
+        account = db_session.scalar(select(Account).where(Account.email == email))
+        assert row["signin_methods"] == auth_service.signin_methods(account)
+    assert google_only.id == rows["g@example.test"]["id"]
+
+    # Still admin-only.
+    client.cookies.clear()
+    assert client.get(ACCOUNTS_URL).status_code == 401

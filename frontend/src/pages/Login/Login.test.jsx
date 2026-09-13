@@ -1,8 +1,10 @@
 /**
- * 030: the sign-in page renders Google's button only at open and only
- * when the config carries a client id; the GIS global is mocked. A
- * successful callback POSTs the credential and routes exactly as
- * password login does; the constant 401 shows one generic line.
+ * 030: the sign-in page renders Google's button only when the config
+ * carries a client id; the GIS global is mocked. A successful callback
+ * POSTs the credential and routes exactly as password login does; the
+ * constant 401 shows one generic line. 030a: the site face no longer
+ * gates the button — while coming-soon the config's answer does (the
+ * gate's 404, or the client id once the operator listed addresses).
  */
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -137,13 +139,39 @@ describe("Login page: Google sign-in (030)", () => {
     expect(gis.renderButton).not.toHaveBeenCalled();
   });
 
-  it("asks nothing of Google while coming-soon", async () => {
+  it("while coming-soon with nothing listed, the config 404s: no button, no GIS, no register link (030a)", async () => {
+    site.face = "coming_soon";
+    api.getGoogleConfig.mockRejectedValue(
+      new ApiError(404, { detail: "Not found" })
+    );
+    await mount();
+    expect(api.getGoogleConfig).toHaveBeenCalledTimes(1);
+    expect(gis.load).not.toHaveBeenCalled();
+    expect(gis.renderButton).not.toHaveBeenCalled();
+    expect(
+      Array.from(container.querySelectorAll("span")).some(
+        (span) => span.textContent === "or"
+      )
+    ).toBe(false);
+    expect(container.querySelector('a[href="/register"]')).toBeNull();
+    expect(container.querySelector("#login-password")).not.toBeNull();
+  });
+
+  it("while coming-soon a listed address signs in and routes exactly as password login (030a)", async () => {
     site.face = "coming_soon";
     api.getGoogleConfig.mockResolvedValue({ client_id: "cid.apps" });
+    api.loginWithGoogle.mockResolvedValue(PARTICIPANT);
     await mount();
-    expect(api.getGoogleConfig).not.toHaveBeenCalled();
-    expect(gis.load).not.toHaveBeenCalled();
+    expect(gis.renderButton).toHaveBeenCalledTimes(1);
+    // Still no sign-up surface on a closed site.
     expect(container.querySelector('a[href="/register"]')).toBeNull();
+    await act(async () => {
+      await gisCallback()({ credential: "id-token-for-a-listed-address" });
+    });
+    await flush();
+    expect(api.loginWithGoogle).toHaveBeenCalledWith("id-token-for-a-listed-address");
+    expect(session.setAccount).toHaveBeenCalledWith(PARTICIPANT);
+    expect(container.textContent).toContain("My courses page");
   });
 
   it("a successful callback POSTs the credential and routes like password login", async () => {
