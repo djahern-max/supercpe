@@ -17,8 +17,14 @@
   margin: 0;
 }
 
+/* 034: the inputs keep their basis-0 1:2 ratio (any positive basis
+   shifts the desktop widths); min-width: 0 lets them shrink below their
+   placeholder text so the row never grows wider than the card, and the
+   stacked rule below handles phone widths. flex-wrap is a safety net for
+   a card narrower than the button itself. */
 .createRow {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-sm);
   padding: var(--space-md);
   background: var(--color-surface);
@@ -28,6 +34,7 @@
 
 .input {
   flex: 1;
+  min-width: 0;
   padding: var(--space-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -53,6 +60,32 @@
 .button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 034: 720px is the same breakpoint AdminNav.jsx hands matchMedia for
+   the Menu collapse; one figure governs both. Stacked controls all take
+   the full card width, and the button grows to a 44px tap target. */
+@media (max-width: 720px) {
+  .createRow {
+    flex-direction: column;
+  }
+
+  /* flex: none, or the row's basis would size the inputs' height once
+     the main axis is vertical. */
+  .input,
+  .inputWide {
+    flex: none;
+  }
+
+  .input,
+  .inputWide,
+  .button {
+    width: 100%;
+  }
+
+  .button {
+    min-height: 44px;
+  }
 }
 
 .errorPanel {

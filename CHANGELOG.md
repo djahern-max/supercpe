@@ -4588,3 +4588,83 @@ Shipped: 2026-09-13
 - Not re-screenshotted in a browser; the identity and certificate
   tests (42) and the frontend suite (144) pass, and the OG card, the
   512 icon, and the rendered certificate were inspected as images.
+
+## 034 — Create-course form stacks at phone width
+Shipped: 2026-09-14
+
+**What changed**
+- `frontend/src/pages/AdminCourses/AdminCourses.module.css` only. The
+  create-course row (`.createRow`) gains `flex-wrap: wrap`; the two
+  inputs gain `min-width: 0` so their placeholder text can no longer
+  hold the row wider than the card. A new `@media (max-width: 720px)`
+  block turns the row into a column, sets `flex: none` and `width: 100%`
+  on both inputs, and gives the button `width: 100%` and
+  `min-height: 44px`.
+- Locators, as found: the page is
+  `frontend/src/pages/AdminCourses/AdminCourses.jsx` (the form at the
+  top of `AdminCourses()`); its layout rule is `.createRow` in the
+  module stylesheet beside it; the header's Menu collapse is
+  `NARROW = "(max-width: 720px)"` in `frontend/src/admin/AdminNav.jsx`,
+  handed to `useMediaQuery`. 720px is the value reused; no second
+  breakpoint was introduced, and `AdminNav.module.css` has no media
+  query of its own (the collapse is driven from JS).
+- The fix is page-scoped. No shared admin form-row class exists: each
+  admin page carries its own module stylesheet, and the other pages
+  that name a `createRow` (Accounts) or a comparable card row
+  (Packages `.uploadRow`) style it independently.
+- `box-sizing: border-box` already applies to everything through the
+  `*` rule in `frontend/src/styles/global.css`, so `width: 100%` inputs
+  inside the padded card do not overflow.
+- No JSX, backend, route, schema, or dependency change. The 584-test
+  backend suite, the 144-test frontend suite, pyflakes, oxlint, and
+  `sync_brand.py --check` were run; results unchanged from 033a.
+
+**Standards touched**
+- None. Admin-internal presentation only; no certificate content,
+  reviewer artifact, or participant-facing record is affected.
+  COMPLIANCE.md is unchanged.
+
+**Decisions**
+- Page-scoped rather than a shared class, because there is no shared
+  class to fix and the spec forbids inventing one beyond what wrapping
+  requires. Inventing an admin-wide form-row class would have meant
+  touching five stylesheets for one clipped button.
+- The inputs keep `flex: 1` / `flex: 2` (basis 0) instead of the
+  spec's example `flex: 1 1 14rem`. The spec's Task 3 assumed fixed
+  widths; there were none. Measured in headless Chrome, a 14rem basis
+  moves the first input's right edge from 442px to 511px at 1280px,
+  which fails the "pixel-unchanged at 1280" acceptance criterion; with
+  basis 0 the 1280px render is byte-identical to before. `flex-wrap`
+  stays as the spec asks, but with basis-0 inputs it only fires if the
+  card ever gets narrower than the button itself; the 720px stack is
+  what actually handles phones.
+- `flex: none` on the inputs inside the stacked rule is required, not
+  cosmetic: a positive flex basis on a column's main axis becomes a
+  height, and the first cut rendered each input 224px tall.
+- The button gets `min-height: 44px` only when stacked, so the desktop
+  button's 36px height is untouched.
+
+**Known gaps**
+- The browser walkthrough of `/admin/courses` at 390, 500, 768, and
+  1280px on production, and tabbing through the stacked form, is
+  operator-only and not yet run by the operator. What the build session
+  ran instead: a static harness in headless Chrome that loads the real
+  `global.css` and this module stylesheet around the same form markup
+  (390px via an iframe, since headless Chrome refuses a window narrower
+  than 500px). Measured: at 390 and 500 all three controls span the
+  card's inner width, the button is 44px tall, and page scroll width
+  equals the viewport (before: 514px at both); at 768 three-across, no
+  clipping, first input 4px narrower than before because it may now
+  shrink below its placeholder; at 1280 the screenshot is
+  byte-identical to the old stylesheet. Programmatic focus on each
+  control at 390px showed the input rings fully inside the card; the
+  button's ring is Chrome's default over the accent fill, low-contrast
+  but unclipped, and the same as on desktop.
+- Same fixed-row problem observed and left unfixed (out of scope): the
+  package upload row on `/admin/packages` (`.uploadRow`, a
+  non-wrapping flex row holding the file input and the Upload button)
+  will clip its button at phone width the same way this form did.
+  `/admin/accounts` already wraps its `.createRow`. Sponsor, Experts,
+  and Jurisdictions use column layouts and showed no fixed row.
+- pyflakes still reports the pre-existing unused imports 030 listed;
+  oxlint's warnings (exit 0, no errors) are all on untouched files.
