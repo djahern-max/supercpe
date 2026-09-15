@@ -648,7 +648,22 @@ def read_lesson(
         for q in questions_service.for_package(db, package.id)
         if q.id in answered
     }
-    return reader.build(db, storage, package, answered_keys)
+    # 037: the lesson's place in the course is the *enrolled* version's —
+    # the pinned packages, in lesson order — not the course's current
+    # lessons, which may have moved on since (the house rule: a
+    # participant keeps the package versions they enrolled on).
+    pinned = enrollments.packages_for(db, enrollment)
+    return reader.build(
+        db,
+        storage,
+        package,
+        answered_keys,
+        course_title=enrollment.course.title,
+        lesson_position=next(
+            i for i, p in enumerate(pinned, start=1) if p.id == package.id
+        ),
+        lesson_count=len(pinned),
+    )
 
 
 @router.get("/enrollments/{enrollment_id}/search", response_model=SearchResultsOut)

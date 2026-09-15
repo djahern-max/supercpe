@@ -57,6 +57,14 @@ class ReaderLessonOut(BaseModel):
     title: str
     kind: str
     word_count: int
+    # 037: the position indicator's values. `section_count` is the gated
+    # sequence — body sections only; reference sections are ungated and
+    # are not part of it.
+    course_title: str
+    lesson_position: int
+    lesson_count: int
+    section_count: int
+    sections_completed: int
     sections: list[ReaderSectionOut]
     media: list[ReaderMediaOut]
     questions: list[ReaderQuestionOut]

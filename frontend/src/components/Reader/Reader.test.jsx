@@ -461,3 +461,99 @@ describe("Supplemental clips (027)", () => {
     expect(location()).toBe("?section=sec-02");
   });
 });
+
+// --- 037: where the participant is -----------------------------------------
+//
+// The reader used to say "START HERE" over a bar that never moved: the bar
+// counted sections this session had scrolled past, so it sat at zero on
+// the section the participant was actually on, and passing a review gate
+// did not move it. Now the line names the lesson and the section, and the
+// bar is the gate.
+
+/** The 037 payload: a server that says where this lesson sits. */
+function positionedPayload(overrides = {}, lessonOverrides = {}) {
+  return {
+    ...lessonPayload(overrides),
+    course_title: "Identifying a Lease Under ASC 842",
+    lesson_position: 4,
+    lesson_count: 6,
+    // Deliberately not the three body sections this fixture renders: the
+    // counts are the server's figures for the whole lesson, and the line
+    // must show them rather than something counted from `sections`.
+    section_count: 7,
+    sections_completed: 2,
+    ...lessonOverrides,
+  };
+}
+
+const bar = () => container.querySelector('[role="progressbar"]');
+const fill = () => bar().firstElementChild.style.width;
+
+describe("Reader position indicator (037)", () => {
+  it("names the lesson and the section from the payload", () => {
+    render(positionedPayload(), {}, "/lesson?section=sec-02");
+    expect(pane().textContent).toContain("Lesson 4 of 6 · Section 2 of 7");
+  });
+
+  it("updates the section position when another section is selected", () => {
+    render(positionedPayload({ unlocked: true }), {}, AT_SEC_01);
+    expect(pane().textContent).toContain("Lesson 4 of 6 · Section 1 of 7");
+
+    click(
+      Array.from(contents().querySelectorAll("button")).find((b) =>
+        b.textContent.startsWith("Right to Direct Use")
+      )
+    );
+    expect(pane().textContent).toContain("Lesson 4 of 6 · Section 3 of 7");
+
+    click(
+      Array.from(contents().querySelectorAll("button")).find((b) =>
+        b.textContent.startsWith("How this course works")
+      )
+    );
+    expect(pane().textContent).toContain("Lesson 4 of 6 · Start here");
+  });
+
+  it("fills the bar from the server's completed sections", () => {
+    render(positionedPayload(), {}, AT_SEC_01);
+    expect(bar().getAttribute("aria-label")).toBe("2 of 7 sections complete");
+    expect(bar().getAttribute("aria-valuenow")).toBe("2");
+    expect(bar().getAttribute("aria-valuemax")).toBe("7");
+    // 2/7 of the track, not 0 — which is what the old "sections scrolled
+    // past" count showed on the section the participant was reading.
+    expect(fill()).toBe(`${(2 / 7) * 100}%`);
+  });
+
+  it("advances the bar when a review gate is passed, without a reload", async () => {
+    // Nothing answered, nothing complete, and no refetch in this test:
+    // the bar must move on the strength of the verdict alone.
+    const payload = positionedPayload({}, { sections_completed: 0 });
+    render(payload, {
+      gradeAnswer: () =>
+        Promise.resolve({
+          correct: true,
+          correct_choice_key: "b",
+          feedback: "Right.",
+        }),
+    }, AT_SEC_01);
+    expect(bar().getAttribute("aria-label")).toBe("0 of 7 sections complete");
+
+    click(buttonNamed("Control of an identified asset"));
+    await flush();
+    expect(bar().getAttribute("aria-label")).toBe("1 of 7 sections complete");
+    expect(bar().getAttribute("aria-valuenow")).toBe("1");
+  });
+
+  it("matches the server after a reload", () => {
+    // A fresh mount with no session verdicts — what a reload is — shows
+    // exactly what the server counted.
+    render(positionedPayload({}, { sections_completed: 5 }), {}, AT_SEC_01);
+    expect(bar().getAttribute("aria-label")).toBe("5 of 7 sections complete");
+  });
+
+  it("still reads sensibly for a payload without the position values", () => {
+    render(lessonPayload(), {}, "/lesson?section=sec-02");
+    expect(pane().textContent).toContain("Section 2 of 3");
+    expect(pane().textContent).not.toContain("Lesson");
+  });
+});

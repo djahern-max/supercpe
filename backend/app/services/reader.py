@@ -83,6 +83,18 @@ class ReaderLesson:
     title: str
     kind: str
     word_count: int
+    # 037: where the participant is. The course this lesson belongs to,
+    # this lesson's place in it, and how far through the lesson's gated
+    # sections they have got. Served, never parsed out of the URL by the
+    # browser — the URL is a reading position, not a record (027).
+    course_title: str
+    lesson_position: int
+    lesson_count: int
+    # The gated sequence is the body sections and nothing else: front
+    # matter, glossary, and appendixes are reference, ungated for the
+    # same reason 7.02.5 keeps them out of the word count.
+    section_count: int
+    sections_completed: int
     sections: list[ReaderSection] = field(default_factory=list)
     media: list[ReaderMedia] = field(default_factory=list)
     questions: list[ReaderQuestion] = field(default_factory=list)
@@ -95,6 +107,9 @@ def build(
     answered_keys: set[str] | None = None,
     *,
     gated: bool = True,
+    course_title: str,
+    lesson_position: int,
+    lesson_count: int,
 ) -> ReaderLesson:
     """One text lesson's payload.
 
@@ -103,6 +118,12 @@ def build(
     which serves the whole guide unlocked. A reviewer has to read what
     they are signing (4.02), and no participant record exists to gate
     against.
+
+    037: the course and the lesson's place in it are the caller's to
+    supply, because they differ by surface — the participant's are the
+    lessons pinned on their enrollment, the preview's are the course's
+    current ones. They are required rather than defaulted so a new caller
+    has to say which it means.
     """
     answered_keys = answered_keys or set()
     review = [
@@ -143,11 +164,33 @@ def build(
             locked_from_here = True
 
     unlocked = {s.section_key for s in sections if not s.locked}
+    # 037: a gated section is complete when its review gate has been
+    # passed — the same condition the loop above uses to close the
+    # sections after it, read the other way round: open, and every
+    # question placed after it answered. Derived here from the sections
+    # just built, never stored, so it cannot drift from the gate it
+    # describes. The preview has no participant and so no progress.
+    gated_sections = [s for s in sections if s.role == ROLE_BODY]
+    sections_completed = (
+        sum(
+            1
+            for s in gated_sections
+            if not s.locked
+            and all(key in answered_keys for key in s.question_keys)
+        )
+        if gated
+        else 0
+    )
     return ReaderLesson(
         lesson_id=package.lesson_id,
         title=package.title,
         kind=package.kind,
         word_count=package.word_count,
+        course_title=course_title,
+        lesson_position=lesson_position,
+        lesson_count=lesson_count,
+        section_count=len(gated_sections),
+        sections_completed=sections_completed,
         sections=sections,
         media=[
             ReaderMedia(

@@ -168,7 +168,21 @@ def read_lesson(
             status_code=404,
             detail="This lesson is a video lesson; use the play route",
         )
-    return reader.build(db, storage, package, gated=False)
+    # 037: the preview's position is the course's current lessons — there
+    # is no enrollment here to pin a version to.
+    lessons = _course_packages(db, course_code)
+    return reader.build(
+        db,
+        storage,
+        package,
+        gated=False,
+        course_title=courses.get_course(db, course_code).title,
+        lesson_position=next(
+            (i for i, p in enumerate(lessons, start=1) if p.id == package.id),
+            1,
+        ),
+        lesson_count=len(lessons),
+    )
 
 
 def _course_packages(db: Session, course_code: str):

@@ -35,6 +35,10 @@ from tests.factories.text_package import (
     DEFAULT_COURSE_CODE,
     DEFAULT_LESSON_ID,
     DEFAULT_SECTION_FILES,
+    FRONT_MATTER,
+    GLOSSARY,
+    _assessment,
+    _review,
     build_text_package,
     default_glossary_terms,
     default_sections,
@@ -80,11 +84,20 @@ def attach_text_course(db, package, course_code=DEFAULT_COURSE_CODE):
     return course
 
 
-def make_publishable_text_course(db, package, course_code=DEFAULT_COURSE_CODE):
+def make_publishable_text_course(
+    db, package, course_code=DEFAULT_COURSE_CODE, extra_packages=()
+):
     """A text course that clears every publish gate: description,
     developer, an approved review by a second active CPA, a price, and the
-    three 8.01 policies."""
+    three 8.01 policies.
+
+    `extra_packages` attach before the review is recorded, because
+    attaching content moves `content_updated_at` and 4.02 wants the
+    review to cover what is published."""
     course = attach_text_course(db, package, course_code)
+    for extra in extra_packages:
+        courses_service.attach_package(db, course, extra.id)
+    db.refresh(course)
     for field in DERIVED_FIELDS:
         setattr(course, field, getattr(package, field))
     course.description = "Whether a contract contains a lease, under ASC 842."
@@ -1363,3 +1376,231 @@ def test_raw_html_other_than_a_comment_survives_to_be_escaped(
     )
     assert "<b>x</b>" in served["markdown"]
     assert "<script>alert(1)</script>" in served["markdown"]
+
+
+# --- 037. the reader says where the participant is -------------------------
+#
+# 4.05.3(4) asks for "instructions to participants regarding navigation
+# through the course, course components, and course completion" (printed
+# page 8). The written instructions are the package's front matter and
+# /how-it-works, unchanged; these pin the position values the reader shows
+# alongside them. The gated sequence is the body sections — reference
+# material is open from the start and is not somewhere a participant can
+# be "up to".
+
+
+def build_text_lesson(db, storage_root, tmp_path, *, position, bodies):
+    """One text package: front matter, `bodies` body sections with a
+    review question after each, and a glossary. Distinct lesson ids so
+    several can hang off one course."""
+    files = {
+        "guide/00-front-matter.md": FRONT_MATTER,
+        "guide/90-glossary.md": GLOSSARY,
+    }
+    sections = [
+        {
+            "id": "sec-00",
+            "file": "guide/00-front-matter.md",
+            "role": "front_matter",
+            "title": "How this course works",
+        }
+    ]
+    questions = []
+    for n in range(1, bodies + 1):
+        path = f"guide/{n:02d}-body.md"
+        files[path] = (
+            f"# Body {n}\n\nThe customer directs the use of an identified "
+            "asset throughout the period of use.\n"
+        )
+        sections.append(
+            {
+                "id": f"sec-{n:02d}",
+                "file": path,
+                "role": "body",
+                "title": f"Body {n}",
+            }
+        )
+        questions.append(
+            _review(n, f"sec-{n:02d}", "lo-1" if n % 2 else "lo-2")
+        )
+    sections.append(
+        {
+            "id": "sec-90",
+            "file": "guide/90-glossary.md",
+            "role": "glossary",
+            "title": "Glossary",
+        }
+    )
+    questions += [_assessment(n, "lo-1" if n % 2 else "lo-2") for n in range(1, 5)]
+    package, _ = ingest_text(
+        db,
+        storage_root,
+        tmp_path,
+        manifest_overrides={
+            "lesson_id": f"{DEFAULT_COURSE_CODE}-{position:02d}",
+            "position": position,
+            "sections": sections,
+            "media": [],
+        },
+        section_files=files,
+        questions=questions,
+    )
+    return package
+
+
+@pytest.fixture
+def six_lesson_course(db_session, storage_root, tmp_path, client):
+    """A published six-lesson text course whose fourth lesson has seven
+    gated sections, with an enrolled participant logged in."""
+    packages = [
+        build_text_lesson(
+            db_session,
+            storage_root,
+            tmp_path,
+            position=n,
+            bodies=7 if n == 4 else 2,
+        )
+        for n in range(1, 7)
+    ]
+    course = make_publishable_text_course(
+        db_session, packages[0], extra_packages=packages[1:]
+    )
+    courses_service.publish(db_session, course)
+    account = make_participant(db_session)
+    enrollment = enroll(db_session, course, account)
+    login(client, PARTICIPANT_EMAIL, PARTICIPANT_PASSWORD)
+    return enrollment, packages
+
+
+def test_the_reader_says_which_lesson_and_how_far_through_it(
+    client, six_lesson_course
+):
+    """Lesson 4 of 6, seven gated sections, two of their gates passed."""
+    enrollment, packages = six_lesson_course
+    fourth = packages[3]
+
+    payload = read(client, enrollment, fourth)
+    assert payload["course_title"] == "Identifying a Lease Under ASC 842"
+    assert payload["lesson_position"] == 4
+    assert payload["lesson_count"] == 6
+    assert payload["section_count"] == 7
+    # Nothing answered yet: the first section is open but its gate is not
+    # passed, and the six after it are shut.
+    assert payload["sections_completed"] == 0
+
+    for key in ("q-r01", "q-r02"):
+        assert answer(client, enrollment, fourth, key).status_code == 200
+    payload = read(client, enrollment, fourth)
+    assert payload["sections_completed"] == 2
+    assert payload["section_count"] == 7
+    # And the count is the gate, not the reading position: sec-03 is open
+    # now, but its own question is unanswered, so it is not complete.
+    by_key = {s["section_key"]: s for s in payload["sections"]}
+    assert by_key["sec-03"]["locked"] is False
+    assert by_key["sec-04"]["locked"] is True
+
+
+def test_the_other_lessons_report_their_own_position(client, six_lesson_course):
+    """The position is the lesson's place in the enrolled course version,
+    in the order `packages_for` pins them."""
+    enrollment, packages = six_lesson_course
+    for index, package in enumerate(packages, start=1):
+        payload = read(client, enrollment, package)
+        assert payload["lesson_position"] == index
+        assert payload["lesson_count"] == 6
+        assert payload["section_count"] == (7 if index == 4 else 2)
+
+
+def test_reference_sections_are_not_part_of_the_gated_count(
+    client, reading_participant
+):
+    """The fixture lesson has six sections: front matter, three body, a
+    glossary and an appendix. Only the three body sections gate, so only
+    they are counted — 7.02.5's exclusions are ungated for the same
+    reason they are uncounted, and a participant is never "on" section
+    n of a glossary."""
+    enrollment, package, _ = reading_participant
+    payload = read(client, enrollment, package)
+    assert len(payload["sections"]) == 6
+    assert payload["section_count"] == 3
+    assert payload["lesson_position"] == 1
+    assert payload["lesson_count"] == 1
+
+    ungated = [
+        s for s in payload["sections"] if s["role"] != "body"
+    ]
+    assert {s["role"] for s in ungated} == {
+        "front_matter",
+        "glossary",
+        "appendix",
+    }
+    assert all(s["locked"] is False for s in ungated)
+
+
+def test_completed_sections_track_the_gate_the_server_already_keeps(
+    client, reading_participant
+):
+    """Two questions are placed after sec-01 and both gate sec-02.
+    Answering one of them opens nothing and completes nothing."""
+    enrollment, package, _ = reading_participant
+    assert read(client, enrollment, package)["sections_completed"] == 0
+
+    assert answer(client, enrollment, package, "q-r01").status_code == 200
+    assert read(client, enrollment, package)["sections_completed"] == 0
+
+    assert answer(client, enrollment, package, "q-r02").status_code == 200
+    assert read(client, enrollment, package)["sections_completed"] == 1
+
+    for key in ("q-r03", "q-r04", "q-r05"):
+        assert answer(client, enrollment, package, key).status_code == 200
+    assert read(client, enrollment, package)["sections_completed"] == 3
+
+
+def test_one_participant_cannot_read_anothers_progress(
+    client, db_session, reading_participant
+):
+    """The payload is reached only through the reader's own enrollment,
+    and that route is scoped to the signed-in account. Another
+    participant's enrollment id is not found — not a 403 that would
+    confirm it exists."""
+    enrollment, package, course = reading_participant
+    for key in ("q-r01", "q-r02"):
+        answer(client, enrollment, package, key)
+    assert read(client, enrollment, package)["sections_completed"] == 1
+
+    other = make_participant(
+        db_session, email="other@supercpe.test", display_name="Other CPA"
+    )
+    other_enrollment = enroll(db_session, course, other)
+    login(client, "other@supercpe.test", PARTICIPANT_PASSWORD)
+
+    # The other participant's own reader shows their own progress: none.
+    assert (
+        read(client, other_enrollment, package)["sections_completed"] == 0
+    )
+    # And the first participant's enrollment is not theirs to read.
+    response = client.get(
+        f"/api/v1/my/enrollments/{enrollment.id}/lessons/{package.id}/read"
+    )
+    assert response.status_code == 404
+
+
+def test_the_preview_reports_position_and_no_progress(
+    client, db_session, storage_root, tmp_path, admin_headers
+):
+    """4.02's reviewer preview has no participant, so it has no progress
+    to report — but it still says which lesson of how many."""
+    package, _ = ingest_text(db_session, storage_root, tmp_path)
+    course = attach_text_course(db_session, package)
+    response = client.get(
+        f"/api/v1/courses/{course.course_code}/lessons/{package.id}/read"
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["course_title"] == "Identifying a Lease Under ASC 842"
+    assert payload["lesson_position"] == 1
+    assert payload["lesson_count"] == 1
+    assert payload["section_count"] == 3
+    assert payload["sections_completed"] == 0
+    # Nothing is gated in the preview, so "completed" would be a lie.
+    assert all(s["locked"] is False for s in payload["sections"])

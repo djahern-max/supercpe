@@ -7,13 +7,15 @@ import { stripLeadingTitle } from "./sectionTitle.js";
 import {
   allAnswered,
   bodySections,
+  gatedSectionCount,
   isAnswered,
-  progressLabel,
+  positionLabel,
   questionsAfter,
   readingChain,
   referenceSections,
   resumeKey,
   sectionStates,
+  sectionsCompleted,
 } from "./stepper.js";
 
 const ROLE_LABELS = {
@@ -140,7 +142,12 @@ function Reader({
   const next = chainIndex >= 0 ? chain[chainIndex + 1] : null;
   const atEnd = chainIndex >= 0 && chainIndex === chain.length - 1;
   const lessonFinished = atEnd && allAnswered(lesson, results);
-  const readBodies = bodies.filter((s) => states[s.section_key] === "read");
+  // 037: the bar is the gate, not the reading position. It counts the
+  // sections whose review gate has been passed — which is what the
+  // server means by progress and what survives a reload — rather than
+  // the ones this session happens to have scrolled past.
+  const sectionTotal = gatedSectionCount(lesson);
+  const completed = sectionsCompleted(lesson, results);
 
   const goToSection = (sectionKey) => {
     if (!lesson.sections.some((s) => s.section_key === sectionKey)) return;
@@ -380,20 +387,20 @@ function Reader({
             <>
               <div className={styles.progress}>
                 <p className={styles.progressLine}>
-                  {progressLabel(lesson, currentKey)}
+                  {positionLabel(lesson, currentKey)}
                 </p>
                 <div
                   className={styles.progressBar}
                   role="progressbar"
-                  aria-label="Sections read"
+                  aria-label={`${completed} of ${sectionTotal} sections complete`}
                   aria-valuemin={0}
-                  aria-valuemax={bodies.length}
-                  aria-valuenow={readBodies.length}
+                  aria-valuemax={sectionTotal}
+                  aria-valuenow={completed}
                 >
                   <div
                     className={styles.progressFill}
                     style={{
-                      width: `${bodies.length ? (readBodies.length / bodies.length) * 100 : 0}%`,
+                      width: `${sectionTotal ? (completed / sectionTotal) * 100 : 0}%`,
                     }}
                   />
                 </div>

@@ -279,12 +279,13 @@
   gap: var(--space-xs);
 }
 
+/* 037: the position line reads as a sentence — "Lesson 4 of 6 · Section 2
+   of 7" — so it loses the uppercase it wore as a one-word label, which
+   turned "Start here" into a shout. Small and muted, not shouted. */
 .progressLine {
   margin: 0;
   font-size: 0.85rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: 500;
   color: var(--color-text-muted);
 }
 

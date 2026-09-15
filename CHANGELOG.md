@@ -5025,3 +5025,174 @@ above, which no ingested section exercises.
   `oxlint` exits 0 with 11 pre-existing warnings, all on untouched files;
   `sync_brand.py --check` passes (14 files in sync). `git status
   --porcelain` clean apart from this feature's files.
+
+## 037 — Reader position indicator
+Shipped: 2026-09-15
+
+**What changed**
+- The reader payload says where the participant is. `ReaderLessonOut`
+  (`backend/app/schemas/reader.py`) gains `course_title`,
+  `lesson_position`, `lesson_count`, `section_count`, and
+  `sections_completed`; `reader.build` (`backend/app/services/reader.py`)
+  fills them.
+- `sections_completed` is derived, not stored: the number of gated
+  sections whose review gate has been passed, computed in `build` from
+  the sections it has just built — open, and every review question placed
+  after it answered. That is the same condition the loop above it uses to
+  close the sections that follow, read the other way round, so the count
+  and the gate cannot disagree. No table, no column, no migration.
+- `section_count` is the gated sequence: the body sections. Front matter,
+  glossary, and appendixes are not in it.
+- The participant route (`read_lesson`, `backend/app/routers/my.py`)
+  takes the lesson's place from `packages_for` — the packages pinned on
+  the enrollment — so the position describes the course version the
+  participant enrolled on, not the course as it stands today. The 4.02
+  preview (`backend/app/routers/player.py`) takes it from the course's
+  current lessons and reports `sections_completed: 0`; it has no
+  participant, so it has no progress.
+- The reader's progress line became a position line:
+  `positionLabel` in `frontend/src/components/Reader/stepper.js` renders
+  `Lesson 4 of 6 · Section 2 of 7`, keeping "Start here" and "Reference"
+  as the section half for front matter and reference sections. It lost
+  the uppercase it wore as a one-word label.
+- The progress bar now fills from the gate. `sectionsCompleted` (same
+  file) takes the server's count and adds any section whose gate was
+  cleared in this session, so the bar moves when the question is answered
+  rather than when the refetch lands; after a reload the session has
+  nothing to add and the two agree. Its label is
+  `aria-label="2 of 7 sections complete"`.
+- The breadcrumb on `frontend/src/pages/MyLesson/MyLesson.jsx` reads
+  `My courses / {course title} / Lesson {n}: {lesson title}`, with the
+  course crumb linked to the course page. It works for a video lesson
+  too, from the enrollment detail.
+- Tests: an 037 section in `backend/tests/test_text_packages.py` (a
+  published six-lesson course whose fourth lesson has seven gated
+  sections), new cases in `Reader.test.jsx` and `stepper.test.js`, and a
+  new `frontend/src/pages/MyLesson/MyLesson.test.jsx`.
+- `make_publishable_text_course` in the backend tests gained an
+  `extra_packages` argument, which attaches before the 4.02 review is
+  recorded — attaching content moves `content_updated_at`, and a review
+  recorded first would not cover what is published.
+
+**Standards touched**
+- 4.05.3 item 4 — "Instructions to participants regarding navigation
+  through the course, course components, and course completion", read on
+  printed page 8 of `docs/2026-Statement-on-Standards-for-CPE-Programs.pdf`
+  (PDF page 14; 4.05.3 itself begins on printed page 7). The position
+  indicator supplements the written navigation instructions. It does not
+  replace them: the package's front matter and `/how-it-works` are still
+  what answers the item, still publish-gated by `front_matter_missing`,
+  and are unchanged here.
+- Nothing else. No change to gating, unlock rules, the qualified
+  assessment, credit math, or the course-package contract.
+- COMPLIANCE.md: one new row, 4.05.3 item 4, as an update to the 011 and
+  027 rows.
+
+**Findings (Task 1 of the spec)**
+- **"START HERE" is a position line, not a group heading.** It is
+  `progressLabel(lesson, currentKey)` from `stepper.js`, which returns
+  "Start here" for front matter, "Section N of M" for a body section, and
+  "Reference" for a glossary or appendix. It shouted because
+  `.progressLine` in `Reader.module.css` set `text-transform: uppercase`.
+- **The bar under it was already a real progress bar** (`role="progressbar"`,
+  `aria-label="Sections read"`), but it counted the wrong thing: body
+  sections whose `sectionStates` value was `"read"`, which means *moved
+  past*. The section a participant is on is `"current"`, never `"read"`,
+  so the bar read 0% on front matter, 0% on the first body section, and —
+  the actual defect — **did not move when a review gate was passed**. The
+  payload refetched, the next section opened, and the bar stayed put until
+  Continue was pressed. Nothing in it came from the server's own idea of
+  completion.
+- **The breadcrumb's `course` and `lesson` were literal hardcoded
+  strings** in `MyLesson.jsx`. The real names were never unavailable: the
+  page already held `enrollment.title` and `enrollment.lessons[].position`
+  and `.title` from `MyEnrollmentDetail`. Nothing ever looked them up.
+- **What the payload already provided:** lesson title, each section's
+  position within the lesson, and lock state. Missing: course title,
+  lesson position, lesson count, gated-section count, sections completed.
+  Section completion was not stored anywhere and did not need to be — it
+  is derivable from `locked` plus answered review questions, which is how
+  the gate itself is computed.
+- **The REFERENCE group is not part of the gated sequence.**
+  `UNGATED_ROLES = (front_matter, glossary, appendix)` in
+  `backend/app/constants/package_kinds.py`; only `body` sections gate, and
+  only `body` words count (7.02.5). Front matter sits in the frontend
+  reading chain but is never locked. So `section_count` excludes reference
+  material, which is also what `progressLabel` already counted.
+- **Why each section shows its title twice** (findings only, not fixed —
+  two separate mechanisms):
+  1. The eyebrow above the heading is a **role** label,
+     `ROLE_LABELS[current.role]` in `Reader.jsx`, and the label for
+     `front_matter` is the literal string "How this course works" — which
+     is also what packages title their front-matter section. The collision
+     is exact and happens only on front matter; a body section shows
+     "Guide" over a distinct title.
+  2. `stripLeadingTitle(current.markdown, current.title)` in
+     `sectionTitle.js` drops a leading H1–H3 only when it matches the
+     **section** title. A section whose markdown opens with the **lesson**
+     title is not stripped, and `MyLesson` renders that same lesson title
+     as the page `<h1>` — so "Verifying the output" appears as the page
+     title and again as the section's own heading.
+
+**Decisions**
+- **Progress is the gate, not the reading position.** A section counts as
+  complete when its review gate has been passed. The alternative —
+  counting sections the participant has scrolled past — is what was
+  already there and is what made the bar look broken; it is also not
+  something the server can vouch for, and 027 decided a server-side
+  reading position would be a new participant record needing a retention
+  decision. That decision stands: nothing here is written to the server.
+- **The count is derived per request, never stored.** House rule: derived
+  state is computed from timestamps and content, not stored as a value
+  that can drift. Putting `sections_completed` beside the gate that
+  defines it is what keeps the two honest.
+- **The browser may run ahead of the server by one gate.**
+  `sectionsCompleted` takes `Math.max` of the served count and the same
+  condition evaluated against this session's verdicts. Without it the bar
+  would only move when the post-answer refetch resolved, which is the
+  complaint restated. The client applies the server's own rule to the
+  server's own payload, so a reload can only confirm it.
+- **`course_title`, `lesson_position`, and `lesson_count` are required
+  keyword arguments of `reader.build`, not defaulted.** They differ by
+  surface — pinned packages for a participant, current lessons for the
+  preview — and a default would silently pick one. A new caller has to
+  say which it means.
+- **The position line lost its uppercase.** As a one-word label,
+  `text-transform: uppercase` was a style; as a sentence it turned
+  "Start here" into a shout and would have done the same to "Lesson 4 of
+  6 · Section 2 of 7". Small and muted, as the spec asked. No other
+  reader styling changed.
+- **The breadcrumb reads the lesson payload first and the enrollment
+  detail second.** A video lesson's payload carries no position, so the
+  enrollment detail is what gives it one; a text lesson's payload now says
+  the same thing about itself. Neither source is the URL.
+- **`section_count` is served rather than counted from `sections`.** They
+  agree today, and `gatedSectionCount` falls back to counting. Serving it
+  is what makes the total the server's statement about the lesson rather
+  than a property of whichever sections happened to survive the gate, and
+  a frontend test asserts the served figure is the one rendered.
+
+**Known gaps**
+- **Each section still shows its title twice**, by the two mechanisms in
+  the findings above. The spec made this findings-only; it is a content
+  and layout question (is the eyebrow a role label or a section label?)
+  that deserves its own feature, not a fix smuggled into this one.
+- Course-level progress on `/my/courses` is unchanged: the position
+  indicator is per lesson. Out of scope here.
+- The progress bar describes the study guide's gates. It is not a
+  completion indicator for the course — completion is the qualified
+  assessment (6.01.2) — and nothing on the bar claims otherwise, but the
+  wording ("2 of 7 sections complete") is worth a second look in the
+  operator's browser walkthrough.
+- Not yet run by the operator: deploy; the browser check on supercpe.com,
+  including the walkthrough on lesson 4 of a six-lesson course and the
+  reload check. No re-ingestion is needed — every value this feature adds
+  is derived at read time from rows that already exist, and no stored
+  column changed.
+- Verified in this session: backend `pytest` 633 passed; frontend vitest
+  174 passed in 27 files; `pyflakes app tests` reports the same 10
+  pre-existing unused imports 030 and 036 listed, none in a file touched
+  here; `oxlint` exits 0 with 11 pre-existing warnings, none on a line
+  added here; `npm run build` succeeds; `sync_brand.py --check` passes
+  (14 files in sync). `git status --porcelain` clean apart from this
+  feature's files.

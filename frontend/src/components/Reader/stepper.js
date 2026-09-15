@@ -92,14 +92,56 @@ export function sectionStates(lesson, results, currentKey, visited) {
 }
 
 /**
+ * 037: how many sections the participant has to get through — the gated
+ * sequence, which is the body sections. The server says so
+ * (`section_count`); the fallback counts the payload's own body sections,
+ * for a mount served by an older payload.
+ */
+export function gatedSectionCount(lesson) {
+  return lesson.section_count ?? bodySections(lesson.sections).length;
+}
+
+/**
  * The progress line: "Section 4 of 14" counts body sections only. Front
  * matter is the start, reference sections say "Reference".
  */
 export function progressLabel(lesson, sectionKey) {
   const bodies = bodySections(lesson.sections);
   const index = bodies.findIndex((s) => s.section_key === sectionKey);
-  if (index >= 0) return `Section ${index + 1} of ${bodies.length}`;
+  if (index >= 0) return `Section ${index + 1} of ${gatedSectionCount(lesson)}`;
   const section = lesson.sections.find((s) => s.section_key === sectionKey);
   if (section?.role === "front_matter") return "Start here";
   return "Reference";
+}
+
+/**
+ * 037: the position line — "Lesson 4 of 6 · Section 2 of 7". Both halves
+ * are the server's: `lesson_position` and `lesson_count` are the lessons
+ * of the course version the participant enrolled on, never anything read
+ * out of the URL. A payload without them shows the section half alone.
+ */
+export function positionLabel(lesson, sectionKey) {
+  const where = progressLabel(lesson, sectionKey);
+  if (!lesson.lesson_count) return where;
+  return `Lesson ${lesson.lesson_position} of ${lesson.lesson_count} · ${where}`;
+}
+
+/**
+ * 037: how many gated sections are behind the participant. The server
+ * counts the gates it has seen passed (`sections_completed`); this adds
+ * a section whose gate was cleared in *this* session, so the bar moves
+ * when the question is answered rather than when the refetch lands. The
+ * condition is the server's own, applied to the same payload: open, and
+ * every question placed after it answered. After a reload the session
+ * has nothing to add and the two agree.
+ */
+export function sectionsCompleted(lesson, results) {
+  const derived = bodySections(lesson.sections).filter(
+    (section) =>
+      !section.locked &&
+      questionsAfter(lesson, section.section_key).every((q) =>
+        isAnswered(q, results)
+      )
+  ).length;
+  return Math.max(lesson.sections_completed ?? 0, derived);
 }

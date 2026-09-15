@@ -3,7 +3,14 @@
  * what state each section is in, how the progress line counts.
  */
 import { describe, expect, it } from "vitest";
-import { progressLabel, resumeKey, sectionStates } from "./stepper.js";
+import {
+  gatedSectionCount,
+  positionLabel,
+  progressLabel,
+  resumeKey,
+  sectionStates,
+  sectionsCompleted,
+} from "./stepper.js";
 
 function section(key, role, locked = false) {
   return { section_key: key, role, title: key, locked, markdown: locked ? null : "…" };
@@ -95,5 +102,61 @@ describe("progressLabel", () => {
     expect(progressLabel(l, "fm")).toBe("Start here");
     expect(progressLabel(l, "gl")).toBe("Reference");
     expect(progressLabel(l, "ap")).toBe("Reference");
+  });
+});
+
+// --- 037: where the participant is -----------------------------------------
+
+describe("gatedSectionCount", () => {
+  it("is the server's figure when the payload carries one", () => {
+    expect(gatedSectionCount({ ...lesson(), section_count: 7 })).toBe(7);
+  });
+
+  it("falls back to the payload's own body sections", () => {
+    expect(gatedSectionCount(lesson())).toBe(4);
+  });
+});
+
+describe("positionLabel", () => {
+  it("names the lesson and the section", () => {
+    const l = { ...lesson(), lesson_position: 4, lesson_count: 6, section_count: 7 };
+    expect(positionLabel(l, "s2")).toBe("Lesson 4 of 6 · Section 2 of 7");
+  });
+
+  it("keeps the section wording for front matter and reference", () => {
+    const l = { ...lesson(), lesson_position: 4, lesson_count: 6 };
+    expect(positionLabel(l, "fm")).toBe("Lesson 4 of 6 · Start here");
+    expect(positionLabel(l, "gl")).toBe("Lesson 4 of 6 · Reference");
+  });
+
+  it("shows the section half alone when the lesson half is absent", () => {
+    expect(positionLabel(lesson(), "s2")).toBe("Section 2 of 4");
+  });
+});
+
+describe("sectionsCompleted", () => {
+  it("takes the server's count", () => {
+    const l = { ...lesson({ locked: ["s2", "s3", "s4"] }), sections_completed: 2 };
+    expect(sectionsCompleted(l, {})).toBe(2);
+  });
+
+  it("counts a gate cleared in this session, before the refetch lands", () => {
+    // The payload still says nothing is answered and nothing is complete;
+    // the session holds verdicts for both questions placed after s1.
+    const l = {
+      ...lesson({ locked: ["s2", "s3", "s4"] }),
+      sections_completed: 0,
+    };
+    expect(sectionsCompleted(l, {})).toBe(0);
+    expect(sectionsCompleted(l, { q1: {}, q2: {} })).toBe(1);
+  });
+
+  it("never counts a locked section", () => {
+    // s3 carries q3; s2 and s4 carry none, so only their lock keeps them
+    // out of the count.
+    const open = { ...lesson(), sections_completed: 0 };
+    expect(sectionsCompleted(open, { q1: {}, q2: {}, q3: {} })).toBe(4);
+    const shut = { ...lesson({ locked: ["s3", "s4"] }), sections_completed: 0 };
+    expect(sectionsCompleted(shut, { q1: {}, q2: {} })).toBe(2);
   });
 });

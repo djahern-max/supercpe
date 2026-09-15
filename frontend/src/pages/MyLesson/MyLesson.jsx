@@ -100,11 +100,35 @@ function MyLesson() {
 
   const nextStep = enrollment ? deriveNextStep(enrollment, packageId) : null;
 
+  // 037: the breadcrumb used to read "My courses / course / lesson". The
+  // real names were never unavailable — the enrollment detail carries the
+  // course title and every lesson's position and title, for a video
+  // lesson as much as a text one, and the reader payload now says the
+  // same thing about itself. Neither is read out of the URL.
+  const entry = enrollment?.lessons.find(
+    (item) => String(item.package_id) === packageId
+  );
+  const courseTitle = lesson?.course_title ?? enrollment?.title ?? null;
+  const lessonPosition = lesson?.lesson_position ?? entry?.position ?? null;
+  const lessonTitle = lesson?.title ?? entry?.title ?? null;
+
   return (
     <main className={styles.page}>
       <p className={styles.breadcrumb}>
-        <Link to="/my/courses">My courses</Link> /{" "}
-        <Link to={`/my/courses/${enrollmentId}`}>course</Link> / lesson
+        <Link to="/my/courses">My courses</Link>
+        {courseTitle && (
+          <>
+            {" / "}
+            <Link to={`/my/courses/${enrollmentId}`}>{courseTitle}</Link>
+          </>
+        )}
+        {lessonTitle && (
+          <>
+            {" / "}
+            {lessonPosition ? `Lesson ${lessonPosition}: ` : ""}
+            {lessonTitle}
+          </>
+        )}
       </p>
       {error && <div className={styles.errorPanel}>{error}</div>}
       {lesson && medium === "video" && (
