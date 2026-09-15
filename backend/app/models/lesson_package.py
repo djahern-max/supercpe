@@ -79,6 +79,21 @@ class LessonPackage(Base):
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # 038: the version's lifecycle. `archived_at` hides a superseded version
+    # from the packages list and refuses attaching it; every row and file
+    # stays. `media_purged_at` records that its stored video and media files
+    # were deleted after the 9.02 retention date of every record that
+    # references it — the rows (manifest, transcript, sections, questions)
+    # stay, and `media_purged_by` snapshots the admin's email, like
+    # `recorded_by` on reviews. Whether a version is used, deletable, or
+    # purgeable is derived (`services.package_lifecycle`), never stored.
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    media_purged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    media_purged_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Both live in the manifest, not columns: packages ingested before the
     # course_code contract rule have neither, and None is the honest answer.
@@ -158,6 +173,16 @@ class LessonPackage(Base):
         CheckConstraint(
             f"knowledge_level IN ({_quoted_list(KNOWLEDGE_LEVELS)})",
             name="ck_lesson_packages_knowledge_level",
+        ),
+        # 038: a purge always names who did it, and only an archived
+        # version can have been purged.
+        CheckConstraint(
+            "(media_purged_at IS NULL) = (media_purged_by IS NULL)",
+            name="ck_lesson_packages_purge_names_admin",
+        ),
+        CheckConstraint(
+            "media_purged_at IS NULL OR archived_at IS NOT NULL",
+            name="ck_lesson_packages_purge_requires_archive",
         ),
     )
 

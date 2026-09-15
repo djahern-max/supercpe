@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
 import {
+  archivePackage,
   deletePackage,
   getPackage,
   getTranscript,
   listPackages,
+  purgePackageMedia,
+  unarchivePackage,
   uploadPackage,
 } from "../../api/admin";
 import AdminNav from "../../admin/AdminNav.jsx";
@@ -17,12 +20,27 @@ function formatDuration(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatDate(iso) {
+  return new Date(iso).toLocaleDateString();
+}
+
+function UploadWarnings({ warnings }) {
+  if (!warnings || warnings.length === 0) return null;
+  return (
+    <ul className={styles.errorList}>
+      {warnings.map((warning) => (
+        <li key={warning}>{warning}</li>
+      ))}
+    </ul>
+  );
+}
+
 function UploadResult({ result }) {
   if (!result) return null;
   if (result.kind === "errors") {
     return (
       <div className={styles.errorPanel}>
-        <p className={styles.errorTitle}>Package refused</p>
+        <p className={styles.errorTitle}>{result.title ?? "Package refused"}</p>
         <ul className={styles.errorList}>
           {result.errors.map((error) => (
             <li key={error}>{error}</li>
@@ -40,6 +58,7 @@ function UploadResult({ result }) {
       <div className={styles.infoPanel}>
         Already ingested — nothing was created. Lesson {pkg.lesson_id} v
         {pkg.version} is unchanged.
+        <UploadWarnings warnings={result.data.warnings} />
       </div>
     );
   }
@@ -47,6 +66,78 @@ function UploadResult({ result }) {
     <div className={styles.successPanel}>
       Ingested lesson {pkg.lesson_id} v{pkg.version} — “{pkg.title}”,{" "}
       {formatDuration(pkg.duration_seconds)}
+      <UploadWarnings warnings={result.data.warnings} />
+    </div>
+  );
+}
+
+/**
+ * 038: what can be done with a version, from the lifecycle the server
+ * derives. Delete only an unused version; archive a superseded one that
+ * participants used; purge an archived version's media only once every
+ * record on it is past the 9.02 retention date. The buttons follow the
+ * server's `deletable` / `media_purgeable` — the server refuses anyway.
+ */
+function PackageActions({ pkg, onDelete, onArchive, onUnarchive, onPurge }) {
+  const archived = pkg.archived_at !== null;
+  const purged = pkg.media_purged_at !== null;
+  const stop = (handler) => (event) => {
+    event.stopPropagation();
+    handler(pkg);
+  };
+
+  let purgeNote = null;
+  if (archived && purged) {
+    purgeNote = `Media purged ${formatDate(pkg.media_purged_at)}`;
+  } else if (archived && !pkg.media_purgeable && pkg.retain_until) {
+    purgeNote = `Media can be purged after ${formatDate(pkg.retain_until)}`;
+  }
+
+  return (
+    <div className={styles.actions}>
+      <button
+        className={styles.deleteButton}
+        type="button"
+        disabled={!pkg.deletable}
+        title={
+          pkg.deletable
+            ? undefined
+            : "Only a version no course has attached and no participant used can be deleted"
+        }
+        onClick={stop(onDelete)}
+      >
+        Delete
+      </button>
+      {!archived && (
+        <button
+          className={styles.actionButton}
+          type="button"
+          disabled={pkg.attached_to !== null}
+          onClick={stop(onArchive)}
+        >
+          Archive
+        </button>
+      )}
+      {archived && !purged && (
+        <button
+          className={styles.actionButton}
+          type="button"
+          onClick={stop(onUnarchive)}
+        >
+          Unarchive
+        </button>
+      )}
+      {archived && !purged && (
+        <button
+          className={styles.deleteButton}
+          type="button"
+          disabled={!pkg.media_purgeable}
+          onClick={stop(onPurge)}
+        >
+          Purge media
+        </button>
+      )}
+      {purgeNote && <span className={styles.muted}>{purgeNote}</span>}
     </div>
   );
 }
@@ -247,13 +338,14 @@ function AdminPackages() {
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const handleAuthFailure = useCallback(() => {
     refreshSession();
   }, [refreshSession]);
 
   const refresh = useCallback(() => {
-    listPackages()
+    listPackages({ includeArchived: showArchived })
       .then((data) => {
         setPackages(data);
         setListError(null);
@@ -262,11 +354,58 @@ function AdminPackages() {
         if (err instanceof ApiError && err.status === 401) handleAuthFailure();
         else setListError("Could not load packages. Is the backend running?");
       });
-  }, [handleAuthFailure]);
+  }, [handleAuthFailure, showArchived]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // One refusal path for every lifecycle action: a 422 shows the server's
+  // reasons, which name the course, the records, or the date.
+  const runAction = async (action, title, failure) => {
+    try {
+      await action();
+      setResult(null);
+      refresh();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422 && err.data?.errors) {
+        setResult({ kind: "errors", title, errors: err.data.errors });
+      } else if (err instanceof ApiError && err.status === 401) {
+        handleAuthFailure();
+      } else {
+        setResult({ kind: "failure", message: failure });
+      }
+    }
+  };
+
+  const handleArchive = (pkg) =>
+    runAction(
+      () => archivePackage(pkg.id),
+      "Archive refused",
+      "Archive failed. Try again."
+    );
+
+  const handleUnarchive = (pkg) =>
+    runAction(
+      () => unarchivePackage(pkg.id),
+      "Unarchive refused",
+      "Unarchive failed. Try again."
+    );
+
+  const handlePurge = (pkg) => {
+    if (
+      !window.confirm(
+        `Purge the media of ${pkg.lesson_id} v${pkg.version}? The video and media files are deleted. Participant records and questions are kept.`
+      )
+    ) {
+      return;
+    }
+    runAction(
+      () => purgePackageMedia(pkg.id),
+      "Purge refused",
+      "Purge failed. Try again."
+    );
+  };
 
   const handleDelete = async (pkg) => {
     if (
@@ -276,20 +415,12 @@ function AdminPackages() {
     ) {
       return;
     }
-    try {
-      await deletePackage(pkg.id);
-      if (pkg.id === selectedId) setSelectedId(null);
-      setResult(null);
-      refresh();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 422 && err.data?.errors) {
-        setResult({ kind: "errors", errors: err.data.errors });
-      } else if (err instanceof ApiError && err.status === 401) {
-        handleAuthFailure();
-      } else {
-        setResult({ kind: "failure", message: "Delete failed. Try again." });
-      }
-    }
+    if (pkg.id === selectedId) setSelectedId(null);
+    await runAction(
+      () => deletePackage(pkg.id),
+      "Delete refused",
+      "Delete failed. Try again."
+    );
   };
 
   const handleUpload = async () => {
@@ -340,6 +471,15 @@ function AdminPackages() {
 
       <UploadResult result={result} />
 
+      <label className={styles.toggle}>
+        <input
+          type="checkbox"
+          checked={showArchived}
+          onChange={(event) => setShowArchived(event.target.checked)}
+        />{" "}
+        Show archived
+      </label>
+
       {listError && <div className={styles.errorPanel}>{listError}</div>}
       {!listError && packages === null && (
         <p className={styles.muted}>Loading packages…</p>
@@ -358,6 +498,7 @@ function AdminPackages() {
               <th>Field of study</th>
               <th>Level</th>
               <th>Attached to</th>
+              <th>Enrollments</th>
               <th>Ingested</th>
               <th></th>
             </tr>
@@ -371,27 +512,28 @@ function AdminPackages() {
                   setSelectedId(pkg.id === selectedId ? null : pkg.id)
                 }
               >
-                <td>{pkg.lesson_id}</td>
+                <td>
+                  {pkg.lesson_id}
+                  {pkg.archived_at !== null && (
+                    <span className={styles.tag}>Archived</span>
+                  )}
+                </td>
                 <td>v{pkg.version}</td>
                 <td>{pkg.title}</td>
                 <td>{formatDuration(pkg.duration_seconds)}</td>
                 <td>{pkg.field_of_study}</td>
                 <td>{pkg.knowledge_level}</td>
                 <td>{pkg.attached_to ?? "—"}</td>
+                <td>{pkg.enrollment_count}</td>
                 <td>{new Date(pkg.ingested_at).toLocaleString()}</td>
                 <td>
-                  {!pkg.attached_to && (
-                    <button
-                      className={styles.deleteButton}
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleDelete(pkg);
-                      }}
-                    >
-                      Delete
-                    </button>
-                  )}
+                  <PackageActions
+                    pkg={pkg}
+                    onDelete={handleDelete}
+                    onArchive={handleArchive}
+                    onUnarchive={handleUnarchive}
+                    onPurge={handlePurge}
+                  />
                 </td>
               </tr>
             ))}

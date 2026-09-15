@@ -80,6 +80,12 @@ function MyLesson() {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 404)
           setError("This lesson is not part of your enrollment.");
+        // 038: the version's video was purged after the retention period;
+        // the server's sentence says when.
+        else if (err instanceof ApiError && err.status === 410)
+          setError(
+            err.data?.errors?.[0] ?? "This lesson's materials were removed."
+          );
         else setError("The lesson could not be loaded.");
       });
     return () => {
@@ -150,6 +156,9 @@ function MyLesson() {
       {lesson && medium === "text" && (
         <>
           <h1 className={styles.lessonTitle}>{lesson.title}</h1>
+          {lesson.media_removed && (
+            <div className={styles.infoPanel}>{lesson.media_removed}</div>
+          )}
           <Reader
             lesson={lesson}
             gradeAnswer={gradeAnswer}

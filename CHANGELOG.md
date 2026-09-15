@@ -5196,3 +5196,214 @@ Shipped: 2026-09-15
   added here; `npm run build` succeeds; `sync_brand.py --check` passes
   (14 files in sync). `git status --porcelain` clean apart from this
   feature's files.
+
+## 038 — Package version lifecycle: archive, delete, purge media
+Shipped: 2026-09-15
+
+**What changed**
+- New `backend/app/services/package_lifecycle.py`. `usage_by_package`
+  finds every record that references a package version in a fixed handful
+  of queries: enrollment `package_versions` pins, `lesson_progress`,
+  `review_answers` and `attempt_answers` through the version's questions,
+  and attempts' `package_versions` lists, preview attempts included. From
+  that it derives `used`, `retain_until`, `deletable`, and
+  `media_purgeable`. None of these are stored.
+- **Delete refuses readably.** `delete_package`
+  (`backend/app/services/packages.py`) now asks the lifecycle first and
+  returns 422 naming the reason, e.g. "package GPT-06 v1 is referenced by
+  1 enrollment; archive it instead". The attached refusal is word for
+  word what it was. A referenced version never reaches the foreign key,
+  so the production 500 from 2026-09-15 (`lesson_progress_package_id_fkey`
+  on package 6) cannot recur.
+- **Archive / unarchive.** New `lesson_packages.archived_at`.
+  `POST /api/v1/admin/packages/{id}/archive` refuses while attached;
+  `/unarchive` clears it and refuses once media are purged.
+  `attach_package` and `update_version` (`backend/app/services/courses.py`)
+  refuse an archived version. The admin course page no longer offers an
+  archived version as "Update to vN". Re-uploading an archived version's
+  zip is still a no-op and now adds a warning that the version is
+  archived.
+- **Purge media.** New `lesson_packages.media_purged_at` and
+  `media_purged_by` (the admin's email, as a snapshot).
+  `POST /api/v1/admin/packages/{id}/purge-media` refuses unless the version
+  is used, archived, unattached, not already purged, and past
+  `retain_until`. On success it deletes every storage object the version
+  owns (`owned_keys`: the video, or a text package's media) and then
+  records the purge. No row is deleted.
+- Migration `c4e8a1d25f90` adds the three columns and two hand-written
+  CHECKs: `ck_lesson_packages_purge_names_admin` and
+  `ck_lesson_packages_purge_requires_archive`. Applied cleanly to local dev.
+- **After a purge:**
+  - The participant play route returns 410
+    `{"errors": ["Materials for this version were removed on {date} after the retention period."]}`
+    instead of a presigned URL to a missing object.
+  - The reader payload gains `media_removed` and serves no media, while
+    sections and questions still render.
+  - The audit bundle's `video.txt` or media `.txt` carries that sentence
+    and never tries to zip the file.
+  - The admin detail, transcript, and questions are unchanged.
+- `GET /api/v1/admin/packages` hides archived versions unless
+  `?include_archived=true`. The summary and detail both gain
+  `archived_at`, `media_purged_at`, `media_purged_by`,
+  `attached_course_codes`, `enrollment_count`, `preview_attempt_count`,
+  `retain_until`, `deletable`, and `media_purgeable`
+  (`annotate_lifecycle`).
+- Admin packages page: new "Show archived" toggle, an Enrollments column,
+  and an "Archived" tag. Each row has:
+  - Delete, enabled only when deletable.
+  - Archive or Unarchive.
+  - On an archived version, Purge media, enabled only when purgeable and
+    otherwise showing "Media can be purged after {date}".
+
+  Purge confirms with the lesson, the version, and "The video and media
+  files are deleted. Participant records and questions are kept." Every
+  lifecycle 422 now renders its reasons; "Delete failed. Try again." is
+  left only for unexpected errors.
+- `MyLesson.jsx` shows the 410 sentence for a video lesson and the
+  `media_removed` notice above a text lesson.
+- Docs:
+  - `docs/decisions/2026-09-15-package-version-lifecycle.md`.
+  - A new "Replace a lesson version (038)" section in `docs/OPERATIONS.md`.
+  - Two ROADMAP improvement notes.
+  - The retention docstrings in `backend/app/constants/retention.py` and
+    `backend/app/services/retention.py` now state the reversal.
+- Tests:
+  - `backend/tests/test_package_lifecycle.py` (22).
+  - `frontend/src/pages/AdminPackages/AdminPackages.test.jsx` (5).
+  - Two new cases in `MyLesson.test.jsx`.
+
+**Standards touched**
+- 9.02, "retain adequate documentation … for a minimum of five years",
+  read on printed page 22 of
+  `docs/2026-Statement-on-Standards-for-CPE-Programs.pdf` (PDF page 28).
+  A floor. Past it, one element may now be let go.
+- 9.02.2(7), "Program materials", read on printed page 24 (PDF page 30).
+  This is the element purge acts on: the stored files only, and only
+  after every record on the version is past the floor.
+- 9.02.2(1) (printed page 23) and 9.02.2(2)(ii) (printed page 23). Read
+  to confirm they are untouched: completion records, attempts, answers,
+  and progress are never deleted. The credit calculation rebuilds from
+  `courses.credit_breakdown` and the package rows, both kept.
+- The spec also cited 9.02.1(8). On reading, that list is for **group**
+  programs (printed page 23); superCPE's element is 9.02.2(7). It is not
+  used.
+- COMPLIANCE.md: one new 9.02 / 9.02.2(7) row that updates the 002, 010,
+  011, and 013 rows. The old rows are not edited.
+
+**Findings (spec item 1)**
+- **What references a package version.**
+  - FKs: `course_lessons.package_id` (RESTRICT) and
+    `lesson_progress.package_id` (RESTRICT). Also `questions`,
+    `package_sections`, `package_media`, and `glossary_terms`, which
+    cascade from the package.
+  - Through `questions` → `choices`: `attempt_answers.question_id` /
+    `choice_id` and `review_answers.question_id` / `choice_id`, which
+    have no ON DELETE and so block.
+  - Non-FK pins: `enrollments.package_versions` (JSONB
+    `{package_id: version}`) and `attempts.package_versions` (JSONB list).
+  - Today's `DELETE FROM lesson_packages` is blocked by `course_lessons`
+    and `lesson_progress` directly, and by `attempt_answers` and
+    `review_answers` through the question cascade. The pins block
+    nothing, but deleting a pinned version would orphan an enrollment.
+- **Admin preview.** The reader and player previews write nothing (031).
+  The preview *assessment* writes `attempts` rows with `preview_id` and
+  their `attempt_answers`, and those block a delete exactly as a
+  participant's do.
+- **Storage objects a package owns:** `video_key` (video kind) and each
+  `package_media.storage_key` (text kind), all under
+  `packages/<lesson_id>/v<n>/`. Nothing else is stored; manifest,
+  transcript, sections, and questions are rows. The old `delete_package`
+  already covered both.
+- **Bucket versioning.** `SpacesStorage.delete` is a plain `DeleteObject`
+  with no `VersionId`. With versioning Enabled (013) that writes a delete
+  marker, and the object becomes a noncurrent version. The one lifecycle
+  rule expires noncurrent versions only under `backups/`
+  (`BACKUP_NONCURRENT_DAYS`), so **a purge removes the current object but
+  reclaims no storage**, and the file stays recoverable per the Bucket
+  versioning runbook.
+- **Runtime key.** The bucket-scoped Limited Access key already deletes
+  in production every night: `backups.py` pruning calls the same
+  `storage.delete`. It can therefore delete, though no delete under
+  `packages/` has been exercised on Spaces.
+- **Audit bundle.** It references videos by storage key in `video.txt`
+  and media `.txt` files, and zips a video only with `include_video` and
+  only if `storage.exists`. For a missing key it silently wrote
+  "retrieve by key" for a key that could not be retrieved. It now names
+  the removal instead.
+- **Admin action log.** None exists. `audit_exports` logs bundle
+  generation only. The purge records who and when on the package row
+  itself, the same pattern as `recorded_by` on reviews and `voided_by` on
+  enrollments.
+
+**Decisions**
+- **Reversal of 011's "Nothing deletes at the boundary: retention is a
+  floor and superCPE keeps everything"** (`retention.py` docstrings), for
+  package media files only, as the spec asks (CLAUDE.md rule 7).
+- **Reversal of the "Nothing is ever deleted" claims in the 002 and 010
+  COMPLIANCE.md 9.02 rows**, for package media files only. Recorded as a
+  new row; the old rows stand as written.
+- **Purge removes files, never rows.** Deleting a used package's rows
+  would take the questions and choices that `attempt_answers` and
+  `review_answers` deliberately hold (010). That would delete the proof of
+  how a certificate was earned, which the operator's goal (stop keeping
+  stale videos) never required.
+- **Retention anchor.** For a completed enrollment it is `completed_at`.
+  Otherwise it is `expires_at`, the latest moment anything could have been
+  recorded on it, and later than any void. For a preview attempt it is
+  `submitted_at`, else `started_at`. A version's date is the latest
+  across all of them. It reuses `retain_until()` unchanged, Feb 29 rule
+  included.
+- **Preview attempts count as references.** Their answers hold the
+  questions just as participants' do, so the database refuses the delete
+  either way. Counting them turns the refusal into a readable one and
+  gives the sitting a retention anchor. As a result, a version someone
+  previewed the assessment on can be archived but not deleted. That
+  deviates from the spec's "referencing enrollments" definition, which
+  findings showed was incomplete.
+- **Order inside a purge: files first, then the record.** If storage
+  fails part-way, nothing is recorded, and re-running the purge finishes
+  the job, since deleting a missing key succeeds on both backends.
+  Recording first could claim a purge whose files still exist.
+- **Purged means unarchivable.** The CHECK requires `archived_at` for a
+  purge, and a purged version going back into a course would serve
+  lessons with no video.
+- **Refusal texts are distinct per state.** "delete it instead" means
+  unused, "archive it instead" means used, and the retention refusal names
+  the date. The spec's example wording was adopted verbatim.
+- **Archive refuses an attached version but not a published course's
+  history.** What matters is whether a course lesson points at it;
+  enrollments pinned to it keep being served, because the pinned lookups
+  never consult `archived_at`.
+- The play route's 410 uses the house `{"errors": [...]}` shape, like its
+  409 for text lessons.
+
+**Known gaps**
+- **A purge reclaims no storage** while bucket versioning keeps the
+  noncurrent version under `packages/` (findings above). Reclaiming it
+  needs a deliberate lifecycle or version-delete decision with an All
+  Permissions key. Recorded as a ROADMAP improvement note; bucket
+  configuration was not changed, per the spec.
+- **`usage_by_package` scans every enrollment and attempt** on each
+  packages-list request. Fine at launch scale; recorded as a ROADMAP note.
+- **Local walkthrough (acceptance 3) was run as tests, not in a browser.**
+  `test_package_lifecycle.py` drives the same sequence through the service
+  and API with a frozen clock: v1 and v2, a participant on v1, delete
+  refused, archive, purge refused before the date and allowed after, and
+  the completion, attempts, and answers intact. The page itself was
+  checked by vitest, not by clicking.
+- Not yet run by the operator: deploy (migration `c4e8a1d25f90`), then
+  archive GPT-06 v1 on supercpe.com; a browser pass of the packages page
+  at desktop and phone width; a real Spaces purge to see the delete-marker
+  behaviour for itself.
+- GPT-06 v1 (package 6) in production is untouched. It is test data, and
+  after deploy it can be archived; it cannot be purged until its
+  `retain_until`.
+- Verified in this session:
+  - Backend `pytest`: 655 passed.
+  - Frontend vitest: 181 passed in 28 files.
+  - `pyflakes app tests` reports the same 10 pre-existing unused imports,
+    none in a file touched here.
+  - `oxlint` exits 0 with the same 11 pre-existing warnings.
+  - `npm run build` succeeds.
+  - `sync_brand.py --check` passes (14 files in sync).
+  - `git status --porcelain` shows only this feature's files.

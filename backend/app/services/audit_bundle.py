@@ -30,6 +30,7 @@ from app.models.enrollment import Enrollment, ReviewAnswer
 from app.models.lesson_package import LessonPackage
 from app.services import credit, development
 from app.services import enrollments as enrollments_service
+from app.services import package_lifecycle
 from app.services import evaluations as evaluations_service
 from app.services import policies as policies_service
 from app.services import sponsor as sponsor_service
@@ -512,26 +513,34 @@ def _material_files(
             files[f"{prefix}/word-count.txt"] = _word_count_text(
                 package
             ).encode("utf-8")
+            removed = package_lifecycle.media_removed_message(package)
             for item in package.media:
                 files[f"{prefix}/{item.file}.txt"] = (
                     f"storage_key: {item.storage_key}\n"
                     f"duration_seconds: {item.duration_seconds}\n"
                     f"after_section: {item.after_section}\n"
                     "av_is_additional_learning: true (7.02.7)\n"
-                    "video omitted; retrieve by key\n"
+                    + (
+                        f"{removed}\n"
+                        if removed
+                        else "video omitted; retrieve by key\n"
+                    )
                 ).encode("utf-8")
-                if include_video and storage.exists(item.storage_key):
+                if removed is None and include_video and storage.exists(
+                    item.storage_key
+                ):
                     with storage.open(item.storage_key) as video:
                         files[f"{prefix}/{item.file}"] = video.read()
             continue
         files[f"{prefix}/transcript.md"] = package.transcript.encode("utf-8")
+        removed = package_lifecycle.media_removed_message(package)
         files[f"{prefix}/video.txt"] = (
             f"storage_key: {package.video_key}\n"
             f"content_hash: {package.content_hash}\n"
             f"duration_seconds: {package.duration_seconds}\n"
-            "video omitted; retrieve by key\n"
+            + (f"{removed}\n" if removed else "video omitted; retrieve by key\n")
         ).encode("utf-8")
-        if include_video and storage.exists(package.video_key):
+        if removed is None and include_video and storage.exists(package.video_key):
             with storage.open(package.video_key) as video:
                 files[f"{prefix}/video.mp4"] = video.read()
 

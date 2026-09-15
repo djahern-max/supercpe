@@ -179,9 +179,53 @@
   cursor: pointer;
 }
 
-.deleteButton:hover {
+.deleteButton:hover:not(:disabled) {
   border-color: var(--color-error);
   color: var(--color-error);
+}
+
+.deleteButton:disabled,
+.actionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actionButton {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.actionButton:hover:not(:disabled) {
+  border-color: var(--color-text);
+}
+
+/* 038: the lifecycle actions wrap under each other on a narrow table. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-text-muted);
+}
+
+.tag {
+  margin-left: var(--space-xs);
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
 }
 
 .linkButton {

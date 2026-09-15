@@ -9,6 +9,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../api/client";
 import MyLesson from "./MyLesson.jsx";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -192,5 +193,29 @@ describe("MyLesson breadcrumb (037)", () => {
     api.getMyEnrollment.mockRejectedValue(new Error("down"));
     await render(READ_PACKAGE_ID);
     expect(crumb()).toBe("My courses");
+  });
+});
+
+describe("MyLesson after a purge (038)", () => {
+  const removed =
+    "Materials for this version were removed on 2033-03-01 after the retention period.";
+
+  it("shows the server's sentence when a video lesson's file is gone", async () => {
+    api.getMyPlayLesson.mockRejectedValue(
+      new ApiError(410, { errors: [removed] })
+    );
+    await render(PLAY_PACKAGE_ID);
+    expect(container.textContent).toContain(removed);
+    expect(container.textContent).not.toContain("could not be loaded");
+  });
+
+  it("keeps the guide and says the media were removed", async () => {
+    api.getMyReadLesson.mockResolvedValue({
+      ...readPayload(),
+      media_removed: removed,
+    });
+    await render(READ_PACKAGE_ID);
+    expect(container.textContent).toContain(removed);
+    expect(container.textContent).toContain("Read it in order.");
   });
 });

@@ -68,6 +68,8 @@ class ReaderLessonOut(BaseModel):
     sections: list[ReaderSectionOut]
     media: list[ReaderMediaOut]
     questions: list[ReaderQuestionOut]
+    # 038: the "materials removed" sentence when the media were purged.
+    media_removed: str | None = None
 
 
 class SearchHitOut(BaseModel):

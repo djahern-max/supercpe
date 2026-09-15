@@ -287,6 +287,15 @@ of scope goes here as a one-liner, so it is not lost and not built early.
   after expiry (`source="renewal"`, derived eligibility, no payment row);
   checkout is for a first purchase only, narrowing 018. 027's exhausted
   wording stays for any future finite policy.
+- 038 purge removes a package version's media only as the *current*
+  object: with bucket versioning on (013), the bytes stay under
+  `packages/` as a noncurrent version that no lifecycle rule expires, so a
+  purge reclaims no storage. Reclaiming it needs a deliberate lifecycle or
+  version-delete decision for purged keys (All Permissions key, like
+  `bucket-setup`); not built.
+- `package_lifecycle.usage_by_package` scans every enrollment and attempt
+  per packages-list request. Fine at launch scale; an index on the pins
+  (or a join table) is the fix if the list ever gets slow.
 
 ## Phase D — Text-first catalog
 Decided 2026-09-01, during the first end-to-end authoring run

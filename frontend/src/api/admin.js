@@ -13,8 +13,10 @@ export function uploadPackage(file) {
   return request("/api/v1/admin/packages", { method: "POST", body });
 }
 
-export function listPackages() {
-  return request("/api/v1/admin/packages");
+export function listPackages({ includeArchived = false } = {}) {
+  return request(
+    `/api/v1/admin/packages${includeArchived ? "?include_archived=true" : ""}`
+  );
 }
 
 export function getPackage(id) {
@@ -27,6 +29,20 @@ export function getTranscript(id) {
 
 export function deletePackage(id) {
   return request(`/api/v1/admin/packages/${id}`, { method: "DELETE" });
+}
+
+export function archivePackage(id) {
+  return request(`/api/v1/admin/packages/${id}/archive`, { method: "POST" });
+}
+
+export function unarchivePackage(id) {
+  return request(`/api/v1/admin/packages/${id}/unarchive`, { method: "POST" });
+}
+
+export function purgePackageMedia(id) {
+  return request(`/api/v1/admin/packages/${id}/purge-media`, {
+    method: "POST",
+  });
 }
 
 export function listCourses() {

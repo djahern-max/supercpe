@@ -19,6 +19,15 @@
   text-decoration: underline;
 }
 
+/* 038: a text lesson whose supplemental media were purged after retention. */
+.infoPanel {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
 .errorPanel {
   background: var(--color-error-bg);
   color: var(--color-error);

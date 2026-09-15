@@ -62,6 +62,8 @@ def _lesson_items(db: Session, course: Course) -> list[CourseLessonItem]:
         latest = db.scalar(
             select(LessonPackage)
             .where(LessonPackage.lesson_id == lesson.package.lesson_id)
+            # 038: an archived version is not offered as the update.
+            .where(LessonPackage.archived_at.is_(None))
             .order_by(LessonPackage.version.desc())
             .limit(1)
         )

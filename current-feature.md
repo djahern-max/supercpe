@@ -1,120 +1,216 @@
-# Feature 037 — Reader position indicator
+# Feature 038 — Package version lifecycle: archive, delete, purge media
 
 ## Goal
 
-A participant in the reader can't tell where they are in the course. The reader
-has a "START HERE" label with a bar under it that appears to be a progress bar, but
-the bar shows no progress. The breadcrumb reads the placeholders
-`My courses / course / lesson` instead of real names. The lesson number appears only
-in the URL.
+Lessons get re-exported as they improve (GPT-06 was the first real case,
+2026-09-15). Every re-upload creates a new package version, and the old
+versions pile up on the admin packages page forever. Today the only way to
+remove one is Delete, and it fails badly: deleting a version that any
+enrollment touched fails in Postgres (`lesson_progress_package_id_fkey`,
+then `attempt_answers` / `review_answers` through `questions`). The page
+gets a 500 and shows "Delete failed. Try again."
 
-Add a small, quiet indicator: **Lesson 4 of 6 · Section 2 of 7**, a progress bar
-that actually fills, and a breadcrumb with real names.
+Give each package version a lifecycle the admin can see and act on:
+
+- **Unused** (no enrollment ever pinned it, not attached): delete outright,
+  as today, but with a readable refusal when it isn't unused.
+- **Used, within retention**: **archive**. It leaves the packages list and
+  can't be attached, but every row and stored file stays.
+- **Used, past retention**: **purge media**. The stored video and media
+  files are deleted from storage. The database rows (manifest, transcript,
+  sections, questions, choices) and every participant record stay.
+
+Nothing in this feature deletes an enrollment, attempt, answer, progress
+row, completion, or certificate. Purging media is the only new destructive
+act, and only after the retention date has passed.
 
 ## Standards touched
 
-- **4.05.3(4)** — self-study instructional materials must include "instructions to
-  participants regarding navigation through the course, course components, and
-  course completion." A position indicator supports this. It is not a substitute
-  for the written navigation instructions, which stay as they are.
-- No change to gating, credit, or completion rules.
+Read each paragraph in `docs/2026-Statement-on-Standards-for-CPE-Programs.pdf`
+before writing code and name the printed page in the changelog (the
+2026-09-13 brand-assets decision read 9.02 / 9.02.2 on printed page 22;
+confirm it, don't copy it).
+
+- **9.02**: sponsors keep documentation for a minimum of five years.
+  This feature starts acting on the far side of that minimum for one
+  element only.
+- **9.02.2(7) / 9.02.1(8)**: program materials. The stored video/media
+  files are what purge removes, and only once every participant record
+  that references the version is past `RETENTION_YEARS`.
+- **9.02.2(1)**: completion records. Untouched: rows are never deleted,
+  and the manifest, transcript, and questions stay so the record can still
+  show what was asked.
+
+## Reversals (CLAUDE.md rule 7)
+
+This spec asks for the following, and the changelog must name each as a
+reversal of the specific earlier decision:
+
+1. `backend/app/constants/retention.py` and
+   `backend/app/services/retention.py` docstrings: "nothing enforces
+   deletion after it … superCPE keeps everything." Reversed **for package
+   media files only**: past the date, an admin may purge them.
+2. COMPLIANCE.md 9.02 rows from 002 and 010 ("Nothing is ever deleted",
+   packages FK RESTRICT). Add a new row saying what changed; never edit the
+   old rows (append-only, like the 2026-08-30 corrections).
+
+Not reversed: "Participants keep the package versions they enrolled on"
+holds for the whole retention period; accounts, enrollments, attempts,
+answers, progress, completions, and certificates are still never deleted.
+
+Write `docs/decisions/2026-09-15-package-version-lifecycle.md` recording
+the three states, the retention anchor below, and why purge removes files
+but keeps rows.
+
+## Definitions (derived, never stored as booleans)
+
+For a package version P:
+
+- **referencing enrollments**: enrollments whose `package_versions` pins
+  P, plus any enrollment with an attempt whose `package_versions` lists P,
+  or with `lesson_progress` / `review_answers` on P. Findings confirm the
+  complete list, including whether admin preview writes any of these.
+- **used**: at least one referencing enrollment exists.
+- **attached**: a `course_lessons` row points at P.
+- **archived**: `archived_at IS NOT NULL`.
+- **retain_until(P)**: the latest, across referencing enrollments, of
+  `retain_until(anchor)`, where anchor is the completion's `completed_at`
+  if the enrollment completed, else the enrollment's `expires_at`.
+  `null` when P is unused.
+- **deletable**: not used and not attached.
+- **media purgeable**: used, archived, not attached, `retain_until(P)` is
+  in the past, and media not already purged.
+
+`RETENTION_YEARS` and `retain_until()` are reused, not duplicated.
 
 ## In scope
 
 1. **Findings first.** Before changing anything, report:
-   - What the "START HERE" label and bar are. Is it a section-group heading, the
-     027 stepper, or a progress bar? What value drives it, and why does it show
-     empty?
-   - Where the breadcrumb gets `course` and `lesson`, and why real names don't
-     appear.
-   - What the reader payload already provides: course title, lesson title, lesson
-     position and count, section position and count, and completed or unlocked
-     state.
-   - Whether the REFERENCE group (and any similar non-gated group) is part of the
-     gated section sequence.
-   - Why each section shows its title twice (the eyebrow "HOW THIS COURSE WORKS"
-     plus the heading "How this course works"). The lesson Markdown's own H1 ("Verifying the
-     output") also repeats the page title. This item is **findings only**: report it,
-     don't fix it.
-2. **Position line** under the page title, in small muted text:
-   `Lesson {n} of {m} · Section {i} of {k}`.
-   - `n`/`m` are published lessons in the enrolled course version.
-   - `i`/`k` are positions in this lesson's gated section sequence. Reference sections
-     are excluded from `k` unless findings show they are gated.
-   - Values come from the API, never parsed from the URL.
-3. **Progress bar.** Its fill is the share of this lesson's gated sections the
-   participant has completed. A completed section is one whose review gate has been
-   passed, as the backend already defines it. The bar needs an accessible label,
-   e.g. `aria-label="2 of 7 sections complete"`. The fill must match server state
-   after a reload. If findings show "START HERE" is a group heading and not a
-   progress bar, keep the heading and add the bar next to the position line.
-4. **Breadcrumb.** Replace the placeholders with `My courses / {course title} /
-   Lesson {n}: {lesson title}`, and link the course crumb to the course page.
-5. **API.** If the reader payload lacks any of the values above, add them to the
-   existing reader response. Don't add a new endpoint.
+   - Every table and JSONB column that references a package version
+     (FKs and non-FK pins), and which of them block `DELETE FROM
+     lesson_packages` today.
+   - Whether admin preview of a lesson writes progress or answers.
+   - What storage objects a package owns (`video_key`, `package_media`,
+     anything else under `packages/`) and whether `storage.delete` covers
+     all of them.
+   - With bucket versioning on (013), what `storage.delete` actually does
+     under `packages/`: a delete marker, with the bytes kept as a
+     noncurrent version that the lifecycle rule never expires. State
+     plainly whether purge reclaims storage or only removes the current
+     object.
+   - Whether the runtime Limited Access key can delete under `packages/`.
+   - What the audit bundle references by storage key, and what it does
+     when that key no longer exists.
+   - Whether an admin action log exists that purge should write to.
+2. **Delete refuses readably.** `delete_package` checks used and attached
+   before deleting and returns 422 `{"errors": [...]}` naming why (for
+   example, "GPT-06 v1 is referenced by 1 enrollment; archive it
+   instead"). The endpoint never 500s on a referenced version; a test
+   proves the FK path is unreachable.
+3. **Archive / unarchive.** `archived_at` (timestamp) on
+   `lesson_packages`, with a migration. `POST
+   /api/v1/admin/packages/{id}/archive` refuses while attached;
+   `/unarchive` clears it. Attaching or `update-version` to an archived
+   package is refused with 422. Re-uploading a zip whose hash matches an
+   archived version stays a no-op and reports that the version is archived.
+4. **Purge media.** `POST /api/v1/admin/packages/{id}/purge-media` refuses
+   unless media purgeable (422 with the reason and the date). On success
+   it deletes every storage object the package owns and records
+   `media_purged_at` and `media_purged_by` (account email snapshot, like
+   `recorded_by` on reviews). A CHECK constraint ties the two together.
+   Rows are not deleted. Purge is idempotent-refused: a second call is 422.
+5. **After purge, degrade, don't break.** Any participant, admin, or
+   audit-bundle path that would fetch a purged object says "materials for
+   this version were removed on {date} after the retention period" instead
+   of erroring. Transcript, questions, and credit breakdown still render.
+6. **List payload.** `GET /api/v1/admin/packages` excludes archived by
+   default; `?include_archived=true` includes them. Each summary gains
+   `archived_at`, `enrollment_count`, `attached_course_codes`,
+   `retain_until`, `deletable`, `media_purgeable`, `media_purged_at`.
+7. **Admin packages page.** A "Show archived" toggle. Per row: Delete
+   (enabled only when deletable), Archive / Unarchive, and Purge media
+   (shown only when archived; enabled only when purgeable, otherwise shows
+   "Media can be purged after {retain_until}"). Purge confirms with the
+   lesson id, version, and the sentence "The video and media files are
+   deleted. Participant records and questions are kept." The existing
+   generic "Delete failed" message stays only for genuinely unexpected
+   errors; 422 reasons render as errors.
 
 ## Out of scope
 
-- Fixing the duplicate headings (findings only; that becomes a later feature).
-- Course-level progress on the My courses page.
-- Any change to gating, unlock rules, the qualified assessment, or credit math.
-- Changes to the course package contract or video-tool.
-- Visual redesign of the reader beyond the indicator, bar, and breadcrumb.
-
-## Locators
-
-Report actual paths in the findings. Starting points: the reader page and its
-stepper/contents components under `frontend/src/` (023 reader, 027 stepper), and
-the reader route and schema under `backend/app/`.
+- Deleting any participant record, or any package row that is used.
+- Automatic or scheduled purging. Purge is always one admin clicking one
+  version.
+- Changing the bucket lifecycle rule to expire noncurrent `packages/`
+  versions. If findings show purge leaves the bytes as noncurrent versions,
+  record it under Known gaps and in ROADMAP improvement notes; do not
+  change bucket configuration.
+- Any change to the course package contract, video-tool, credit math,
+  gating, or certificates.
+- Cleaning up package 6 (GPT-06 v1) in production. It's test data; the
+  operator handles it.
 
 ## Data model
 
-None expected. Section completion state should already exist for gating. If it
-doesn't, stop and flag it; don't add a table.
-
-## Tasks
-
-1. Findings report.
-2. Backend: extend the reader payload with course and lesson titles and all
-   position and progress values (if missing).
-3. Frontend: position line, working progress bar, real breadcrumb.
-4. COMPLIANCE.md row.
+`lesson_packages`: `archived_at timestamptz null`, `media_purged_at
+timestamptz null`, `media_purged_by text null`. CHECK: `media_purged_at`
+and `media_purged_by` are both null or both set; CHECK: `media_purged_at`
+requires `archived_at`. Hand-written in the Alembic migration
+(autogenerate won't write CHECKs). No new tables.
 
 ## Tests
 
 Backend:
-- For lesson 4 of 6 with 7 gated sections and 2 completed, the reader payload returns
-  `lesson_position=4`, `lesson_count=6`, `section_count=7`, `sections_completed=2`
-  (use the names that fit the existing schema).
-- Reference sections are excluded from `section_count` (or included, if findings
-  show they are gated; the test should match whichever is true).
-- A participant can't use the payload to learn anything about another participant's
-  progress.
+- Delete of an unused, unattached version succeeds and removes its storage
+  objects (stubbed storage).
+- Delete of an attached version, and of a version pinned by an enrollment
+  with no progress, and of one with progress/answers/attempts: each 422
+  with a reason, never 500, rows unchanged.
+- Archive refuses while attached; archived versions are excluded from the
+  list by default and included with the flag; attach and update-version to
+  an archived version 422.
+- `retain_until(P)`: completed enrollment anchors on `completed_at`;
+  incomplete anchors on `expires_at`; with several enrollments the latest
+  wins; Feb 29 behaves as `retain_until()` already does.
+- Purge refuses when not archived, when attached, when unused (delete
+  instead), and one day before `retain_until`; succeeds one day after
+  (frozen clock); deletes every owned object; sets both columns; leaves
+  every enrollment, attempt, answer, progress, completion, question, and
+  section row intact; a second purge 422s.
+- After purge: the reader/player, admin package view, and audit bundle
+  return the "materials removed" state, not an error.
+- Constraint tests for both CHECKs.
 
 Frontend:
-- Renders `Lesson 4 of 6 · Section 2 of 7` from a mocked payload.
-- The bar's fill and aria-label reflect completed sections.
-- Selecting a different section updates the section position.
-- Completing a section's review gate advances the bar without a reload.
-- The breadcrumb shows course and lesson titles, and no `course` or `lesson`
-  placeholder text.
+- Show archived toggle changes the request.
+- Button enablement follows `deletable` / `media_purgeable` from a mocked
+  payload, with the "after {date}" text.
+- A 422 on delete renders the server's reasons, not "Delete failed".
+- Purge confirm text names the lesson and version.
 
 ## COMPLIANCE.md rows
 
-- 4.05.3(4): the reader shows the participant's lesson and section position and
-  section progress, supplementing the course's navigation instructions. Cite 037.
+- 9.02 / 9.02.2(7): new row citing 038. Package media may be purged by an
+  admin only after every referencing participant record is past
+  `RETENTION_YEARS`; package rows and all participant records are retained
+  regardless; name the reversal of the 002/010 "nothing is ever deleted"
+  rows for media files. Gap: whatever findings say about noncurrent
+  versions in the bucket.
 
 ## Acceptance
 
-1. Findings report delivered, including the duplicate-heading finding.
-2. All tests pass; pyflakes, oxlint, and both suites are green.
-3. Locally, on lesson 4 of a 6-lesson course, the reader shows the position line,
-   a bar that fills as review gates are passed, and a real breadcrumb.
-4. After a reload, the position and bar match server state.
-5. Operator-only (list under Known gaps if not run): deploy, then a browser check
-   on supercpe.com.
+1. Findings report delivered, including the bucket-versioning answer.
+2. All tests pass; pyflakes, oxlint, both suites, and `sync_brand.py
+   --check` are green; `git status --porcelain` shows only this feature.
+3. Locally: upload v1 and v2 of a lesson, enroll a test participant on v1,
+   detach v1. Delete is refused with a readable reason; Archive works; Purge
+   is disabled with the date. With the clock moved past `retain_until`,
+   Purge removes the files and the participant's completion and certificate
+   still render.
+4. Operator-only (list under Known gaps if not run): deploy, then archive
+   GPT-06 v1 on supercpe.com.
 
 ## When done
 
-Append CHANGELOG entry 037 in the existing format (What changed / Standards
-touched / Decisions / Known gaps). Put the duplicate-heading finding under Known gaps.
+Append CHANGELOG entry 038 in the existing format. Name both reversals under
+Decisions. Put the bucket noncurrent-version finding under Known gaps.

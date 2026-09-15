@@ -349,6 +349,18 @@ def _check_course_code(course: Course, package: LessonPackage) -> None:
         )
 
 
+def _refuse_if_archived(package: LessonPackage) -> None:
+    """038: an archived version is superseded and out of circulation; it
+    goes back into a course only by being unarchived first."""
+    if package.archived_at is not None:
+        raise CourseRuleViolation(
+            [
+                f"package {package.lesson_id} v{package.version} is archived; "
+                "unarchive it before attaching it"
+            ]
+        )
+
+
 def attach_package(
     db: Session, course: Course, package_id: int, position: int | None = None
 ) -> Course:
@@ -356,6 +368,7 @@ def attach_package(
     package = db.get(LessonPackage, package_id)
     if package is None:
         raise CourseRuleViolation([f"package {package_id} does not exist"])
+    _refuse_if_archived(package)
 
     attached = db.scalar(
         select(CourseLesson).where(CourseLesson.package_id == package.id)
@@ -483,6 +496,7 @@ def update_version(
     new = db.get(LessonPackage, new_package_id)
     if new is None:
         raise CourseRuleViolation([f"package {new_package_id} does not exist"])
+    _refuse_if_archived(new)
     old = lesson.package
     if new.lesson_id != old.lesson_id:
         raise CourseRuleViolation(

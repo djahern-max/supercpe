@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_role
 from app.db import get_db
+from app.models.account import Account
 from app.schemas.package import (
     IngestResponse,
     PackageDetail,
@@ -15,7 +16,7 @@ from app.schemas.package import (
     PackageSummary,
     ValidationErrors,
 )
-from app.services import packages
+from app.services import package_lifecycle, packages
 from app.services.courses import CourseRuleViolation
 from app.storage import Storage, get_storage
 
@@ -44,12 +45,20 @@ def upload_package(
             return JSONResponse(status_code=422, content={"errors": result})
 
         package, created = packages.ingest(db, storage, result)
+        warnings = list(result.warnings)
+        if package.archived_at is not None:
+            # 038: re-uploading an archived version's zip changes nothing;
+            # say so, or the admin looks for it in a list that hides it.
+            warnings.append(
+                f"{package.lesson_id} v{package.version} is archived; "
+                "unarchive it to attach it to a course"
+            )
         response = IngestResponse(
-            package=_detail(package),
+            package=_detail(db, package),
             created=created,
             # An idempotent re-upload re-reports the same warnings: they
             # describe the package, not the act of uploading it.
-            warnings=result.warnings,
+            warnings=warnings,
         )
         return JSONResponse(
             status_code=201 if created else 200,
@@ -60,12 +69,13 @@ def upload_package(
 
 
 @router.get("/packages", response_model=list[PackageSummary])
-def list_packages(db: Session = Depends(get_db)):
-    return packages.list_packages(db)
+def list_packages(include_archived: bool = False, db: Session = Depends(get_db)):
+    return packages.list_packages(db, include_archived=include_archived)
 
 
-def _detail(package) -> PackageDetail:
-    """The stored row plus its derived human summary."""
+def _detail(db: Session, package) -> PackageDetail:
+    """The stored row plus its derived human summary and lifecycle."""
+    packages.annotate_lifecycle(db, [package])
     detail = PackageDetail.model_validate(package)
     detail.overview = PackageOverview(**packages.overview(package))
     return detail
@@ -76,7 +86,7 @@ def get_package(package_id: int, db: Session = Depends(get_db)):
     package = packages.get_package(db, package_id)
     if package is None:
         raise HTTPException(status_code=404, detail="Package not found")
-    return _detail(package)
+    return _detail(db, package)
 
 
 @router.get("/packages/{package_id}/transcript")
@@ -127,3 +137,59 @@ def delete_package(
         return JSONResponse(status_code=422, content={"errors": violation.errors})
     if not deleted:
         raise HTTPException(status_code=404, detail="Package not found")
+
+
+def _get_or_404(db: Session, package_id: int):
+    package = packages.get_package(db, package_id)
+    if package is None:
+        raise HTTPException(status_code=404, detail="Package not found")
+    return package
+
+
+@router.post(
+    "/packages/{package_id}/archive",
+    response_model=PackageDetail,
+    responses={422: {"model": ValidationErrors}},
+)
+def archive_package(package_id: int, db: Session = Depends(get_db)):
+    package = _get_or_404(db, package_id)
+    try:
+        package_lifecycle.archive(db, package)
+    except CourseRuleViolation as violation:
+        return JSONResponse(status_code=422, content={"errors": violation.errors})
+    return _detail(db, package)
+
+
+@router.post(
+    "/packages/{package_id}/unarchive",
+    response_model=PackageDetail,
+    responses={422: {"model": ValidationErrors}},
+)
+def unarchive_package(package_id: int, db: Session = Depends(get_db)):
+    package = _get_or_404(db, package_id)
+    try:
+        package_lifecycle.unarchive(db, package)
+    except CourseRuleViolation as violation:
+        return JSONResponse(status_code=422, content={"errors": violation.errors})
+    return _detail(db, package)
+
+
+@router.post(
+    "/packages/{package_id}/purge-media",
+    response_model=PackageDetail,
+    responses={422: {"model": ValidationErrors}},
+)
+def purge_package_media(
+    package_id: int,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+    account: Account = Depends(require_role("admin")),
+):
+    """Deletes the version's stored video and media files once every record
+    referencing it is past retention (038). Rows are never deleted."""
+    package = _get_or_404(db, package_id)
+    try:
+        package_lifecycle.purge_media(db, storage, package, account)
+    except CourseRuleViolation as violation:
+        return JSONResponse(status_code=422, content={"errors": violation.errors})
+    return _detail(db, package)

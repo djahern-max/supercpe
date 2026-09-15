@@ -20,6 +20,21 @@ class PackageSummary(BaseModel):
     course_code: str | None = None
     # Course code of the attaching course; set by list_packages only.
     attached_to: str | None = None
+    # 038: the version's lifecycle. `archived_at` and `media_purged_at`
+    # are stored; the rest is derived from the records that reference the
+    # version (`packages.annotate_lifecycle`) and set on every list and
+    # detail read.
+    archived_at: datetime | None = None
+    media_purged_at: datetime | None = None
+    media_purged_by: str | None = None
+    attached_course_codes: list[str] = []
+    enrollment_count: int = 0
+    preview_attempt_count: int = 0
+    # The latest 9.02 retention date among the records referencing the
+    # version; null when nothing references it.
+    retain_until: datetime | None = None
+    deletable: bool = False
+    media_purgeable: bool = False
 
 
 class PackageSectionOut(BaseModel):

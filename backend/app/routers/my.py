@@ -65,6 +65,7 @@ from app.services import (
     delivery,
     enrollments,
     evaluations,
+    package_lifecycle,
     reader,
     search,
 )
@@ -251,7 +252,7 @@ def enrollment_detail(
 @router.get(
     "/enrollments/{enrollment_id}/lessons/{package_id}/play",
     response_model=MyPlayLesson,
-    responses={409: {"model": ValidationErrors}},
+    responses={409: {"model": ValidationErrors}, 410: {"model": ValidationErrors}},
 )
 def play_lesson(
     enrollment_id: int,
@@ -268,6 +269,11 @@ def play_lesson(
     package = _get_pinned_package_or_404(db, enrollment, package_id)
     if package.is_text:
         return player_router.no_video_response()
+    removed = package_lifecycle.media_removed_message(package)
+    if removed is not None:
+        # 038: the video file was purged after retention. 410 with the
+        # sentence, never a presigned URL to an object that is gone.
+        return JSONResponse(status_code=410, content={"errors": [removed]})
     progress = enrollments.progress(db, enrollment)
     furthest = next(
         (

@@ -423,6 +423,29 @@ course) arrives the same way it did in development:
    development's fictitious reviewer never leaves the laptop.
 5. Publish when readiness reports no block findings.
 
+## Replace a lesson version (038)
+
+A re-exported lesson zip uploads as a new version beside the old one.
+To put it on a course: unpublish, **Update to vN** on the course page
+(or detach the old version and attach the new one), record the re-review,
+publish. Participants already enrolled keep the version they enrolled on.
+
+The old version then sits unattached on `/admin/packages`:
+
+- **Delete** is enabled only if nothing ever referenced it — no
+  enrollment, progress, review answer, or assessment attempt (preview
+  sittings count). Otherwise the page shows why it refused.
+- **Archive** hides it from the list (tick "Show archived" to see it) and
+  stops it being attached. Nothing is removed. **Unarchive** undoes it.
+- **Purge media** appears on an archived version and is enabled only after
+  the retention date shown ("Media can be purged after …") — five years
+  after the last record on that version. It deletes the video/media files;
+  rows and participant records stay. It cannot be undone from the app.
+
+With bucket versioning on, a purged file is still recoverable per Bucket
+versioning above (it sits under a delete marker), and it still takes up
+storage.
+
 ## The waiting list (015)
 
 While `site_mode` is `coming_soon`, the public site is the landing page

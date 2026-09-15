@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from app.constants.package_kinds import ROLE_BODY, UNGATED_ROLES
 from app.constants.storage import VIDEO_URL_SECONDS
 from app.models.lesson_package import LessonPackage
+from app.services import package_lifecycle
 from app.services import questions as questions_service
 from app.services.markdown import strip_html_comments
 from app.storage import Storage
@@ -98,6 +99,9 @@ class ReaderLesson:
     sections: list[ReaderSection] = field(default_factory=list)
     media: list[ReaderMedia] = field(default_factory=list)
     questions: list[ReaderQuestion] = field(default_factory=list)
+    # 038: set when the version's supplemental media files were purged
+    # after retention; `media` is then empty and this sentence says why.
+    media_removed: str | None = None
 
 
 def build(
@@ -201,7 +205,9 @@ def build(
             )
             for item in package.media
             if item.after_section in unlocked
+            and package.media_purged_at is None
         ],
+        media_removed=package_lifecycle.media_removed_message(package),
         # A question is served with the section it follows, so a question
         # behind a closed gate is not served either — its stem is part of
         # the material the gate is withholding.

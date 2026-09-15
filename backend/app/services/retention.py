@@ -2,7 +2,10 @@
 
 `retain_until` exists so the admin completions table and the audit bundle
 can state until when each record must be kept. Nothing deletes at the
-boundary: retention is a floor and superCPE keeps everything.
+boundary automatically: retention is a floor. The one act it now permits is
+038's admin purge of an archived package version's media files, once every
+record referencing the version is past its date
+(`services.package_lifecycle`); rows are never deleted.
 """
 
 from datetime import datetime

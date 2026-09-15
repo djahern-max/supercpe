@@ -35,7 +35,6 @@ from app.constants.knowledge_levels import (
     LEVELS_REQUIRING_PREREQUISITES,
     PREREQUISITES_NONE,
 )
-from app.models.course import CourseLesson
 from app.models.lesson_package import (
     GlossaryTerm,
     LessonPackage,
@@ -43,6 +42,7 @@ from app.models.lesson_package import (
     PackageSection,
 )
 from app.services import ffprobe
+from app.services import package_lifecycle
 from app.services import questions as questions_service
 from app.services import word_count as word_count_service
 from app.services.courses import CourseRuleViolation
@@ -1360,21 +1360,38 @@ def overview(package: LessonPackage) -> dict:
     }
 
 
-def list_packages(db: Session) -> list[LessonPackage]:
-    packages = list(
-        db.scalars(
-            select(LessonPackage).order_by(
-                LessonPackage.ingested_at.desc(), LessonPackage.id.desc()
-            )
-        )
+def list_packages(
+    db: Session, include_archived: bool = False
+) -> list[LessonPackage]:
+    """Newest first, each row carrying its derived lifecycle (038) for the
+    admin page. Archived versions are left out unless asked for."""
+    query = select(LessonPackage).order_by(
+        LessonPackage.ingested_at.desc(), LessonPackage.id.desc()
     )
-    attachments = {
-        lesson.package_id: lesson.course.course_code
-        for lesson in db.scalars(select(CourseLesson))
-    }
-    for package in packages:
-        package.attached_to = attachments.get(package.id)
+    if not include_archived:
+        query = query.where(LessonPackage.archived_at.is_(None))
+    packages = list(db.scalars(query))
+    annotate_lifecycle(db, packages)
     return packages
+
+
+def annotate_lifecycle(db: Session, packages: list[LessonPackage]) -> None:
+    """Sets each package's derived lifecycle attributes (038) — read by the
+    summary and detail schemas, never stored."""
+    usage = package_lifecycle.usage_by_package(db, [p.id for p in packages])
+    for package in packages:
+        entry = usage[package.id]
+        # A package attaches to at most one course (course_lessons is
+        # unique per package), so the first code is the only one.
+        package.attached_to = entry.attached_to[0] if entry.attached_to else None
+        package.attached_course_codes = entry.attached_to
+        package.enrollment_count = len(entry.enrollment_ids)
+        package.preview_attempt_count = len(entry.preview_attempt_ids)
+        package.retain_until = entry.retain_until
+        package.deletable = package_lifecycle.deletable(entry)
+        package.media_purgeable = package_lifecycle.media_purgeable(
+            package, entry
+        )
 
 
 def get_package(db: Session, package_id: int) -> LessonPackage | None:
@@ -1382,26 +1399,20 @@ def get_package(db: Session, package_id: int) -> LessonPackage | None:
 
 
 def delete_package(db: Session, storage: Storage, package_id: int) -> bool:
-    """Deletes an unattached package and its storage object. Returns False
-    if the package does not exist; refuses if it is attached to a course."""
+    """Deletes an unused, unattached package and its storage objects.
+    Returns False if the package does not exist; refuses, naming why, if
+    a course has it attached or any record references it (038) — the
+    database would refuse those too, but as a 500."""
     package = db.get(LessonPackage, package_id)
     if package is None:
         return False
-    attachment = db.scalar(
-        select(CourseLesson).where(CourseLesson.package_id == package_id)
+    errors = package_lifecycle.delete_refusals(
+        package, package_lifecycle.usage_of(db, package)
     )
-    if attachment is not None:
-        raise CourseRuleViolation(
-            [
-                f"package {package.lesson_id} v{package.version} is attached "
-                f"to course {attachment.course.course_code}; detach it before "
-                "deleting"
-            ]
-        )
+    if errors:
+        raise CourseRuleViolation(errors)
     # Collected before the delete cascades the media rows away.
-    keys = [row.storage_key for row in package.media]
-    if package.video_key is not None:
-        keys.append(package.video_key)
+    keys = package_lifecycle.owned_keys(package)
     db.delete(package)
     db.commit()
     for key in keys:
