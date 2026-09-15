@@ -4865,3 +4865,163 @@ Shipped: 2026-09-14
   pre-existing unused imports 030 listed are still there. oxlint exits 0
   with 11 warnings, all on untouched files. `sync_brand.py --check`
   passes (14 files in sync).
+
+## 036 — HTML comments leak into the reader and search
+Shipped: 2026-09-15
+
+**What changed**
+- `backend/app/services/markdown.py`, new: `strip_html_comments(md)` is the
+  one place an HTML comment is removed, and `FENCED_CODE` is now defined
+  there once for both users. A single left-to-right scan matches a fenced
+  block, then an inline code span, then a comment, so precedence decides
+  the two cases that look alike: a `<!--` inside code is content and is
+  kept, a code span opening inside a comment does not protect it. An
+  unclosed `<!--` is not a comment and is left as text. Removing a comment
+  leaves nothing where whitespace or an edge already separated the
+  neighbours and a single space where it did not, so `Alpha<!-- n -->Beta`
+  cannot become `AlphaBeta`.
+- `services/reader.py`: the reader payload now serves
+  `strip_html_comments(section.markdown)`. This was the actual leak — the
+  builder handed the stored markdown to the browser verbatim, and
+  `SimpleMarkdown` escapes raw HTML, so an annotation rendered as visible
+  literal text. A locked section still carries `markdown: null`; the gate
+  is untouched. Both callers go through `build`, so the 4.02 reviewer
+  preview is covered by the same change.
+- `services/word_count.py`: `strip_markdown` calls the new function
+  instead of a blunt `<!--.*?-->` regex. Comments were already excluded
+  from the count; what changed is that a comment printed inside an inline
+  code span now keeps its words, which is what the counting rules in
+  `docs/course-package.md` already promised for inline code.
+- `services/search.py`: unchanged code. It matches and snippets over
+  `strip_markdown`, so it inherited the fix; its docstring now says so,
+  and records that nothing is precomputed (no index table, no tsvector).
+- `frontend/src/components/SimpleMarkdown/SimpleMarkdown.jsx`: drops
+  comment nodes before parsing, as a second line. No `rehype-raw`, no new
+  dependency, and no other raw HTML is rendered — `<b>x</b>` and
+  `<script>alert(1)</script>` still reach the page as text.
+- `docs/course-package.md`: the counting rules now state that HTML
+  comments are permitted anywhere in section markdown and are ignored by
+  superCPE — not rendered, not indexed, not counted — with the code-span
+  and unclosed-opener exceptions, so a hand count still reproduces
+  superCPE's number.
+- Tests: `backend/tests/test_markdown.py` (15) covers the stripper
+  directly — single-line, multi-line, several in one section, adjacent to
+  words, inside a fence, inside a tilde fence, inside inline code,
+  unclosed, a bare `-->`, other raw HTML, and the 7.02.6 equality.
+  `backend/tests/test_text_packages.py` gains seven end-to-end tests over
+  an ingested package whose `sec-02` carries the annotation: the stored
+  row still has it, the participant payload and the reviewer preview do
+  not, `attributed` finds nothing, no snippet shows comment text, the
+  section and package counts equal the un-annotated package's, and other
+  raw HTML survives to be escaped.
+  `frontend/.../SimpleMarkdown.test.jsx` (7) covers the render guard.
+
+**Task 0 / step-1 findings (current behavior, before any change)**
+- `frontend/src/components/SimpleMarkdown/SimpleMarkdown.jsx` is the only
+  Markdown renderer in the app — the reader (via `Reader.jsx`), the
+  policies pages, and the 4.05.3 instructions page all use it. It renders
+  every block as text nodes and never injects HTML, so raw HTML was
+  **escaped** and a comment was **visible as literal text**. That was the
+  bug.
+- `services/reader.py` served `section.markdown` raw. Comments were
+  **present in the payload** for every unlocked section.
+- `services/search.py` `find` and `_snippet` both work over
+  `word_count.strip_markdown`, which already removed comments. Comments
+  were **not indexed and could not appear in a snippet**. There is no
+  search index table and no tsvector: the prose is derived per query from
+  `package_sections`, so nothing was persisted and nothing needed a
+  backfill.
+- `services/word_count.py` `count_words` already stripped comments with
+  `_HTML_COMMENT`. Comments were **not counted**. One narrow flaw: the
+  regex ran before the code-span rules, so a comment printed inside
+  inline code lost its words — contradicting the same document's "inline
+  code keeps its content" rule. 036 fixes that.
+- Other places section or question Markdown is rendered, all **reported,
+  none changed** (out of scope, rule 2): question stems, choices, and
+  explanations are rendered as plain React text nodes, never through a
+  Markdown renderer (`Reader.jsx:594`, `Assessment.jsx:161,283`,
+  `Player.jsx:405`, `AdminCourseDetail.jsx:1479,1496`,
+  `AdminCourseAttempts.jsx:128`) — a comment in a stem would show as
+  literal text, and the package contract does not say stems are Markdown.
+  The glossary renders `term`/`definition` from the manifest, not section
+  Markdown. `GET /api/v1/admin/packages/{id}/sections/{key}` returns the
+  shipped file as `text/plain` on purpose, and `services/audit_bundle.py`
+  writes the author's file into the retained materials as shipped; both
+  are correct to keep the comment.
+- Persistence: `package_sections.word_count` and `lesson_packages.
+  word_count` **are** stored, computed at ingest. Reported per the spec's
+  Data model note. No migration and no backfill were needed, because the
+  values do not move (below).
+
+**Word count — outcome**
+The counter already excluded comments, so this is the spec's first case:
+**the numbers are identical before and after.** Checked against the real
+ingested ATO-01 guide with the annotation `<!-- index: 9#1, 9#2; 4#3
+attributed -->` injected into every section: all fourteen sections count
+the same annotated as plain and as stored (349, 662, 720, 693, 632, 690,
+712, 700, 684, 762, 671, 656, 856, 735), and the body total is 7,582 both
+ways, equal to the stored package `word_count`. No stored count, no
+package total, and no stored credit changed; no course's award moved.
+Separately, no section ingested locally contains a comment at all (0 of
+14), so there was no wrong number in the database to correct. The only
+measurement behavior that changed is the inline-code case described
+above, which no ingested section exercises.
+
+**Standards touched**
+- 7.02.6 — read on printed pages 17–18 (PDF sheets 23–24) of
+  `docs/2026-Statement-on-Standards-for-CPE-Programs.pdf`: "The word count
+  for the text of the required reading of the program is divided by 180,
+  the average reading speed of adults." An authoring annotation is not
+  text of the required reading, so it is not in the numerator; 7.02.5 on
+  printed page 17 says the same from the other side ("should exclude any
+  material not critical to the achievement of the stated learning
+  objectives"). The formula and the divisor are unchanged.
+- 7.02.7 — untouched. No change to A/V minutes or the question term.
+- 4.05.3 items 2 and 3 — the keyword search and glossary behavior is
+  unchanged; the docstring now records that comment text is outside what
+  search can reach.
+- COMPLIANCE.md: the 7.02.6 row is updated (word count excludes HTML
+  comments, citing this feature).
+
+**Decisions**
+- The stripper is a read/index/measure-time transform, never a write. The
+  stored `package_sections.markdown` keeps the bytes video-tool shipped,
+  so the 023a content hash still covers them and the audit bundle still
+  writes the author's file as written. An auditor reading the retained
+  9.02.2(2)(7) materials sees the export; a participant does not.
+- A comment inside a fenced block or an inline code span is content, not
+  an annotation. Precedence in one scan, rather than a second pass, so
+  the two readings of `<!--` cannot disagree between the reader and the
+  counter.
+- The frontend guard drops comments unconditionally, without the code-span
+  exception the backend keeps. It is a defensive second line for a payload
+  that has already been stripped, not a second implementation of the rule;
+  keeping it to one regex is what makes it obviously correct. Noted as a
+  known difference rather than hidden.
+- No `rehype-raw`, no Markdown dependency, and no relaxation of escaping.
+  This removes one kind of node; every other raw HTML string is still
+  text, and a test asserts `<script>alert(1)</script>` creates no element.
+- **Numbering.** current-feature.md is headed "Feature 035", but 035 —
+  "Course thumbnails and the catalog card" — shipped 2026-09-14 and is in
+  this file. Entries are append-only and a past entry is never edited, so
+  this is 036. Not a reversal of anything; the spec's number was stale.
+
+**Known gaps**
+- Question stems, choices, and explanations are still rendered as plain
+  text, so an HTML comment in a stem would display literally. Out of
+  scope here and left alone; the package contract does not describe stems
+  as Markdown. Worth a decision if video-tool ever annotates questions.
+- The frontend guard and the backend stripper differ on comments inside
+  code spans (see Decisions). A guide that prints `<!-- … -->` inside
+  inline code counts it and serves it, and the renderer would drop it on
+  display. No shipped guide does this today.
+- Not yet run by the operator: deploy; the browser walkthrough of the
+  reader on supercpe.com. Re-ingesting ATO on production is **not**
+  required — the stored word counts are unchanged by this feature, and
+  the reader strips at read time, so a deploy alone is sufficient.
+- Verified in this session: backend `pytest` 627 passed; frontend vitest
+  155 passed in 26 files; `pyflakes app tests` exits 0 with the same 10
+  pre-existing unused imports 030 listed, none in a file touched here;
+  `oxlint` exits 0 with 11 pre-existing warnings, all on untouched files;
+  `sync_brand.py --check` passes (14 files in sync). `git status
+  --porcelain` clean apart from this feature's files.

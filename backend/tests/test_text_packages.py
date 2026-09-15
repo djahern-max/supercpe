@@ -31,6 +31,7 @@ from tests.factories.text_package import (
     APPENDIX,
     BODY_ONE,
     BODY_ONE_WORDS,
+    BODY_TWO,
     DEFAULT_COURSE_CODE,
     DEFAULT_LESSON_ID,
     DEFAULT_SECTION_FILES,
@@ -1208,3 +1209,157 @@ def test_the_h1_matching_the_section_title_is_counted_exactly_once():
     # The manifest's copy of the title never enters the count: the section
     # row stores the words of its file, nothing else.
     assert count_words("# Identifying a Lease\n\nOne two three.") == 6
+
+
+# --- 035: HTML comments never reach the reader, the search, or the count ----
+
+
+ANNOTATION = "<!-- index: 9#1, 9#2; 4#3 attributed -->"
+# BODY_TWO with the annotation video-tool writes above the prose, which is
+# where it lands in a real export.
+ANNOTATED_BODY_TWO = BODY_TWO.replace(
+    "# Identified Asset\n", f"# Identified Asset\n\n{ANNOTATION}\n", 1
+)
+
+
+@pytest.fixture
+def annotated_reader(db_session, storage_root, tmp_path, client):
+    """The fixture course, with one body section carrying an authoring
+    annotation — a participant enrolled and logged in on it."""
+    section_files = dict(DEFAULT_SECTION_FILES)
+    section_files["guide/02-identified-asset.md"] = ANNOTATED_BODY_TWO
+    package, _ = ingest_text(
+        db_session, storage_root, tmp_path, section_files=section_files
+    )
+    course = make_publishable_text_course(db_session, package)
+    courses_service.publish(db_session, course)
+    account = make_participant(db_session)
+    enrollment = enroll(db_session, course, account)
+    login(client, PARTICIPANT_EMAIL, PARTICIPANT_PASSWORD)
+    return enrollment, package, course
+
+
+def test_the_annotation_is_stored_as_shipped(annotated_reader):
+    """Stripping happens at read, index, and measure time. The section row
+    still holds the bytes the author shipped, so the 023a content hash and
+    the audit bundle's copy of the file are untouched."""
+    _enrollment, package, _course = annotated_reader
+    section = next(s for s in package.sections if s.section_key == "sec-02")
+    assert ANNOTATION in section.markdown
+
+
+def test_the_reader_payload_carries_no_comment(client, annotated_reader):
+    enrollment, package, _course = annotated_reader
+    payload = read(client, enrollment, package)
+    for section in payload["sections"]:
+        if section["markdown"] is None:
+            continue
+        assert "<!--" not in section["markdown"]
+        assert "attributed" not in section["markdown"]
+    # The section's own prose is still all there.
+    served = next(
+        s for s in payload["sections"] if s["section_key"] == "sec-02"
+    )
+    assert served["markdown"] is None or "substitution" in served["markdown"]
+
+
+def test_the_reviewer_preview_carries_no_comment_either(
+    client, annotated_reader, admin_account
+):
+    """The ungated preview a 4.02 reviewer reads goes through the same
+    builder, so the reviewer is not shown the author's notes either."""
+    _enrollment, package, course = annotated_reader
+    # The fixture left the participant logged in on this client.
+    login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
+    response = client.get(
+        f"/api/v1/courses/{course.course_code}/lessons/{package.id}/read"
+    )
+    assert response.status_code == 200, response.text
+    for section in response.json()["sections"]:
+        assert section["markdown"] is not None
+        assert "<!--" not in section["markdown"]
+        assert "attributed" not in section["markdown"]
+
+
+def test_a_word_only_in_a_comment_is_not_findable(client, annotated_reader):
+    """4.05.3 item 2 searches the guide. "attributed" appears nowhere in
+    the guide — only in an annotation — so there is nothing to find."""
+    enrollment, _package, _course = annotated_reader
+    response = client.get(
+        f"/api/v1/my/enrollments/{enrollment.id}/search",
+        params={"q": "attributed"},
+    )
+    assert response.status_code == 200
+    assert response.json()["hits"] == []
+
+
+def test_no_snippet_ever_shows_comment_text(client, annotated_reader):
+    """A hit on real prose in the annotated section must not drag the
+    annotation into the window around it."""
+    enrollment, _package, _course = annotated_reader
+    response = client.get(
+        f"/api/v1/my/enrollments/{enrollment.id}/search",
+        params={"q": "identified"},
+    )
+    assert response.status_code == 200
+    hits = response.json()["hits"]
+    assert hits, "expected the query to match the guide"
+    for hit in hits:
+        for snippet in hit["snippets"]:
+            assert "<!--" not in snippet
+            assert "attributed" not in snippet
+            assert "index:" not in snippet
+
+
+def test_the_annotation_does_not_enter_the_word_count(
+    db_session, storage_root, tmp_path
+):
+    """7.02.6 counts "the text of the required reading". The annotated
+    section and the identical section without the annotation measure the
+    same — at the section row, at the package total, and therefore in the
+    credit the course awards."""
+    plain, _ = ingest_text(db_session, storage_root, tmp_path)
+    section_files = dict(DEFAULT_SECTION_FILES)
+    section_files["guide/02-identified-asset.md"] = ANNOTATED_BODY_TWO
+    annotated, _ = ingest_text(
+        db_session,
+        storage_root,
+        tmp_path,
+        section_files=section_files,
+        manifest_overrides={"lesson_id": "ASC842-GDE-02", "position": 2},
+    )
+    plain_two = next(s for s in plain.sections if s.section_key == "sec-02")
+    annotated_two = next(
+        s for s in annotated.sections if s.section_key == "sec-02"
+    )
+    assert annotated_two.word_count == plain_two.word_count
+    assert annotated.word_count == plain.word_count
+    # And the counter says the same thing about the two strings directly.
+    assert count_words(ANNOTATED_BODY_TWO) == count_words(BODY_TWO)
+
+
+def test_raw_html_other_than_a_comment_survives_to_be_escaped(
+    db_session, storage_root, tmp_path, client, admin_headers
+):
+    """035 removes one kind of node and opens no door: a tag still reaches
+    the browser as the characters the author typed, for the renderer to
+    show as text."""
+    section_files = dict(DEFAULT_SECTION_FILES)
+    section_files["guide/02-identified-asset.md"] = (
+        BODY_TWO + "\nA tag <b>x</b> and <script>alert(1)</script> here.\n"
+    )
+    package, _ = ingest_text(
+        db_session, storage_root, tmp_path, section_files=section_files
+    )
+    course = attach_text_course(db_session, package)
+    response = client.get(
+        f"/api/v1/courses/{course.course_code}/lessons/{package.id}/read"
+    )
+    assert response.status_code == 200, response.text
+    served = next(
+        s
+        for s in response.json()["sections"]
+        if s["section_key"] == "sec-02"
+    )
+    assert "<b>x</b>" in served["markdown"]
+    assert "<script>alert(1)</script>" in served["markdown"]

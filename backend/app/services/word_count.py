@@ -28,10 +28,13 @@ delimited token containing at least one letter or digit.
 
 import re
 
+from app.services.markdown import FENCED_CODE, strip_html_comments
+
 # Fenced code blocks, both fence characters, with any info string. Code is
-# not prose the participant reads at 180 words a minute.
-_FENCED_CODE = re.compile(r"^(?P<fence>```+|~~~+).*?(?:\n(?P=fence)[^\n]*$|\Z)", re.M | re.S)
-_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+# not prose the participant reads at 180 words a minute. The pattern lives
+# in `services.markdown`, which needs the same definition to tell a
+# comment in prose from one printed inside a code block.
+_FENCED_CODE = FENCED_CODE
 # Images carry a URL and an alt string that is a caption, not body prose.
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _IMAGE_REF = re.compile(r"!\[[^\]]*\]\[[^\]]*\]")
@@ -60,7 +63,10 @@ def strip_markdown(markdown: str) -> str:
 
     Also what the keyword search (4.05.3 item 2) matches and snippets
     from, so a participant never sees a hit inside a URL."""
-    text = _HTML_COMMENT.sub(" ", markdown)
+    # Comments first, and not with a blunt regex: an annotation in prose
+    # is not required reading (7.02.6), but a `<!-- … -->` printed inside
+    # a code span is a word of the guide and is kept.
+    text = strip_html_comments(markdown)
     text = _FENCED_CODE.sub(" ", text)
     text = _LINK_DEFINITION.sub(" ", text)
     text = _IMAGE.sub(" ", text)

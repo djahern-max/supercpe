@@ -34,6 +34,7 @@ from app.constants.package_kinds import ROLE_BODY, UNGATED_ROLES
 from app.constants.storage import VIDEO_URL_SECONDS
 from app.models.lesson_package import LessonPackage
 from app.services import questions as questions_service
+from app.services.markdown import strip_html_comments
 from app.storage import Storage
 
 
@@ -64,7 +65,8 @@ class ReaderSection:
     counted: bool
     locked: bool
     # None exactly when locked: the gate withholds the text, not just the
-    # scroll position.
+    # scroll position. Otherwise the shipped markdown with its authoring
+    # annotations removed (035) — the stored row is untouched.
     markdown: str | None
     # Every review question placed after this section, in package order.
     # A list, not one key: nothing in 5.01.2.1 or the package contract
@@ -129,7 +131,9 @@ def build(
                 word_count=section.word_count,
                 counted=section.counted,
                 locked=locked,
-                markdown=None if locked else section.markdown,
+                markdown=(
+                    None if locked else strip_html_comments(section.markdown)
+                ),
                 question_keys=[q.question_key for q in placed],
             )
         )

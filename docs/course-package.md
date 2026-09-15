@@ -325,7 +325,14 @@ manifest `word_count`, still trusted, still logged as such.
 
 **How superCPE counts.** Per body section, on the shipped markdown:
 
-- fenced code blocks (``` and ~~~) and HTML comments are removed entirely;
+- fenced code blocks (``` and ~~~) are removed entirely;
+- HTML comments (`<!-- … -->`, including multi-line ones) are permitted
+  anywhere in section markdown and are ignored by superCPE — never
+  rendered to a participant, never indexed by the keyword search, and
+  never counted. They are authoring annotations, not required reading
+  (7.02.6), so an exporter may write them freely; a comment inside a
+  fenced block or an inline code span is content and is kept, and an
+  unclosed `<!--` is not a comment;
 - images (`![alt](url)`) are removed entirely;
 - links keep their text and lose their URL (`[text](url)` → `text`), and
   link reference definitions (`[ref]: https://…`) are removed;

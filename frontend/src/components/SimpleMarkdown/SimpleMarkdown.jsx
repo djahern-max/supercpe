@@ -1,13 +1,27 @@
 import styles from "./SimpleMarkdown.module.css";
 
 /**
- * The small subset of Markdown the policies and instructions pages use:
- * #/##/### headings, "- " lists, **bold**, and paragraphs. Deliberately
- * not a Markdown library — these are admin-authored policy texts and one
- * generated instructions page, and a dependency is not justified for
- * headings and lists. Everything renders as text nodes; nothing is ever
- * injected as HTML.
+ * The small subset of Markdown the policies, instructions, and reader
+ * pages use: #/##/### headings, "- " lists, **bold**, and paragraphs.
+ * Deliberately not a Markdown library — these are admin-authored policy
+ * texts, one generated instructions page, and study-guide sections, and a
+ * dependency is not justified for headings and lists. Everything renders
+ * as text nodes; nothing is ever injected as HTML, so `<b>x</b>` and
+ * `<script>` reach the reader as the characters the author typed.
+ *
+ * The one exception is an HTML comment, which is dropped rather than
+ * shown. `<!-- index: 9#1 -->` is an authoring annotation video-tool
+ * writes into a guide section; escaping it would put the author's notes
+ * in front of the participant. The backend already strips comments from
+ * the reader payload, the search index, and the word count (035) — this
+ * is the second line, so a comment cannot render even if one reaches the
+ * client from somewhere that was missed. Dropping the node is *not* a
+ * step toward rendering raw HTML: everything else stays escaped.
  */
+
+// `<!--` through the first `-->`, across lines. An unclosed `<!--` is not
+// a comment and stays as text, which is how an author sees the typo.
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 
 function inline(text, keyBase) {
   const parts = text.split(/\*\*(.+?)\*\*/g);
@@ -18,7 +32,7 @@ function inline(text, keyBase) {
 
 function SimpleMarkdown({ markdown }) {
   const blocks = [];
-  const lines = markdown.split("\n");
+  const lines = markdown.replace(HTML_COMMENT, "").split("\n");
   let paragraph = [];
   let list = null;
 

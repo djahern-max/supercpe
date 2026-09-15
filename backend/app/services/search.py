@@ -22,9 +22,14 @@ what the player has refused since 006 — so the rule here is structural
 rather than a filter: there is no question text in scope to leak.
 
 Matching is plain and case-insensitive over the stripped prose of each
-section, so a hit is never inside a URL or a code fence. Simple term
-matching with section-level results is what the Standard's own example
-asks for; nothing here needs a search engine.
+section, so a hit is never inside a URL or a code fence. The same
+stripping removes the author's HTML comments (035), so a word that
+appears only in an `<!-- index: … -->` annotation is not findable and can
+never surface in a snippet. Nothing is precomputed: there is no index
+table and no tsvector, so the prose searched is always derived from the
+section rows as they stand. Simple term matching with section-level
+results is what the Standard's own example asks for; nothing here needs a
+search engine.
 """
 
 import re
