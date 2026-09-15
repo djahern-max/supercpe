@@ -1,5 +1,17 @@
+/* 035: the catalog card.
+
+   The reader is a licensed CPA deciding whether to spend an hour and
+   $29, and the fact they scan for is the credit amount — so that is the
+   only thing on the card with any weight. Everything else stays quiet:
+   a 1px border and no shadow, no hover lift, no scroll-triggered fade.
+   The only motion is focus and the image loading.
+
+   The colours are the brand tokens from global.css rather than a second
+   set of hexes here; 033 made that file the one palette every surface
+   reads, including the certificate. */
+
 .page {
-  max-width: 42rem;
+  max-width: 53.75rem; /* 860px, left aligned inside it */
   margin: 0 auto;
   padding: var(--space-xl) var(--space-lg);
   display: flex;
@@ -10,39 +22,136 @@
 .heading {
   margin: 0;
   font-size: 2rem;
+  color: var(--color-brand-navy);
 }
 
 .muted {
   color: var(--color-text-muted);
   margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.55;
 }
 
-.entry {
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-lg);
-}
-
-.entryTitle {
+.list {
+  list-style: none;
   margin: 0;
-  font-size: 1.375rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
 }
 
-.entryTitle a {
-  color: var(--color-accent);
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* The whole card is one link, so the keyboard focus ring is the card. */
+.cardLink {
+  display: flex;
+  /* flex-start, not stretch: a stretched <img> would be taller than the
+     16:9 the brief asks for whenever the text column is the taller of
+     the two, and object-fit would quietly crop more than intended. */
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  color: inherit;
   text-decoration: none;
 }
 
-.entryTitle a:hover {
-  text-decoration: underline;
+.cardLink:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
 }
 
-.entryMeta {
+/* A horizontal card, not a tile in a grid: this reads correctly at one
+   course and at twelve, where a 3-up grid of one tile looks broken. */
+.artwork {
+  flex: 0 0 15rem; /* 240px */
+  width: 15rem;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.body {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--color-brand-navy);
+}
+
+.price {
+  margin: 0;
+  flex: none;
+  font-size: 1.0625rem;
+  color: var(--color-text);
+}
+
+/* The one loud element on the card. */
+.credits {
   margin: var(--space-xs) 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.9375rem;
+  font-size: 1.0625rem;
+  color: var(--color-accent);
 }
 
-.entryDescription {
+.meta {
+  margin: var(--space-xs) 0 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.description {
   margin: var(--space-sm) 0 0;
-  line-height: 1.6;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+  /* Two lines here; the whole description is on the course page. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* Below 640px the artwork goes above the text at full width and the
+   price drops under the title. */
+@media (max-width: 40rem) {
+  .page {
+    padding: var(--space-lg) var(--space-md);
+  }
+
+  .cardLink {
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .artwork {
+    flex: none;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-xs);
+  }
 }

@@ -51,6 +51,12 @@ class Course(Base):
     # actually charged lives on the payment row from the Stripe event,
     # never re-derived from here.
     price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 035: the storage key of the catalog artwork,
+    # `course-thumbnails/<course_code>/<sha256>.<ext>`, or null. Admin-typed
+    # marketing metadata like price_cents, not course content: setting it
+    # never calls `touch`, so the credit and the review stay current and a
+    # published course's artwork can be swapped without unpublishing.
+    thumbnail_key: Mapped[str | None] = mapped_column(String, nullable=True)
     # Bumped on every change a participant could observe, only ever by
     # services.courses.touch. Later features derive "credit is stale" and
     # "review is stale" from this one column.

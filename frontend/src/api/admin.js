@@ -299,6 +299,25 @@ export function setCoursePrice(code, priceCents) {
   });
 }
 
+// 035: the catalog card's artwork. Business metadata like the price —
+// uploading or removing it does not touch the course's content, so a
+// published course keeps its credit, its current review, and its
+// published status.
+export function setCourseThumbnail(code, file) {
+  const body = new FormData();
+  body.append("file", file);
+  return request(`/api/v1/admin/courses/${code}/thumbnail`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export function clearCourseThumbnail(code) {
+  return request(`/api/v1/admin/courses/${code}/thumbnail`, {
+    method: "DELETE",
+  });
+}
+
 export function listPayments() {
   return request("/api/v1/admin/payments");
 }

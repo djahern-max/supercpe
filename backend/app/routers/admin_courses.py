@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import require_role
+from app.constants.media import THUMBNAIL_MAX_BYTES
 from app.db import get_db
 from app.models.account import Account
 from app.models.course import Course
@@ -36,7 +37,8 @@ from app.schemas.package import ValidationErrors
 from app.services import courses, credit, development, disclosure, readiness
 from app.services import enrollments as enrollments_service
 from app.services import questions as questions_service
-from app.services.courses import CourseRuleViolation
+from app.services.courses import THUMBNAIL_TOO_LARGE, CourseRuleViolation
+from app.storage import Storage, get_storage
 
 router = APIRouter(
     prefix="/admin/courses", dependencies=[Depends(require_role("admin"))]
@@ -188,6 +190,8 @@ def _detail(db: Session, course: Course) -> CourseDetailAdmin:
         advance_preparation=course.advance_preparation,
         status=course.status,
         price_cents=course.price_cents,
+        thumbnail_key=course.thumbnail_key,
+        thumbnail_url=courses.thumbnail_url(course),
         content_updated_at=course.content_updated_at,
         created_at=course.created_at,
         updated_at=course.updated_at,
@@ -278,10 +282,14 @@ def update_course(
 
 
 @router.delete("/{course_code}", status_code=204, responses={422: {"model": ValidationErrors}})
-def delete_course(course_code: str, db: Session = Depends(get_db)):
+def delete_course(
+    course_code: str,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+):
     course = _get_course_or_404(db, course_code)
     try:
-        courses.delete_course(db, course)
+        courses.delete_course(db, storage, course)
     except CourseRuleViolation as violation:
         return _violation_response(violation)
 
@@ -439,6 +447,45 @@ def set_price(
     except CourseRuleViolation as violation:
         return _violation_response(violation)
     return _detail(db, course)
+
+
+@router.put(
+    "/{course_code}/thumbnail",
+    response_model=CourseDetailAdmin,
+    responses={422: {"model": ValidationErrors}},
+)
+def put_thumbnail(
+    course_code: str,
+    file: UploadFile,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+):
+    """035: the catalog card's artwork. Like the price, a business fact
+    rather than course content — no `touch`, so a published course keeps
+    its credit, its current review, and its published status."""
+    course = _get_course_or_404(db, course_code)
+    # One byte past the cap is enough to refuse; the rest is never read
+    # (the sponsor logo route, 032, does the same).
+    content = file.file.read(THUMBNAIL_MAX_BYTES + 1)
+    if len(content) > THUMBNAIL_MAX_BYTES:
+        return JSONResponse(
+            status_code=422, content={"errors": [THUMBNAIL_TOO_LARGE]}
+        )
+    try:
+        course = courses.set_thumbnail(db, storage, course, content)
+    except CourseRuleViolation as violation:
+        return _violation_response(violation)
+    return _detail(db, course)
+
+
+@router.delete("/{course_code}/thumbnail", response_model=CourseDetailAdmin)
+def delete_thumbnail(
+    course_code: str,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+):
+    course = _get_course_or_404(db, course_code)
+    return _detail(db, courses.clear_thumbnail(db, storage, course))
 
 
 @router.put("/{course_code}/review-cycle", response_model=CourseDetailAdmin)

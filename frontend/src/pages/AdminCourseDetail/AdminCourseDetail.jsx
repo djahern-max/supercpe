@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import AdminNav from "../../admin/AdminNav.jsx";
 import { useSession } from "../../auth/SessionContext.jsx";
-import { ApiError } from "../../api/client";
+import { ApiError, resolveMediaUrl } from "../../api/client";
 import {
   adminCertificateUrl,
   attachLesson,
   auditBundleUrl,
+  clearCourseThumbnail,
   deleteCourse,
   detachLesson,
   enrollParticipant,
@@ -30,6 +31,7 @@ import {
   setCourseDeveloper,
   setCoursePrice,
   setCourseReviewCycle,
+  setCourseThumbnail,
   unpublishCourse,
   updateCourse,
   updateLessonVersion,
@@ -40,6 +42,14 @@ import {
   formatUsd,
 } from "../../constants/money";
 import styles from "./AdminCourseDetail.module.css";
+
+// 035: app/constants/media.py's limits, quoted before the picker so an
+// admin reads them rather than discovering them in a 422. Kept in step
+// by hand: the backend is the authority and refuses anyway.
+const ARTWORK_LIMITS =
+  "JPEG, PNG, or WebP · 2 MB or smaller · shortest edge at least 600px, " +
+  "longest at most 4000px. Nothing is resized: the card shows a 16:9 crop " +
+  "of what you upload.";
 
 const DERIVED_FIELDS = [
   { name: "field_of_study", label: "Field of study" },
@@ -109,6 +119,9 @@ function AdminCourseDetail() {
   const [editErrors, setEditErrors] = useState(null);
   const [priceText, setPriceText] = useState("");
   const [priceErrors, setPriceErrors] = useState(null);
+  const [artworkFile, setArtworkFile] = useState(null);
+  const [artworkErrors, setArtworkErrors] = useState(null);
+  const [artworkBusy, setArtworkBusy] = useState(false);
   const [lessonErrors, setLessonErrors] = useState(null);
   const [attachErrors, setAttachErrors] = useState(null);
   const [creditErrors, setCreditErrors] = useState(null);
@@ -280,6 +293,15 @@ function AdminCourseDetail() {
       return;
     }
     return mutate(() => setCoursePrice(code, cents), setPriceErrors);
+  };
+
+  // 035: artwork is a business fact too — no touch, so neither of these
+  // makes the credit stale or the review out of date.
+  const runArtwork = async (call) => {
+    setArtworkBusy(true);
+    const ok = await mutate(call, setArtworkErrors);
+    if (ok) setArtworkFile(null);
+    setArtworkBusy(false);
   };
 
   const handleSaveDeveloper = () =>
@@ -477,6 +499,67 @@ function AdminCourseDetail() {
           </button>
         )}
         <ErrorPanel errors={priceErrors} />
+      </section>
+
+      <section className={styles.card}>
+        <h2 className={styles.sectionTitle}>Catalog artwork</h2>
+        <p className={styles.muted}>
+          The picture on the course&rsquo;s card in the catalog. Optional:
+          without it the card is text alone. Replacing or removing it does
+          not change the course content, so a published course keeps its
+          credit, its current review, and its published status.
+        </p>
+        <p className={styles.muted}>{ARTWORK_LIMITS}</p>
+        {course.thumbnail_url && published && (
+          <img
+            className={styles.artwork}
+            src={resolveMediaUrl(course.thumbnail_url)}
+            alt=""
+          />
+        )}
+        {course.thumbnail_key && !published && (
+          <p className={styles.muted}>
+            Artwork is stored at <code>{course.thumbnail_key}</code>. It is
+            shown here and in the catalog once the course is published; the
+            picture route serves published courses only.
+          </p>
+        )}
+        <div className={styles.artworkField}>
+          <label className={styles.label} htmlFor="course-artwork">
+            Artwork file
+          </label>
+          <input
+            id="course-artwork"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) =>
+              setArtworkFile(event.target.files?.[0] ?? null)
+            }
+          />
+        </div>
+        <div className={styles.artworkActions}>
+          <button
+            className={styles.button}
+            type="button"
+            disabled={artworkBusy || !artworkFile}
+            onClick={() =>
+              runArtwork(() => setCourseThumbnail(code, artworkFile))
+            }
+          >
+            {course.thumbnail_key ? "Replace artwork" : "Upload artwork"}
+          </button>
+          {course.thumbnail_key && (
+            <button
+              className={styles.linkButton}
+              type="button"
+              disabled={artworkBusy}
+              onClick={() => runArtwork(() => clearCourseThumbnail(code))}
+            >
+              Remove artwork
+            </button>
+          )}
+        </div>
+        <ErrorPanel errors={artworkErrors} />
       </section>
 
       <section className={styles.card}>

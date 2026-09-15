@@ -377,3 +377,30 @@
   font-size: 0.9375rem;
   cursor: pointer;
 }
+
+/* 035: the catalog artwork card. The preview is the picture at roughly
+   the width the catalog card gives it, so what the admin sees here is
+   what a visitor sees; nothing is resized anywhere, only fitted. */
+.artwork {
+  align-self: flex-start;
+  width: 100%;
+  max-width: 20rem;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.artworkField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.artworkActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+}

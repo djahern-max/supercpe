@@ -4668,3 +4668,200 @@ Shipped: 2026-09-14
   and Jurisdictions use column layouts and showed no fixed row.
 - pyflakes still reports the pre-existing unused imports 030 listed;
   oxlint's warnings (exit 0, no errors) are all on untouched files.
+
+## 035 — Course thumbnails and the catalog card
+Shipped: 2026-09-14
+
+**What changed**
+- `courses.thumbnail_key` (nullable) with migration
+  `7ff10941feae_course_thumbnail_key.py`, holding the storage key of the
+  catalog artwork or null. Round-tripped (upgrade, `downgrade -1`,
+  upgrade) on a throwaway `supercpe_migrationcheck` database, never on
+  dev or production — see Decisions.
+- `app/constants/media.py`, every number marked ours: JPEG/PNG/WebP,
+  2 MiB, shortest edge ≥ 600px, longest ≤ 4000px, the
+  `course-thumbnails` prefix, and the one-year cache age.
+- `services/courses.set_thumbnail` / `clear_thumbnail`. The type comes
+  from the file's own magic bytes, never the multipart `content-type`
+  header or the filename; the edges come from Pillow's `Image.open`,
+  which parses the header without decoding pixels. Refusals raise
+  `CourseRuleViolation`, so they arrive as the same 422
+  `{"errors": [...]}` as everything else, each naming the limit it hit.
+  Neither calls `touch`. Both delete the superseded object, and
+  `delete_course` (now taking `storage`) deletes the course's object too.
+- `PUT` and `DELETE /api/v1/admin/courses/{code}/thumbnail` under the
+  admin dependency; public `GET /api/v1/courses/{code}/thumbnail`
+  streaming from `storage.open()` with the media type, `Cache-Control:
+  public, max-age=31536000, immutable`, and an `ETag` of the content
+  hash, answering 304 to a matching conditional request (a comma-listed
+  `If-None-Match` included). Every miss is the same 404: unknown course,
+  draft course, no artwork — and the router's existing site-mode gate
+  404s the lot anonymously under `coming_soon`, so nothing was added to
+  `INTENTIONALLY_PUBLIC`.
+- `thumbnail_url` on `CoursePublicSummary` (so on the detail payload
+  too) and on `CourseDetailAdmin`, which also carries `thumbnail_key`.
+  `tests/test_disclosure.py`'s 016 key-set assertion learned the new key
+  as a named commercial extra, the way `price_cents` was added for 018.
+- `api/admin.js`: `setCourseThumbnail`, `clearCourseThumbnail`. A
+  "Catalog artwork" card on `AdminCourseDetail` states the limits before
+  the picker, previews the current image, and offers Upload/Replace and
+  Remove, rendering 422 lines through the page's `ErrorPanel`.
+- `Catalog.jsx` and its stylesheet rebuilt as a horizontal card:
+  artwork left at 16:9 and 240px, text right, price top-right of the
+  text column, the credit figure its own 17px accent element beside it,
+  the rest of the facts one 13px muted line, the description clamped to
+  two lines. Below 640px the artwork moves above the text at full width
+  and the price drops under the title. One border, no shadow, no hover
+  lift, no fades; the whole card is one link with a visible focus ring;
+  `alt=""` on the artwork. Empty state: "No courses are published yet."
+- `Catalog.test.jsx` (new, 4 tests): artwork rendered with an empty
+  `alt`, the credit figure and meta line, the null-`thumbnail_url`
+  degrade with no placeholder, the credit singular, the empty state.
+- `tests/test_course_thumbnails.py` (new, 21 tests).
+- `pillow==12.3.0` pinned in `requirements.txt` — see Decisions.
+
+**Standards touched**
+- None. 8.01 was read on printed page 20 (PDF page 25) to check, and its
+  eleven items — objectives, program type, recommended credit and field
+  of study, prerequisites, knowledge level, advance preparation,
+  description, registration, refund, complaint, sponsor statement — do
+  not include a picture; 8.01.1's "significant features … in advance"
+  sentence (printed pages 20–21) names brochures and websites as the
+  *vehicle* for those features, not artwork as a feature. Catalog
+  artwork is marketing decoration, so no locator changed what it
+  requires or how it is satisfied and **COMPLIANCE.md is unchanged**.
+  The constants file says as much beside its numbers.
+
+**Decisions**
+- **Artwork is a business fact, not course content.** `set_price` (018)
+  is the precedent and the reasoning carries over unchanged: swapping a
+  picture is not a "significant revision" under 4.02, so it must not
+  make the stored credit stale, must not supersede the current review,
+  and must not require unpublishing. Both setters therefore skip
+  `touch`, and it is said in their docstrings and on the model column,
+  because the published-course immutability rule reads the other way
+  until it is named. A test asserts the pair directly: the same
+  published course refuses a title edit and accepts artwork.
+- **An API route, not a presigned URL.** `storage.py` states the bucket
+  is private and nothing is served from it directly. A presigned catalog
+  URL churns hourly, which would defeat browser and CDN caching on an
+  anonymous marketing page that every visitor loads first. The route
+  streams from `storage.open()`, so `LocalStorage` and `SpacesStorage`
+  behave identically and the catalog needs no media special-casing.
+- **The hash is in the URL, so the cache header can be honest.** The key
+  is `course-thumbnails/<code>/<sha256>.<ext>` and `thumbnail_url` is the
+  route with `?v=<first 12 of the sha256>`. A replacement is different
+  bytes, so a different key, so a different URL; a cached copy is never
+  stale, only orphaned. That is what makes `immutable` with a one-year
+  age safe, where a stable URL would have forced a short TTL and an
+  extra round trip per visitor per hour. Re-uploading identical bytes is
+  a no-op that keeps the same key and, tested explicitly, does not
+  delete the object as its own supersession.
+- **Superseded artwork is deleted.** The one place this service removes a
+  stored object. Artwork is regenerable and is evidence of nothing, so
+  9.02 has no interest in it; the prefix is deliberately absent from
+  `MIRRORED_PREFIXES` (a test pins that) and the off-site mirror still
+  carries only `certificates/` and `audits/`.
+- **The brief's five hex values were rendered as the existing brand
+  tokens rather than a second palette.** 033 made `global.css` the one
+  place colours are defined, and `sync_brand.py` reads it to write the
+  certificate's palette; a page-local palette would reverse that, which
+  the spec did not ask for (rule 7). Four of the five are the same
+  colour to the eye: ground `#F5F7FA` vs `--color-bg #f5f7fb`, card
+  `#FFFFFF` = `--color-surface`, ink `#032660` vs `--color-brand-navy
+  #012761`, accent `#0166FC` vs `--color-accent #0066f4` (both clear
+  WCAG AA on white: 4.88:1 and 4.99:1). The fifth differs visibly: body
+  `#44506A` (8.07:1 on white) against `--color-text-muted #51607a`
+  (6.36:1), so the card's body text is a step lighter than the brief
+  drew it. Both clear AA. If the darker body ink is wanted, the right
+  edit is to `global.css`, where every surface gets it.
+- **Inter was not adopted.** The brief asks for it "matching the video
+  theme"; no Inter file, `@font-face`, or Google Fonts link exists
+  anywhere in this repo, and the site runs on the system stack in
+  `--font-stack`. Adding a webfont means either a new committed binary
+  or a third-party request from a marketing page that 033's ComingSoon
+  test forbids for that page. The card uses `--font-stack` and the type
+  *scale* the brief specifies (title 20/1.3 semibold, body 15/1.55,
+  metadata 13, credit 17). Reported, not built.
+- **Pillow is now a direct dependency.** It has arrived as a WeasyPrint
+  dependency since 032 and `sync_brand.py` already uses it, but the
+  request path importing it makes that implicit; it is pinned at
+  `12.3.0`, the version already resolved. The alternative — parsing
+  PNG's IHDR, JPEG's SOF-marker chain, and WebP's three container
+  variants by hand — is more code and more ways to be wrong for no gain.
+  Nothing is resized, cropped, or converted, which the spec rules out:
+  only `Image.open`, which reads the header.
+- **`set_thumbnail(db, storage, course, content)`, not the spec's
+  `(db, storage, code, upload)`.** Every sibling in this service takes
+  the `Course` the router already resolved through `_get_course_or_404`,
+  so taking a code would duplicate the lookup and give unknown-course a
+  second, inconsistent shape. Bytes rather than the `UploadFile` lets
+  the router cap the read at the limit plus one byte, which is what 032's
+  logo route does and what keeps an oversize upload from being buffered
+  whole.
+- **The migration round-trip was proved on a throwaway database.** The
+  spec asks to verify `downgrade -1`; the house rule says never run
+  `alembic downgrade`. Both were honoured by creating
+  `supercpe_migrationcheck`, running upgrade → `downgrade -1` → upgrade
+  against it, checking `information_schema` at each step, and dropping
+  it. No real database was downgraded.
+
+**Known gaps**
+- **No image processing, by design.** An admin can upload a 4000×2250
+  JPEG close to 2 MiB and every phone visiting `/courses` downloads all
+  of it; the card fits it with CSS and `loading="lazy"` defers
+  off-screen ones, but nothing resizes, crops, or converts. The fix when
+  it matters is a derivative pipeline (a stored 480px variant and a
+  `srcset`), which is its own feature.
+- **A draft course's artwork has no admin preview.** The public route
+  404s for an unpublished course, as the spec requires, and the spec's
+  admin tasks list no admin GET. So the artwork card shows the picture
+  only once the course is published; for a draft it prints the stored
+  key and says the picture appears in the catalog on publish. The right
+  fix, if it is wanted, is an admin-only GET beside the PUT and DELETE —
+  not loosening the public route, whose session check would let any
+  signed-in participant see draft artwork.
+- Operator-only, **not yet run by the operator**: uploading artwork to
+  `GPT` on production and seeing `/courses` render it; the two hard
+  reloads that prove the second request comes from the browser cache;
+  and tabbing the real page. What the build session ran instead: the 21
+  backend tests (which pin the server half of the caching bargain — the
+  `immutable` header, the ETag, and the 304), the 4 Catalog tests, and a
+  static harness in headless Chrome loading the real `global.css` and
+  the real `Catalog.module.css` around the card markup. Measured there:
+  at 1280 and 768 the card is a row with the artwork exactly 240×135
+  (ratio 1.778), page scroll width equal to the viewport; at 500 and at
+  360 (via an iframe over `http://localhost`, since headless Chrome
+  clamps a window to 500px — 034 hit the same floor) the card is a
+  column, the artwork is full width and still 1.778, the price sits
+  under the title, the side gutters are 16px, and scroll width equals
+  the viewport at both. The description measured 47px against a 23.25px
+  line height at every width — two lines, clamped.
+- `align-items: flex-start` on the card link, not the `stretch` the
+  first cut had: measured at 1280px, a stretched `<img>` came out
+  240×166 because the text column was taller, so `object-fit: cover`
+  was silently cropping more than the 16:9 the brief asks for.
+- Found, reported, not built (out of scope): `course_code` has no
+  pattern validation anywhere — `CourseCreate` only requires
+  `min_length=1`. A code containing `/` would produce a malformed
+  thumbnail key, but it already breaks `/api/v1/courses/{course_code}`
+  and the package key scheme, so this feature neither introduces nor
+  widens the gap. `LocalStorage._path` refuses a key that escapes the
+  root, so the failure mode is a 500, not a traversal.
+- The audit bundle's `6-descriptive/course.json` is built from the same
+  public detail payload and therefore now records `thumbnail_url` among
+  the descriptive materials. Harmless and arguably right — it is what
+  the page said — but it is a change to a 9.02.2 artifact's contents
+  that no test asserted either way, so it is named here.
+- `tests/test_development.py::test_complete_course_publishes_and_discloses_provenance`
+  fails in this session and **is not caused by this feature**: verified
+  by stashing every change and re-running it on the clean tree, where it
+  fails identically. It compares a server-stamped UTC date against the
+  test machine's local `date.today()`, so it fails for the hours between
+  local midnight and UTC midnight (run at 20:02 EDT = 00:02 UTC). A
+  one-line test fix, left alone as another feature's code. The other 604
+  backend tests and all 148 frontend tests pass.
+- pyflakes reports no warning in any file this feature touched; the
+  pre-existing unused imports 030 listed are still there. oxlint exits 0
+  with 11 warnings, all on untouched files. `sync_brand.py --check`
+  passes (14 files in sync).

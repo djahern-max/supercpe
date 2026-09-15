@@ -7,16 +7,27 @@ and must agree across them (3.01.1, 3.02.1). Rule violations raise
 422 `{"errors": [...]}`, the same response shape as package ingest.
 """
 
+import hashlib
 from datetime import datetime, timezone
+from io import BytesIO
 
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.constants.media import (
+    THUMBNAIL_KEY_PREFIX,
+    THUMBNAIL_MAX_BYTES,
+    THUMBNAIL_MAX_EDGE,
+    THUMBNAIL_MEDIA_TYPES,
+    THUMBNAIL_MIN_EDGE,
+)
 from app.constants.package_kinds import DEFAULT_KIND, KIND_MIXED
 from app.models.course import Course, CourseLesson
 from app.models.enrollment import Enrollment
 from app.models.lesson_package import LessonPackage
 from app.services import credit
+from app.storage import Storage
 
 # The course-level facts copied from the packages, in the order refusal
 # messages name them.
@@ -127,11 +138,144 @@ def set_price(db: Session, course: Course, price_cents: int) -> Course:
     return course
 
 
-def delete_course(db: Session, course: Course) -> None:
+# --- catalog artwork (035) ---------------------------------------------------
+
+THUMBNAIL_NOT_AN_IMAGE = (
+    "The artwork must be a JPEG, PNG, or WebP image; the upload's own bytes "
+    "were none of those, whatever the file is named."
+)
+THUMBNAIL_TOO_LARGE = (
+    f"The artwork must be {THUMBNAIL_MAX_BYTES // (1024 * 1024)} MB or "
+    "smaller."
+)
+THUMBNAIL_UNREADABLE = (
+    "The artwork could not be read as an image. Re-export it and try again."
+)
+
+
+def _thumbnail_extension(content: bytes) -> str | None:
+    """"jpg", "png", or "webp" from the file's own magic bytes — never the
+    filename or the multipart content-type header, both of which the
+    browser guesses. WebP is a RIFF container, so its signature is split:
+    "RIFF", four length bytes, then "WEBP"."""
+    if content.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def _thumbnail_edges(content: bytes) -> tuple[int, int] | None:
+    """(width, height) read from the header. Pillow is already present as
+    a WeasyPrint dependency and already reads the brand PNGs in
+    sync_brand.py; nothing here decodes or rewrites pixels, which is the
+    stated non-goal — only `Image.open`, which parses the header."""
+    try:
+        with Image.open(BytesIO(content)) as image:
+            return image.size
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None
+
+
+def thumbnail_url(course: Course) -> str | None:
+    """The public route with the content hash as `?v=`. Relative, so the
+    frontend prefixes its API base URL, the same shape
+    `LocalStorage.url_for` hands out.
+
+    The hash in the URL is what makes the response safely cacheable for a
+    year: a replacement is stored under a different key and therefore
+    answered at a different URL, so a browser or CDN holding the old
+    bytes is never wrong, only holding something nothing points at any
+    more."""
+    if not course.thumbnail_key:
+        return None
+    digest = course.thumbnail_key.rsplit("/", 1)[-1].split(".")[0]
+    return (
+        f"/api/v1/courses/{course.course_code}/thumbnail?v={digest[:12]}"
+    )
+
+
+def _delete_thumbnail_object(storage: Storage, course: Course) -> None:
+    """Artwork is regenerable and is evidence of nothing, so a superseded
+    image is deleted rather than retained — the one place in this service
+    where a stored object goes away. Contrast the 9.02 material under
+    packages/, certificates/, and audits/, which is never deleted."""
+    if course.thumbnail_key:
+        storage.delete(course.thumbnail_key)
+
+
+def set_thumbnail(
+    db: Session, storage: Storage, course: Course, content: bytes
+) -> Course:
+    """The catalog card's artwork. A business fact, not course content:
+    no `touch`, so the credit and the review stay current and a published
+    course's artwork can be replaced without unpublishing it. `set_price`
+    is the precedent and the reasoning is the same one — swapping a
+    picture is not a significant revision under 4.02, and 8.01's list of
+    what must be disclosed in advance (printed page 20) has eleven items,
+    none of them a picture.
+
+    Stored at `course-thumbnails/<course_code>/<sha256>.<ext>`, so the
+    key changes whenever the bytes do; the previous object is deleted."""
+    if len(content) > THUMBNAIL_MAX_BYTES:
+        raise CourseRuleViolation([THUMBNAIL_TOO_LARGE])
+    # The constant is the gate, not this function's return: narrowing the
+    # allowed types is then one edit in app/constants/media.py.
+    extension = _thumbnail_extension(content)
+    if extension not in THUMBNAIL_MEDIA_TYPES:
+        raise CourseRuleViolation([THUMBNAIL_NOT_AN_IMAGE])
+    edges = _thumbnail_edges(content)
+    if edges is None:
+        raise CourseRuleViolation([THUMBNAIL_UNREADABLE])
+    width, height = edges
+    shortest, longest = min(width, height), max(width, height)
+    if shortest < THUMBNAIL_MIN_EDGE:
+        raise CourseRuleViolation(
+            [
+                f"The artwork is {width}x{height}; its shortest edge must "
+                f"be at least {THUMBNAIL_MIN_EDGE} pixels."
+            ]
+        )
+    if longest > THUMBNAIL_MAX_EDGE:
+        raise CourseRuleViolation(
+            [
+                f"The artwork is {width}x{height}; its longest edge must "
+                f"be at most {THUMBNAIL_MAX_EDGE} pixels."
+            ]
+        )
+
+    digest = hashlib.sha256(content).hexdigest()
+    key = (
+        f"{THUMBNAIL_KEY_PREFIX}/{course.course_code}/{digest}.{extension}"
+    )
+    if key != course.thumbnail_key:
+        storage.put(key, BytesIO(content))
+        _delete_thumbnail_object(storage, course)
+        course.thumbnail_key = key
+        db.commit()
+        db.refresh(course)
+    return course
+
+
+def clear_thumbnail(db: Session, storage: Storage, course: Course) -> Course:
+    """Back to a text-only catalog card. Deletes the object: see
+    `_delete_thumbnail_object`. No `touch`, for the same reason
+    `set_thumbnail` does not call it."""
+    _delete_thumbnail_object(storage, course)
+    course.thumbnail_key = None
+    db.commit()
+    db.refresh(course)
+    return course
+
+
+def delete_course(db: Session, storage: Storage, course: Course) -> None:
     """Detaches the lessons (rows cascade), never deletes packages. A
     course with enrollments is never deleted, whatever its status: the
     enrollments, completions, and attempts hanging off it are 9.02
-    records."""
+    records. The catalog artwork goes with the row (035): nothing else
+    points at it and it is evidence of nothing."""
     enrollment_count = db.scalar(
         select(func.count())
         .select_from(Enrollment)
@@ -149,6 +293,7 @@ def delete_course(db: Session, course: Course) -> None:
         raise CourseRuleViolation(
             [f"course {course.course_code} is {course.status}; only draft courses can be deleted"]
         )
+    _delete_thumbnail_object(storage, course)
     db.delete(course)
     db.commit()
 

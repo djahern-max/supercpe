@@ -1,109 +1,158 @@
-# current-feature.md
+# Current Feature
+
+## Feature NN, Course thumbnails and the catalog card
+
+> Set NN from the last entry in `CHANGELOG.md` before starting.
 
 ## Goal
-
-Make the create-course form on `/admin/courses` usable on a phone-width
-viewport. Today the course code field, title field, and **Create course**
-button sit in a fixed three-across row; at ~390–500px the button is clipped by
-the card edge and is partly or fully unreachable.
-
-Desktop appearance must not change.
+Each course carries its own catalog artwork, uploaded by an admin, stored in
+Spaces, and served from a cacheable public route. `/courses` stops being a
+stack of paragraphs and becomes a scannable list that works on a phone.
 
 ## In scope
-
-- The create-course form row on the admin Courses page.
-- If that row's styling comes from a shared admin form-row class used by other
-  admin pages (Packages, Experts, Sponsor, Jurisdictions), fix it once at the
-  shared class rather than adding a page-specific override.
+- `thumbnail_key` on `courses`, nullable, with its migration
+- Admin upload and replace on the course detail page
+- A public route serving the image, private bucket preserved
+- `thumbnail_url` on the public course summary and detail payloads
+- A rebuilt `/courses` catalog card, responsive to 360px
+- First rows in `COMPLIANCE.md` only if a Standards paragraph is touched
+  (8.01.1 is the candidate; artwork is not a disclosure element, so if
+  nothing is touched, say so in the changelog rather than inventing a row)
 
 ## Out of scope
+- `docs/course-package.md`. Artwork is admin-typed marketing metadata, not
+  package content. video-tool has no business knowing what the storefront
+  looks like, and the contract is the only thing the two repos share.
+- Per-lesson artwork. A thumbnail has no lesson and no version.
+- Image processing: no resizing, cropping, or format conversion server-side.
+  The admin uploads what they want shown; CSS handles the fit.
+- Any change to publish gates, review, credit, or `touch` semantics beyond
+  the stated decision below.
 
-- The admin header/nav. It already collapses to a **Menu** button at narrow
-  widths; leave it alone.
-- Any visual restyle — no palette, type, spacing, or component redesign beyond
-  what wrapping requires.
-- Course list/table layouts on this page (empty today; separate feature if they
-  need work).
-- Any backend, route, schema, or course-creation behavior change.
-- Adding a CSS framework, component library, or any new dependency.
+## Decisions, stated rather than discovered
+1. **No `touch`.** `set_price` is the precedent and its docstring is almost
+   verbatim what applies here: a business fact, not course content. Swapping
+   an image must not mark the credit stale or force a re-review. Published
+   courses are immutable reads the other way until this is named, so name it
+   in the docstring of the setter.
+2. **API route, not presigned.** `storage.py` states the bucket is private
+   and nothing is served from it directly. A presigned catalog URL churns
+   hourly, defeating browser and CDN caching on an anonymous marketing page.
+   Add `GET /api/v1/courses/{course_code}/thumbnail` streaming from
+   `storage.open()`. Works identically under `LocalStorage` and
+   `SpacesStorage` with no media special-casing.
+3. **Cache-busting by content, not by time.** The stored key is
+   `course-thumbnails/<course_code>/<sha256>.<ext>`, and `thumbnail_url` is
+   the route with `?v=<first 12 of the sha256>`. That makes the response
+   safely `Cache-Control: public, max-age=31536000, immutable` while a
+   replacement changes the URL. Do not serve a stable URL with a short TTL.
+4. **Replacement deletes the old object.** Artwork is regenerable; there is
+   no retention interest in a superseded image. Deleting a course deletes
+   its thumbnail object too.
+5. **Not mirrored.** Stay out of `MIRRORED_PREFIXES`. That constant covers
+   9.02 material; marketing artwork is not evidence of anything.
+6. **`coming_soon` holds.** The route 404s anonymously while the site is in
+   `coming_soon` and does not join `INTENTIONALLY_PUBLIC`. An image that
+   reveals a course title defeats the gate.
 
-## Locators
+## Backend tasks
+1. `app/constants/media.py`, marked "ours" (not from the Standards):
+   allowed content types `image/jpeg`, `image/png`, `image/webp`; max 2 MiB;
+   max edge 4000px; min edge 600px. Sniff the magic bytes — do not trust the
+   multipart `content-type` header.
+2. `app/models/course.py`: `thumbnail_key: Mapped[str | None]`. Autogenerate
+   the migration, verify `downgrade -1`.
+3. `app/services/courses.py`: `set_thumbnail(db, storage, code, upload)` and
+   `clear_thumbnail(db, storage, code)`. Validation failures raise
+   `CourseRuleViolation` so they surface in the same 422 `{"errors": [...]}`
+   shape as everything else. Both delete the superseded object. Neither
+   calls `touch`. `delete_course` removes the object.
+4. Routers: `PUT` and `DELETE /api/v1/admin/courses/{code}/thumbnail` under
+   the admin dependency; public `GET /api/v1/courses/{code}/thumbnail`
+   returning the bytes with the content type, the immutable cache header,
+   and an `ETag` of the hash. 404 when the course has no thumbnail, when the
+   course is not published, and anonymously under `coming_soon`.
+5. `app/schemas/course.py`: `thumbnail_url: str | None` on
+   `PublicCourseSummary` and the public detail schema. Null when unset —
+   most courses will have none on day one.
 
-Not pinned in this spec — find them and record the actual paths in the
-changelog entry.
+## Frontend tasks
+1. `src/api/admin.js`: `setCourseThumbnail(code, file)` reusing the existing
+   `FormData` pattern; `clearCourseThumbnail(code)`.
+2. `AdminCourseDetail`: an artwork card — current image, file picker,
+   Replace, Remove. Show the constants' limits as text before upload, and
+   render 422 messages per line as elsewhere. Copy: "Catalog artwork",
+   "Upload artwork", "Remove artwork" — the button says what happens.
+3. `Catalog.jsx`: the card below. Degrade cleanly when `thumbnail_url` is
+   null — the card keeps its shape and the text column takes the full width.
+   No placeholder graphic, no grey box with an icon.
 
-1. The admin Courses page component under `frontend/src/` (the one rendering
-   the `Course code (e.g. ASC842-PCX)` and `Title` inputs and the
-   `Create course` button).
-2. The stylesheet rule that lays out that card/row.
-3. **The existing media query that drives the admin header's Menu collapse.**
-   Read its breakpoint value and reuse that exact value. Do not introduce a
-   second breakpoint near it.
+## Design brief for the catalog card
+The audience is a licensed CPA deciding whether to spend an hour and $29.
+The one fact they scan for is the credit amount. Spend the boldness there
+and keep everything else quiet.
 
-## Data model
+**Tokens.** Ground: `#F5F7FA`. Card: `#FFFFFF`. Ink: `#032660` (the logo
+navy) for headings, `#44506A` for body. Accent: `#0166FC` for links and the
+credit figure. `#01B0A9` exists in the brand but is not needed here — leave
+it for the reader UI so the catalog stays calm.
 
-No change. No migration.
+**Type.** Inter throughout, matching the video theme, so a participant sees
+one typeface from catalog to certificate. Title 20/1.3 semibold, body
+15/1.55, metadata 13. Description clamped to two lines; the full text lives
+on the course page.
 
-## Tasks
+**Layout.** A horizontal card, not a grid of tiles: artwork left at 16:9 and
+about 240px wide, text right, price top-right of the text column. This holds
+up at one course and at twelve, where a 3-up grid looks broken at one. Below
+640px the artwork moves above the text at full width and the price moves
+under the title. Max content width 860px, left aligned.
 
-1. Read the header-collapse media query; note the breakpoint value for use
-   below and for the changelog entry.
-2. Convert the form row to a wrapping flex row: `display: flex`,
-   `flex-wrap: wrap`, and a `gap` matching the existing spacing between the
-   controls.
-3. Replace any fixed widths on the two inputs with a flex basis, e.g.
-   `flex: 1 1 14rem`, plus `min-width: 0` on each so a flex item cannot force
-   the row wider than the card. Confirm `box-sizing: border-box` applies to the
-   inputs and the card — inputs at `width: 100%` inside a padded card overflow
-   without it.
-4. At and below the header breakpoint, stack: the row becomes
-   `flex-direction: column`, and each of the two inputs and the button takes
-   `width: 100%`. A half-width button under a full-width input reads as a
-   layout bug, so the button goes full-width too.
-5. Give the button a `min-height` of at least 44px at the stacked size so it is
-   a usable tap target.
-6. Verify keyboard focus rings on both inputs and the button are still visible
-   in the stacked layout (nothing clipped by the card's overflow).
+**Metadata.** Drop the dot-joined string. Credits become their own element —
+`3.2 credits` at 17px in the accent colour, beside the price. The rest
+(field of study, Basic, 6 lessons, 39 sections, 7 min video) becomes one
+quiet 13px line in `#44506A`. Do not make them chips; five bordered pills is
+more structure than five plain facts deserve.
 
-## Tests
+**Restraint.** No hover lift, no shadow beyond a 1px `#E3E8F0` border, no
+scroll-triggered fades. The only motion is focus and the image loading.
+`alt=""` on the artwork — the title beside it is the accessible name, and a
+described decoration is noise for a screen reader. Visible keyboard focus on
+the whole card link.
 
-There is no frontend test runner in this repo, so verification is manual in a
-browser at these widths:
+**Empty state.** One sentence in body type: "No courses are published yet."
 
-- **390px** — controls stacked, all three fully inside the card, nothing
-  clipped, no horizontal scrollbar on the page.
-- **500px** — matches the second screenshot's width; same as above.
-- **768px** — either wrapped or three-across, but no clipping either way.
-- **1280px** — pixel-unchanged from current desktop layout.
-
-Tab through the form at 390px and confirm focus is visible on each control.
-
-Run existing backend tests to confirm nothing was touched there.
-
-## COMPLIANCE.md rows
-
-None. This is presentation only on an admin-internal page. No Section 9
-certificate content, no 4.02 reviewer artifact, no participant-facing record is
-affected.
+## Tests (`tests/test_course_thumbnails.py`)
+- valid png ingests; object at the expected key; `thumbnail_url` carries the
+  `v` parameter matching the hash
+- replacing deletes the previous object and changes `thumbnail_url`
+- over-size, wrong type, and a `.png` whose bytes are not a png are each
+  refused with a message naming the limit
+- a file under the minimum edge is refused
+- `set_thumbnail` does not change `content_updated_at`; a published course
+  stays published and its review stays current
+- public GET returns the immutable cache header and the ETag; a conditional
+  request with the ETag returns 304
+- public GET 404s for a draft course, for a course with no thumbnail, and
+  anonymously under `coming_soon`
+- deleting the course removes the object
+- admin routes 401 without the session
 
 ## Acceptance
+- `pytest` green; migration round-trips
+- Upload artwork to `GPT` in the admin; `/courses` renders the card with it
+- Hard-reload twice: the second request is served from cache, not re-fetched
+- Resize to 360px: artwork on top, nothing clipped, no horizontal scroll
+- Remove the artwork: the card degrades to text and stays aligned
 
-- At 390px, the course code field, title field, and Create course button are
-  all fully visible and operable inside the card.
-- No horizontal page scroll at 390px on `/admin/courses`.
-- At 1280px the layout is visually identical to before the change.
-- One breakpoint value governs both the header collapse and the form stack.
-- No new dependencies; no backend, route, or behavior changes.
+## Do not
+- Add anything to `docs/course-package.md`
+- Put artwork in `frontend/public/` or `frontend/src/assets/`
+- Call `touch` from either setter
+- Serve the bucket directly or presign the catalog image
 
 ## When done
-
-Append the next sequential CHANGELOG entry:
-
-- **What changed** — the files touched (actual paths), the breakpoint value
-  reused, and whether the fix landed on a shared admin form-row class or was
-  scoped to this page.
-- **Standards touched** — none.
-- **Decisions** — record the shared-class vs page-scoped choice and why.
-- **Known gaps** — list the production browser walkthrough at phone width as
-  operator-only, not yet run by the operator. Note any other admin pages
-  observed to have the same fixed-row problem but left unfixed by this spec.
+Append the NN entry. Under Decisions: why artwork is a business fact rather
+than course content, why the route is cacheable rather than presigned, and
+why the hash is in the URL. Under Known gaps: no image processing, so an
+admin can upload a 4000px image that a phone downloads in full. Then stop.

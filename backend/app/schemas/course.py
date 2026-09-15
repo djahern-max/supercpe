@@ -231,6 +231,11 @@ class CourseDetailAdmin(BaseModel):
     # 018: admin-set integer cents; null until first set, and publish
     # refuses without it (the price_missing readiness finding).
     price_cents: int | None
+    # 035: the storage key of the catalog artwork, or null. The admin
+    # page needs the key itself (it is what an operator quotes when an
+    # object goes missing) as well as the route the picture is at.
+    thumbnail_key: str | None
+    thumbnail_url: str | None = None
     content_updated_at: datetime
     created_at: datetime
     updated_at: datetime
@@ -302,6 +307,12 @@ class CoursePublicSummary(BaseModel):
     # gate refuses without one. What is charged is stamped on the payment
     # row from the Stripe event, never re-read from here.
     price_cents: int | None
+    # 035: the catalog card's artwork, as the public route with the
+    # content hash in `?v=`, or null when the course has no artwork —
+    # which most courses have on day one, and the card is built to
+    # render without it. Not an 8.01 disclosure element: the eleven
+    # items on printed page 20 do not include a picture.
+    thumbnail_url: str | None
     # 8.01 item 3: the recommended CPE credit, with the basis it rests on.
     # Both are null while the stored credit is stale or below the minimum
     # awardable; a participant is never shown a stale number or "0.0".

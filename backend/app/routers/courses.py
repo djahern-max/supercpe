@@ -4,7 +4,7 @@ This is what a potential participant reads before enrolling — public while
 the site is open; while it is coming_soon, only sessions get through and
 everyone else sees 404 (require_site_open_or_session)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,10 @@ from app.auth import (
 )
 from app.constants.certificate import PROGRAM_TYPE
 from app.constants.jurisdiction_policy import FINAL_AUTHORITY_SENTENCE
+from app.constants.media import (
+    THUMBNAIL_CACHE_SECONDS,
+    THUMBNAIL_MEDIA_TYPES,
+)
 from app.db import get_db
 from app.models.account import Account
 from app.models.course import Course
@@ -38,6 +42,7 @@ from app.services import policies as policies_service
 from app.services import subscriptions as subscriptions_service
 from app.services.enrollments import EnrollmentRuleViolation
 from app.services.subscriptions import SubscriptionRuleViolation
+from app.storage import Storage, get_storage
 
 router = APIRouter(
     prefix="/courses",
@@ -91,6 +96,9 @@ def _summary_fields(course: Course) -> dict:
         # 018: what the Registration section and catalog card render as
         # dollars.
         "price_cents": course.price_cents,
+        # 035: null for a course with no artwork; the card renders
+        # without it.
+        "thumbnail_url": courses.thumbnail_url(course),
     }
 
 
@@ -164,6 +172,55 @@ def get_course(course_code: str, db: Session = Depends(get_db)):
     if course is None or not _renderable(course):
         raise HTTPException(status_code=404, detail="Course not found")
     return public_detail(db, course)
+
+
+@router.get("/{course_code}/thumbnail")
+def get_thumbnail(
+    course_code: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+):
+    """035: the catalog card's artwork, streamed from the private bucket
+    rather than presigned.
+
+    A presigned URL churns hourly, which would defeat browser and CDN
+    caching on an anonymous marketing page; this route is a stable URL
+    whose content hash is in the query string, so it can promise a year
+    of `immutable` caching and still change the instant the artwork does.
+    Works the same under `LocalStorage` and `SpacesStorage`, so the
+    catalog needs no media special-casing.
+
+    Every miss is the same 404 — no such course, not published, or no
+    artwork — and the router's site-mode gate 404s the whole thing
+    anonymously while the site is coming_soon: an image that reveals a
+    course title would defeat that gate as surely as the title would."""
+    course = courses.get_published(db, course_code)
+    if course is None or not course.thumbnail_key:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    digest, _, extension = course.thumbnail_key.rsplit("/", 1)[-1].partition(".")
+    etag = f'"{digest}"'
+    headers = {
+        "Cache-Control": f"public, max-age={THUMBNAIL_CACHE_SECONDS}, immutable",
+        "ETag": etag,
+    }
+    # The hash is the whole identity of the object, so a matching ETag
+    # cannot be stale. A list of tags is legal in the header, hence the
+    # split rather than an equality test.
+    if etag in [
+        tag.strip()
+        for tag in (request.headers.get("if-none-match") or "").split(",")
+    ]:
+        return Response(status_code=304, headers=headers)
+
+    with storage.open(course.thumbnail_key) as image:
+        content = image.read()
+    return Response(
+        content=content,
+        media_type=THUMBNAIL_MEDIA_TYPES[extension],
+        headers=headers,
+    )
 
 
 @router.get(

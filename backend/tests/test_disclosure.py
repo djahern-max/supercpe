@@ -169,6 +169,10 @@ EXPECTED_DETAIL_KEYS = {
     "total_section_count",
     # 018: the price, a commercial fact beside the 8.01 items.
     "price_cents",
+    # 035: the catalog artwork, another commercial fact beside them.
+    # 8.01's eleven items (printed page 20) do not include a picture, so
+    # this key is here as an extra the test names, not as an item.
+    "thumbnail_url",
     "recommended_credit",
     "credit_basis",
     "developed_by",

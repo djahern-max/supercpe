@@ -16,6 +16,17 @@ python-multipart==0.0.20
 # fpdf2.
 jinja2==3.1.6
 weasyprint==70.0
+# 035: reading the width and height out of an uploaded catalog image's
+# header, so the min/max edge limits are a refusal rather than a
+# surprise on a phone. Not a new package — Pillow has arrived as a
+# WeasyPrint dependency since 032 and sync_brand.py already uses it —
+# but the request path now imports it, so it is pinned here rather than
+# depending on whatever WeasyPrint happens to resolve. Nothing is
+# resized, cropped, or converted: only `Image.open`, which parses the
+# header. Hand-rolling the three header formats (PNG's IHDR is trivial,
+# JPEG needs an SOF-marker scan, WebP has three container variants) was
+# the alternative and is more code and more ways to be wrong.
+pillow==12.3.0
 # Spaces is S3-compatible and boto3 is the reference client (012);
 # hand-rolling SigV4 presigning would be more code and less trustworthy.
 boto3==1.43.83
