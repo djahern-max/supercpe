@@ -1,216 +1,171 @@
-# Feature 038 — Package version lifecycle: archive, delete, purge media
+# Current Feature
+
+## Feature 036 — Review pauses land in the silence, and the player goes full screen
+
+> Confirm 036 against the last entry in `CHANGELOG.md` before starting. 035 was the last entry seen when this was drafted.
 
 ## Goal
 
-Lessons get re-exported as they improve (GPT-06 was the first real case,
-2026-09-15). Every re-upload creates a new package version, and the old
-versions pile up on the admin packages page forever. Today the only way to
-remove one is Delete, and it fails badly: deleting a version that any
-enrollment touched fails in Postgres (`lesson_progress_package_id_fkey`,
-then `attempt_answers` / `review_answers` through `questions`). The page
-gets a 500 and shows "Delete failed. Try again."
+1. The video player pauses for a review question inside the silence between narrated blocks, and resumes without clipping the next word.
+2. A "Full screen" control puts the whole player (video, controls, question panel) into full screen, so the slides are readable on a phone.
 
-Give each package version a lifecycle the admin can see and act on:
+Nothing about which questions are asked, where they are placed, how they are graded, or what is recorded changes.
 
-- **Unused** (no enrollment ever pinned it, not attached): delete outright,
-  as today, but with a readable refusal when it isn't unused.
-- **Used, within retention**: **archive**. It leaves the packages list and
-  can't be attached, but every row and stored file stays.
-- **Used, past retention**: **purge media**. The stored video and media
-  files are deleted from storage. The database rows (manifest, transcript,
-  sections, questions, choices) and every participant record stay.
+## Why
 
-Nothing in this feature deletes an enrollment, attempt, answer, progress
-row, completion, or certificate. Purging media is the only new destructive
-act, and only after the retention date has passed.
+**Pause timing.** On GPT-06 the player stops after the narrator has already started the next word. The package is not at fault. `ffmpeg silencedetect` on the exported MP4 shows every `video.blocks[].end_seconds` inside a silence. Every boundary has at least 0.5 s of silence before `end_seconds` and only 0.07–0.19 s after it.
 
-## Standards touched
+That asymmetry comes from how the audio is made:
+- `end_seconds` is where the next block's MP3 begins.
+- video-tool's `generate` appends 0.6 s of silence to the end of every block.
+- ElevenLabs puts almost none at the start of a file.
 
-Read each paragraph in `docs/2026-Statement-on-Standards-for-CPE-Programs.pdf`
-before writing code and name the printed page in the changelog (the
-2026-09-13 brand-assets decision read 9.02 / 9.02.2 on printed page 22;
-confirm it, don't copy it).
+A detector that reacts after `end_seconds` has passed will usually be into the next word. `timeupdate` fires only every 15–250 ms, so it often is.
 
-- **9.02**: sponsors keep documentation for a minimum of five years.
-  This feature starts acting on the far side of that minimum for one
-  element only.
-- **9.02.2(7) / 9.02.1(8)**: program materials. The stored video/media
-  files are what purge removes, and only once every participant record
-  that references the version is past `RETENTION_YEARS`.
-- **9.02.2(1)**: completion records. Untouched: rows are never deleted,
-  and the manifest, transcript, and questions stay so the record can still
-  show what was asked.
+The fix is to pause a fixed lead before `end_seconds`. Any lead under 0.6 s is inside the silence by construction. Use 0.3 s.
 
-## Reversals (CLAUDE.md rule 7)
+**Full screen.** Slides are rendered into a 1920-wide MP4, with type sized to be legible at half width (video-tool entry 31). At a phone's ~400 px the frame is about one-fifth scale, and no player setting recovers that. Full screen in landscape recovers most of it. Render quality itself is a video-tool spec, not this one.
 
-This spec asks for the following, and the changelog must name each as a
-reversal of the specific earlier decision:
+## Standards
 
-1. `backend/app/constants/retention.py` and
-   `backend/app/services/retention.py` docstrings: "nothing enforces
-   deletion after it … superCPE keeps everything." Reversed **for package
-   media files only**: past the date, an admin may purge them.
-2. COMPLIANCE.md 9.02 rows from 002 and 010 ("Nothing is ever deleted",
-   packages FK RESTRICT). Add a new row saying what changed; never edit the
-   old rows (append-only, like the 2026-08-30 corrections).
+Read 5.01.2 and 5.01.2.1 in the 2026 Statement PDF before writing the changelog. Cite them from the PDF, not from this spec.
 
-Not reversed: "Participants keep the package versions they enrolled on"
-holds for the whole retention period; accounts, enrollments, attempts,
-answers, progress, completions, and certificates are still never deleted.
+- **5.01.2.1** requires review questions "placed throughout the program in sufficient intervals." Placement stays `after_block` against measured `video.blocks` (contract rule 18).
+  - Pausing 0.3 s early, inside the same inter-block silence, is a presentation detail of when the player stops. It is not a placement change.
+  - Record this as a sponsor decision, not a Standards requirement.
+- **Full screen must not create a way past a question.** The 031 ceiling is what guarantees each placed question is presented. A native full-screen video player (iOS `webkitEnterFullscreen`) has its own scrubber and would bypass it. That path is refused below.
 
-Write `docs/decisions/2026-09-15-package-version-lifecycle.md` recording
-the three states, the retention anchor below, and why purge removes files
-but keeps rows.
-
-## Definitions (derived, never stored as booleans)
-
-For a package version P:
-
-- **referencing enrollments**: enrollments whose `package_versions` pins
-  P, plus any enrollment with an attempt whose `package_versions` lists P,
-  or with `lesson_progress` / `review_answers` on P. Findings confirm the
-  complete list, including whether admin preview writes any of these.
-- **used**: at least one referencing enrollment exists.
-- **attached**: a `course_lessons` row points at P.
-- **archived**: `archived_at IS NOT NULL`.
-- **retain_until(P)**: the latest, across referencing enrollments, of
-  `retain_until(anchor)`, where anchor is the completion's `completed_at`
-  if the enrollment completed, else the enrollment's `expires_at`.
-  `null` when P is unused.
-- **deletable**: not used and not attached.
-- **media purgeable**: used, archived, not attached, `retain_until(P)` is
-  in the past, and media not already purged.
-
-`RETENTION_YEARS` and `retain_until()` are reused, not duplicated.
+Neither change touches a retained record, credit, or anything under 9.02.
 
 ## In scope
 
-1. **Findings first.** Before changing anything, report:
-   - Every table and JSONB column that references a package version
-     (FKs and non-FK pins), and which of them block `DELETE FROM
-     lesson_packages` today.
-   - Whether admin preview of a lesson writes progress or answers.
-   - What storage objects a package owns (`video_key`, `package_media`,
-     anything else under `packages/`) and whether `storage.delete` covers
-     all of them.
-   - With bucket versioning on (013), what `storage.delete` actually does
-     under `packages/`: a delete marker, with the bytes kept as a
-     noncurrent version that the lifecycle rule never expires. State
-     plainly whether purge reclaims storage or only removes the current
-     object.
-   - Whether the runtime Limited Access key can delete under `packages/`.
-   - What the audit bundle references by storage key, and what it does
-     when that key no longer exists.
-   - Whether an admin action log exists that purge should write to.
-2. **Delete refuses readably.** `delete_package` checks used and attached
-   before deleting and returns 422 `{"errors": [...]}` naming why (for
-   example, "GPT-06 v1 is referenced by 1 enrollment; archive it
-   instead"). The endpoint never 500s on a referenced version; a test
-   proves the FK path is unreachable.
-3. **Archive / unarchive.** `archived_at` (timestamp) on
-   `lesson_packages`, with a migration. `POST
-   /api/v1/admin/packages/{id}/archive` refuses while attached;
-   `/unarchive` clears it. Attaching or `update-version` to an archived
-   package is refused with 422. Re-uploading a zip whose hash matches an
-   archived version stays a no-op and reports that the version is archived.
-4. **Purge media.** `POST /api/v1/admin/packages/{id}/purge-media` refuses
-   unless media purgeable (422 with the reason and the date). On success
-   it deletes every storage object the package owns and records
-   `media_purged_at` and `media_purged_by` (account email snapshot, like
-   `recorded_by` on reviews). A CHECK constraint ties the two together.
-   Rows are not deleted. Purge is idempotent-refused: a second call is 422.
-5. **After purge, degrade, don't break.** Any participant, admin, or
-   audit-bundle path that would fetch a purged object says "materials for
-   this version were removed on {date} after the retention period" instead
-   of erroring. Transcript, questions, and credit breakdown still render.
-6. **List payload.** `GET /api/v1/admin/packages` excludes archived by
-   default; `?include_archived=true` includes them. Each summary gains
-   `archived_at`, `enrollment_count`, `attached_course_codes`,
-   `retain_until`, `deletable`, `media_purgeable`, `media_purged_at`.
-7. **Admin packages page.** A "Show archived" toggle. Per row: Delete
-   (enabled only when deletable), Archive / Unarchive, and Purge media
-   (shown only when archived; enabled only when purgeable, otherwise shows
-   "Media can be purged after {retain_until}"). Purge confirms with the
-   lesson id, version, and the sentence "The video and media files are
-   deleted. Participant records and questions are kept." The existing
-   generic "Delete failed" message stays only for genuinely unexpected
-   errors; 422 reasons render as errors.
+- `REVIEW_PAUSE_LEAD_SECONDS` and a single derived pause time per review point
+- Frame-accurate detection near a pause point
+- Resume-after-Continue behavior at the shifted point
+- A full-screen toggle on the player wrapper, with the iOS native-player path excluded
+- `playsInline` on the `<video>` element if not already present
+- Tests, a COMPLIANCE.md Notes edit, a `docs/decisions/` entry, and the changelog
 
 ## Out of scope
 
-- Deleting any participant record, or any package row that is used.
-- Automatic or scheduled purging. Purge is always one admin clicking one
-  version.
-- Changing the bucket lifecycle rule to expire noncurrent `packages/`
-  versions. If findings show purge leaves the bytes as noncurrent versions,
-  record it under Known gaps and in ROADMAP improvement notes; do not
-  change bucket configuration.
-- Any change to the course package contract, video-tool, credit math,
-  gating, or certificates.
-- Cleaning up package 6 (GPT-06 v1) in production. It's test data; the
-  operator handles it.
+- Hiding or restyling the review ticks. They stay: 006's brief, and they explain the 031 ceiling.
+- Anything in video-tool, the package contract, ingest, or readiness, including a silence-alignment check at ingest
+- Reader clips (`Reader.jsx`), which keep native controls
+- Captions, playback speed, keyboard shortcut for full screen, player library
+- Rendering slides as HTML in the browser
+- Any backend change
+
+## Locators
+
+- `frontend/src/components/Player/Player.jsx`: the crossing detector, `askQuestions(points)`, the ceiling computation, `seekTo`, `handleSeeked`, `SEEK_TOLERANCE_SECONDS`, `REWIND_SECONDS`, `FORWARD_SECONDS`, the "Re-watch this section" handler, the resume on `loadedmetadata`, the control row
+- `frontend/src/components/Player/Player.module.css` (or wherever the player's styles live)
+- `frontend/src/components/Player/Player.test.jsx`
+- `COMPLIANCE.md`: the 5.01.2 and 5.01.2.1 rows (Notes only; no new rows)
+- `docs/decisions/2026-09-13-video-seek-ceiling.md`, which the new decision sits beside
 
 ## Data model
 
-`lesson_packages`: `archived_at timestamptz null`, `media_purged_at
-timestamptz null`, `media_purged_by text null`. CHECK: `media_purged_at`
-and `media_purged_by` are both null or both set; CHECK: `media_purged_at`
-requires `archived_at`. Hand-written in the Alembic migration
-(autogenerate won't write CHECKs). No new tables.
+None. No migration, no serializer change.
+
+## Tasks
+
+### 0. Recon
+
+Write the answers into the changelog draft first.
+
+1. Which event drives the crossing detector today: `timeupdate`, a timer, or something else? Quote the condition it tests (e.g. `prev < p && cur >= p`).
+2. After Continue, where does playback resume? How does the code avoid re-asking the question it just asked?
+3. Where is the ceiling compared against `currentTime`? List every site, so step 1 below changes all of them.
+4. Is `playsInline` set on the `<video>`?
+
+### 1. One pause time per review point
+
+- Add `REVIEW_PAUSE_LEAD_SECONDS = 0.3` beside `REWIND_SECONDS`.
+- Comment it: under `generate`'s 0.6 s per-block tail, so inside the inter-block silence by construction. Name GPT-06's measured margins as the evidence.
+- Each review point's pause time is `max(block.start_seconds, block.end_seconds - REVIEW_PAUSE_LEAD_SECONDS)`.
+- Compute it once, where review points are built. Every consumer uses it and nothing else reads `end_seconds` for pausing:
+  - the crossing detector
+  - the ceiling
+  - the seek clamp
+  - `handleSeeked`'s land-on-ceiling check
+  - resume
+- The tick position may keep using `end_seconds`. A 0.3 s difference is invisible on the bar. Say which you chose in the changelog.
+
+### 2. Frame-accurate detection
+
+- While playing, check `currentTime` against the next pause time on every video frame:
+  - use `video.requestVideoFrameCallback` where available
+  - otherwise use `requestAnimationFrame`
+- Cancel the callback on pause, on unmount, and when no unanswered-or-askable point remains ahead.
+- `timeupdate` keeps doing what it does for `furthest_seconds` and the time display.
+- On crossing, the detector calls `pause()` first, then `askQuestions(points)`, as today.
+
+### 3. Resume after Continue
+
+- Playback resumes from the pause time.
+- The next word is heard from its start, with 0.3 s of silence before it.
+- The point just asked is not re-asked on that resume. It is asked again only after the playhead has gone back before it (seek back, Rewind, or Re-watch). That preserves 031's "every crossing asks" behavior.
+
+### 4. Full screen
+
+- Add a "Full screen" button at the end of the control row. It reads "Exit full screen" while active.
+- Call `requestFullscreen()` on the player wrapper element: video, control row, and question panel together. Never call it on the `<video>` element.
+- Show the button only when `document.fullscreenEnabled` is true. On iPhone Safari this hides it.
+  - Do not fall back to `webkitEnterFullscreen`. The native player's scrubber bypasses the ceiling.
+  - Record this in Decisions.
+- After entering, try `screen.orientation.lock("landscape")` and ignore any rejection.
+- Track state from `fullscreenchange`, so Escape or the OS gesture updates the label.
+- In `:fullscreen`:
+  - the wrapper fills the screen on the existing dark/neutral ground
+  - the video fills the space above the control row, with `object-fit: contain`
+  - the question panel still overlays the video area at the same width, as 006 specifies
+- Set `playsInline` on the `<video>` if recon found it missing, so iOS does not take the video into its native full-screen player on play.
+
+### 5. Docs and gates
+
+- `COMPLIANCE.md` Notes on 5.01.2 and 5.01.2.1: questions are asked at `end_seconds − 0.3 s`, inside the inter-block silence, as a presentation choice with placement unchanged. Full screen runs through the same player, so the ceiling still holds.
+- `docs/decisions/2026-09-15-review-pause-lead-and-fullscreen.md`
+- pyflakes, oxlint, and both suites
 
 ## Tests
 
-Backend:
-- Delete of an unused, unattached version succeeds and removes its storage
-  objects (stubbed storage).
-- Delete of an attached version, and of a version pinned by an enrollment
-  with no progress, and of one with progress/answers/attempts: each 422
-  with a reason, never 500, rows unchanged.
-- Archive refuses while attached; archived versions are excluded from the
-  list by default and included with the flag; attach and update-version to
-  an archived version 422.
-- `retain_until(P)`: completed enrollment anchors on `completed_at`;
-  incomplete anchors on `expires_at`; with several enrollments the latest
-  wins; Feb 29 behaves as `retain_until()` already does.
-- Purge refuses when not archived, when attached, when unused (delete
-  instead), and one day before `retain_until`; succeeds one day after
-  (frozen clock); deletes every owned object; sets both columns; leaves
-  every enrollment, attempt, answer, progress, completion, question, and
-  section row intact; a second purge 422s.
-- After purge: the reader/player, admin package view, and audit bundle
-  return the "materials removed" state, not an error.
-- Constraint tests for both CHECKs.
+`Player.test.jsx`. jsdom has no `requestVideoFrameCallback`, so drive the `requestAnimationFrame` fallback with a mocked clock and a stubbed `currentTime`.
 
-Frontend:
-- Show archived toggle changes the request.
-- Button enablement follows `deletable` / `media_purgeable` from a mocked
-  payload, with the "after {date}" text.
-- A 422 on delete renders the server's reasons, not "Delete failed".
-- Purge confirm text names the lesson and version.
-
-## COMPLIANCE.md rows
-
-- 9.02 / 9.02.2(7): new row citing 038. Package media may be purged by an
-  admin only after every referencing participant record is past
-  `RETENTION_YEARS`; package rows and all participant records are retained
-  regardless; name the reversal of the 002/010 "nothing is ever deleted"
-  rows for media files. Gap: whatever findings say about noncurrent
-  versions in the bucket.
+- A review point with `end_seconds` 30 pauses when `currentTime` reaches 29.7 and asks. It does not wait for a `timeupdate` at or after 30.
+- A block shorter than the lead pauses at its `start_seconds`, never before it.
+- After Continue at 29.7, playback resumes at 29.7, and advancing to 31 does not re-ask.
+- Seeking back to 20 and playing through 29.7 asks again.
+- The ceiling clamp uses the pause time. A forward seek to 60 with the point unanswered lands on 29.7 and asks.
+- Forward 15 s from 20 lands on 29.7 and asks.
+- "Re-watch this section" still seeks to the block's `start_seconds`.
+- Resume on load with `furthest_seconds` past an unanswered point lands on its pause time and asks.
+- Full screen, with `requestFullscreen`, `document.fullscreenEnabled`, and `fullscreenchange` mocked:
+  - the button is absent when `fullscreenEnabled` is false
+  - clicking calls `requestFullscreen` on the wrapper, not the video
+  - the label flips on `fullscreenchange`
+  - a rejected `screen.orientation.lock` does not throw
+- The existing 031 and 027 player tests pass, with expected times updated only where they asserted a pause at `end_seconds`. List each such edit in the changelog.
 
 ## Acceptance
 
-1. Findings report delivered, including the bucket-versioning answer.
-2. All tests pass; pyflakes, oxlint, both suites, and `sync_brand.py
-   --check` are green; `git status --porcelain` shows only this feature.
-3. Locally: upload v1 and v2 of a lesson, enroll a test participant on v1,
-   detach v1. Delete is refused with a readable reason; Archive works; Purge
-   is disabled with the date. With the clock moved past `retain_until`,
-   Purge removes the files and the participant's completion and certificate
-   still render.
-4. Operator-only (list under Known gaps if not run): deploy, then archive
-   GPT-06 v1 on supercpe.com.
+1. Lint and both suites pass.
+2. **Local, GPT-06 preview.** At each of the three review points, the question appears after the narrator's last word and before the next. After Continue, the next block's first word is heard whole.
+3. **Local, forward seek past an unanswered point.** It lands on the point and asks, and the next word is not heard first.
+4. **Desktop Chrome and Safari.** Full screen shows video, controls, and the question panel. A question asked while in full screen is answerable there. Escape exits and the label updates.
+5. **Android phone, if available.** Full screen enters landscape where the browser allows it.
+6. **iPhone.** No Full screen button. Pressing Play does not open the native player.
+7. **Production.** Deploy and repeat 2 and 4. Operator-only; list under Known gaps as not yet run if not done.
 
 ## When done
 
-Append CHANGELOG entry 038 in the existing format. Name both reversals under
-Decisions. Put the bucket noncurrent-version finding under Known gaps.
+Append the 036 entry.
+- **Standards touched:** 5.01.2 and 5.01.2.1, read from the PDF.
+- **Decisions:**
+  - the 0.3 s lead and why it is inside the silence by construction
+  - pause time as the single source for ceiling and detection
+  - wrapper-element full screen, and the refusal of iOS native full screen because it bypasses the ceiling
+- **Known gaps:**
+  - iPhone users have no full-screen path
+  - the lead assumes video-tool keeps a tail of at least 0.3 s. `TAIL_SECONDS` lives in video-tool and nothing here checks it.
+
+Then stop.

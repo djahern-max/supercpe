@@ -16,7 +16,8 @@ import Player from "./Player.jsx";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-// Two review points: 40 s (after block 1) and 80 s (after block 2).
+// Two review points: blocks 1 and 2 end at 40 s and 80 s, so they pause at
+// 39.7 s and 79.7 s (039's REVIEW_PAUSE_LEAD_SECONDS).
 const LESSON = {
   lesson_id: "ASC842-PCX-01",
   title: "Lease Identification",
@@ -70,17 +71,37 @@ const NEXT = {
 
 let container;
 let root;
+// jsdom has no requestVideoFrameCallback, so the player falls back to
+// requestAnimationFrame; frames run only when a test calls runFrame().
+let frameQueue;
 
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  frameQueue = new Map();
+  let nextFrameId = 1;
+  vi.stubGlobal("requestAnimationFrame", (callback) => {
+    const id = nextFrameId++;
+    frameQueue.set(id, callback);
+    return id;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id) => frameQueue.delete(id));
 });
 
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.unstubAllGlobals();
 });
+
+/** Advance the stubbed playhead to `seconds` and deliver one frame. */
+function runFrame(video, seconds) {
+  video.currentTime = seconds;
+  const callbacks = Array.from(frameQueue.values());
+  frameQueue.clear();
+  act(() => callbacks.forEach((callback) => callback(performance.now())));
+}
 
 function render(props = {}) {
   act(() => {
@@ -92,9 +113,25 @@ function render(props = {}) {
   });
   const video = container.querySelector("video");
   // jsdom has no media pipeline; the player only needs these to exist.
-  video.pause = vi.fn();
-  video.play = vi.fn(() => Promise.resolve());
+  let paused = true;
+  Object.defineProperty(video, "paused", {
+    get: () => paused,
+    configurable: true,
+  });
+  video.pause = vi.fn(() => {
+    paused = true;
+  });
+  video.play = vi.fn(() => {
+    paused = false;
+    return Promise.resolve();
+  });
   return video;
+}
+
+/** Start playback the way the media element reports it. */
+function play(video) {
+  video.play();
+  fire(video, "play");
 }
 
 function fire(video, type) {
@@ -162,7 +199,7 @@ describe("Player seeking (027, 031)", () => {
     const video = render();
     watchTo(video, 10);
     seek(video, 90);
-    expect(video.currentTime).toBe(40);
+    expect(video.currentTime).toBe(39.7);
     expect(dialog().textContent).toContain("What conveys control?");
     expect(video.pause).toHaveBeenCalled();
     expect(container.innerHTML).not.toContain("is_correct");
@@ -186,7 +223,7 @@ describe("Player seeking (027, 031)", () => {
         new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })
       );
     });
-    expect(video.currentTime).toBe(40);
+    expect(video.currentTime).toBe(39.7);
     fire(video, "seeking");
     fire(video, "seeked");
     expect(dialog().textContent).toContain("What conveys control?");
@@ -207,14 +244,14 @@ describe("Player seeking (027, 031)", () => {
     click(forward);
     fire(video, "seeking");
     fire(video, "seeked");
-    expect(video.currentTime).toBe(40);
+    expect(video.currentTime).toBe(39.7);
     expect(dialog().textContent).toContain("What conveys control?");
   });
 
   it("after answering the first question a forward seek clamps at the second", async () => {
     const video = render({ gradeAnswer: () => Promise.resolve(CORRECT) });
     seek(video, 90);
-    expect(video.currentTime).toBe(40);
+    expect(video.currentTime).toBe(39.7);
     await answer("The right to direct use", CORRECT);
     click(buttonNamed("Continue"));
     expect(dialog()).toBeNull();
@@ -225,7 +262,7 @@ describe("Player seeking (027, 031)", () => {
     expect(dialog()).toBeNull();
 
     seek(video, 110);
-    expect(video.currentTime).toBe(80);
+    expect(video.currentTime).toBe(79.7);
     expect(dialog().textContent).toContain("When does the lease term start?");
     // The bar shows the first point as answered, the second not yet.
     const ticks = container.querySelectorAll('[title^="Review question"]');
@@ -249,7 +286,7 @@ describe("Player seeking (027, 031)", () => {
     });
     Object.defineProperty(video, "duration", { value: 120, configurable: true });
     fire(video, "loadedmetadata");
-    expect(video.currentTime).toBe(80);
+    expect(video.currentTime).toBe(79.7);
     fire(video, "seeking");
     fire(video, "seeked");
     expect(dialog().textContent).toContain("When does the lease term start?");
@@ -266,7 +303,7 @@ describe("Player seeking (027, 031)", () => {
     // The question is on record as answered, so the ceiling moved on: a
     // seek past 40 now clamps at the second point.
     seek(video, 100);
-    expect(video.currentTime).toBe(80);
+    expect(video.currentTime).toBe(79.7);
   });
 });
 
@@ -304,5 +341,210 @@ describe("Player end panel (027)", () => {
     const panel = container.querySelector('[aria-label="Lesson finished"]');
     expect(panel.textContent).toContain("End of this lesson.");
     expect(panel.querySelector("a")).toBeNull();
+  });
+});
+
+// 039: block 1 ends at 30 s (pause 29.7), block 2 ends at 60 s (pause 59.7).
+const LESSON_30 = {
+  ...LESSON,
+  duration_seconds: 90,
+  blocks: [
+    { id: "b1", start_seconds: 0, end_seconds: 30 },
+    { id: "b2", start_seconds: 30, end_seconds: 60 },
+    { id: "b3", start_seconds: 60, end_seconds: 90 },
+  ],
+};
+
+describe("Player review pauses in the silence (039)", () => {
+  it("pauses at end_seconds minus the lead on a frame, without waiting for timeupdate", () => {
+    const video = render({ lesson: LESSON_30 });
+    play(video);
+    runFrame(video, 29.6);
+    expect(dialog()).toBeNull();
+    runFrame(video, 29.7);
+    expect(video.pause).toHaveBeenCalled();
+    expect(dialog().textContent).toContain("What conveys control?");
+  });
+
+  it("pauses a block shorter than the lead at its start, never before it", () => {
+    const lesson = {
+      ...LESSON,
+      duration_seconds: 40,
+      blocks: [
+        { id: "b1", start_seconds: 0, end_seconds: 10 },
+        { id: "b2", start_seconds: 10, end_seconds: 10.2 },
+        { id: "b3", start_seconds: 10.2, end_seconds: 40 },
+      ],
+      questions: [{ ...LESSON.questions[0], after_block: 2 }],
+    };
+    const video = render({ lesson });
+    play(video);
+    runFrame(video, 9.9);
+    expect(dialog()).toBeNull();
+    runFrame(video, 10);
+    expect(dialog().textContent).toContain("What conveys control?");
+  });
+
+  it("resumes after Continue at the pause time and does not re-ask on the way on", async () => {
+    const video = render({
+      lesson: LESSON_30,
+      gradeAnswer: () => Promise.resolve(CORRECT),
+    });
+    play(video);
+    // A frame can land just past the pause time; resume still starts at it.
+    runFrame(video, 29.75);
+    await answer("The right to direct use", CORRECT);
+    click(buttonNamed("Continue"));
+    expect(video.currentTime).toBe(29.7);
+    expect(video.play).toHaveBeenCalled();
+    fire(video, "play");
+    runFrame(video, 31);
+    watchTo(video, 31);
+    expect(dialog()).toBeNull();
+  });
+
+  it("asks again after seeking back before the point and playing through it", async () => {
+    const video = render({
+      lesson: LESSON_30,
+      gradeAnswer: () => Promise.resolve(CORRECT),
+    });
+    play(video);
+    runFrame(video, 29.7);
+    await answer("The right to direct use", CORRECT);
+    click(buttonNamed("Continue"));
+    fire(video, "play");
+    runFrame(video, 31);
+    expect(dialog()).toBeNull();
+    seek(video, 20);
+    runFrame(video, 25);
+    expect(dialog()).toBeNull();
+    runFrame(video, 29.7);
+    expect(dialog().textContent).toContain("What conveys control?");
+  });
+
+  it("clamps a forward seek to the pause time and asks", () => {
+    const video = render({ lesson: LESSON_30 });
+    seek(video, 60);
+    expect(video.currentTime).toBe(29.7);
+    expect(dialog().textContent).toContain("What conveys control?");
+  });
+
+  it("Forward 15 s from 20 lands on the pause time and asks", () => {
+    const video = render({ lesson: LESSON_30 });
+    watchTo(video, 20);
+    click(buttonNamed("Forward 15 s"));
+    fire(video, "seeking");
+    fire(video, "seeked");
+    expect(video.currentTime).toBe(29.7);
+    expect(dialog().textContent).toContain("What conveys control?");
+  });
+
+  it("Re-watch this section still seeks to the block's start_seconds", async () => {
+    let verdict = CORRECT;
+    const video = render({
+      lesson: LESSON_30,
+      gradeAnswer: () => Promise.resolve(verdict),
+    });
+    seek(video, 60);
+    await answer("The right to direct use", CORRECT);
+    click(buttonNamed("Continue"));
+    verdict = WRONG;
+    seek(video, 80);
+    expect(video.currentTime).toBe(59.7);
+    await answer("At signing", WRONG);
+    click(buttonNamed("Re-watch this section"));
+    expect(video.currentTime).toBe(30);
+  });
+
+  it("resume on load past an unanswered point lands on its pause time and asks", () => {
+    const video = render({ lesson: LESSON_30, initialFurthestSeconds: 45 });
+    Object.defineProperty(video, "duration", { value: 90, configurable: true });
+    fire(video, "loadedmetadata");
+    expect(video.currentTime).toBe(29.7);
+    fire(video, "seeking");
+    fire(video, "seeked");
+    expect(dialog().textContent).toContain("What conveys control?");
+  });
+
+  it("keeps the tick at end_seconds", () => {
+    render({ lesson: LESSON_30 });
+    const tick = container.querySelector('[title^="Review question"]');
+    expect(tick.style.left).toBe(`${(30 / 90) * 100}%`);
+  });
+});
+
+describe("Player full screen (039)", () => {
+  afterEach(() => {
+    delete document.fullscreenEnabled;
+    delete document.fullscreenElement;
+    delete HTMLElement.prototype.requestFullscreen;
+    delete window.screen.orientation;
+  });
+
+  function enableFullscreen() {
+    Object.defineProperty(document, "fullscreenEnabled", {
+      value: true,
+      configurable: true,
+    });
+    const requestFullscreen = vi.fn(() => Promise.resolve());
+    HTMLElement.prototype.requestFullscreen = requestFullscreen;
+    return requestFullscreen;
+  }
+
+  it("offers no button where the Fullscreen API is unavailable (iPhone)", () => {
+    Object.defineProperty(document, "fullscreenEnabled", {
+      value: false,
+      configurable: true,
+    });
+    render();
+    expect(buttonNamed("Full screen")).toBeUndefined();
+  });
+
+  it("puts the wrapper, not the video, into full screen", async () => {
+    const requestFullscreen = enableFullscreen();
+    const video = render();
+    await act(async () => {
+      buttonNamed("Full screen").dispatchEvent(
+        new MouseEvent("click", { bubbles: true })
+      );
+    });
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+    const target = requestFullscreen.mock.contexts[0];
+    expect(target).toBe(container.firstChild);
+    expect(target).not.toBe(video);
+    expect(target.contains(video)).toBe(true);
+  });
+
+  it("flips its label on fullscreenchange", () => {
+    enableFullscreen();
+    render();
+    Object.defineProperty(document, "fullscreenElement", {
+      value: container.firstChild,
+      configurable: true,
+    });
+    act(() => document.dispatchEvent(new Event("fullscreenchange")));
+    expect(buttonNamed("Exit full screen")).toBeDefined();
+    Object.defineProperty(document, "fullscreenElement", {
+      value: null,
+      configurable: true,
+    });
+    act(() => document.dispatchEvent(new Event("fullscreenchange")));
+    expect(buttonNamed("Full screen")).toBeDefined();
+  });
+
+  it("ignores a rejected orientation lock", async () => {
+    enableFullscreen();
+    const lock = vi.fn(() => Promise.reject(new Error("not allowed")));
+    Object.defineProperty(window.screen, "orientation", {
+      value: { lock },
+      configurable: true,
+    });
+    render();
+    await act(async () => {
+      buttonNamed("Full screen").dispatchEvent(
+        new MouseEvent("click", { bubbles: true })
+      );
+    });
+    expect(lock).toHaveBeenCalledWith("landscape");
   });
 });

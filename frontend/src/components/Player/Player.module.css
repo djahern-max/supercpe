@@ -236,6 +236,7 @@
 
 .controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-md);
 }
@@ -264,4 +265,33 @@
   font-variant-numeric: tabular-nums;
   font-size: 0.875rem;
   color: var(--color-text-muted);
+}
+
+/* 039: full screen holds the whole player on the page ground. The title
+   gives its row to the video, the video fills the space above the bar and
+   controls at its own aspect ratio, and the question panel still covers
+   the video area at the same width. */
+.player:fullscreen {
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  padding: var(--space-sm);
+  box-sizing: border-box;
+  background: var(--color-bg);
+}
+
+.player:fullscreen .title {
+  display: none;
+}
+
+.player:fullscreen .stage {
+  flex: 1;
+  min-height: 0;
+}
+
+.player:fullscreen .video {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  object-fit: contain;
 }

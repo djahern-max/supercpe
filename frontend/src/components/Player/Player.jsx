@@ -14,6 +14,14 @@ const ARROW_SEEK_SECONDS = 5;
 const REWIND_SECONDS = 15;
 // 031: its forward twin, clamped to the ceiling like every other seek.
 const FORWARD_SECONDS = 15;
+// 039, ours: a review point pauses this far before its block's
+// `end_seconds`. `end_seconds` is where the next block's narration begins,
+// and video-tool's `generate` appends 0.6 s of silence to every block, so
+// any lead under 0.6 s lands inside the inter-block silence by
+// construction. GPT-06's exported MP4 measured at least 0.5 s of silence
+// before every boundary and only 0.07–0.19 s after it; pausing at or after
+// `end_seconds` clipped the next word.
+const REVIEW_PAUSE_LEAD_SECONDS = 0.3;
 // Progress reports go out at most this often while playing; pause and
 // question stops always report.
 const PROGRESS_REPORT_SECONDS = 10;
@@ -55,6 +63,11 @@ function formatTime(totalSeconds) {
  * enrollment detail; asked again in place, since re-answering is
  * allowed), else `nextStep` as the page derived it (the next lesson, the
  * assessment, or the course page). The preview mount passes neither.
+ *
+ * 039: each review point pauses REVIEW_PAUSE_LEAD_SECONDS before its
+ * block's end, inside the inter-block silence, detected per frame; that
+ * pause time is also the ceiling. "Full screen" takes this whole wrapper,
+ * never the video element (docs/decisions/2026-09-15-review-pause-lead-and-fullscreen.md).
  */
 function Player({
   lesson,
@@ -97,12 +110,21 @@ function Player({
   const [submitting, setSubmitting] = useState(false);
   const [gradeError, setGradeError] = useState(null);
 
-  // A review point is the measured end of the question's block.
+  // A review point sits at the measured end of the question's block.
+  // `time` is its pause time, REVIEW_PAUSE_LEAD_SECONDS early but never
+  // before the block starts, and is the only time the detector, the
+  // ceiling, the seek clamp, and resume read. `endSeconds` places the
+  // tick on the bar and nothing else.
   const reviewPoints = useMemo(() => {
     return lesson.questions
       .map((question) => {
         const block = lesson.blocks[question.after_block - 1];
-        return block ? { time: block.end_seconds, question } : null;
+        if (!block) return null;
+        const time = Math.max(
+          block.start_seconds,
+          block.end_seconds - REVIEW_PAUSE_LEAD_SECONDS
+        );
+        return { time, endSeconds: block.end_seconds, question };
       })
       .filter(Boolean)
       .sort((a, b) => a.time - b.time);
@@ -156,31 +178,92 @@ function Player({
   // Arriving at review points — by playback crossing them, or by a seek
   // landing on the ceiling — pauses and asks, first point first; the rest
   // queue behind Continue.
+  // 039: the pause time of the last point asked, where Continue resumes.
+  const askedAtRef = useRef(null);
+
   const askQuestions = (points) => {
     const video = videoRef.current;
     if (video) video.pause();
+    askedAtRef.current = points[points.length - 1].time;
     pendingRef.current = points.slice(1).map((point) => point.question);
     openQuestion(points[0].question);
   };
 
-  const handleTimeUpdate = () => {
+  // Crossing a review point pauses the video and asks the question.
+  // Crossing again after seeking back asks again; re-answering is allowed.
+  // Mid-seek positions are not watched time: handleSeeked takes over once
+  // the seek settles.
+  const detectCrossing = () => {
     const video = videoRef.current;
-    if (!video) return;
-    // Mid-seek positions are not watched time: they must not advance the
-    // furthest point or trigger questions. handleSeeked takes over once
-    // the seek settles.
-    if (video.seeking || seekInFlightRef.current) return;
+    if (!video || video.seeking || seekInFlightRef.current || activeQuestion) {
+      return;
+    }
     const time = video.currentTime;
-    setCurrentTime(time);
-    if (activeQuestion) return;
-    advanceFurthest(time);
-    // Crossing a review point pauses the video and asks the question.
-    // Crossing again after seeking back asks again; re-answering is allowed.
     const crossed = reviewPoints.filter(
       (point) => lastTimeRef.current < point.time && point.time <= time
     );
     lastTimeRef.current = time;
     if (crossed.length > 0) askQuestions(crossed);
+  };
+
+  // 039: while playing, the detector runs on every video frame, since
+  // timeupdate fires only every 15–250 ms and a late tick is already into
+  // the next word. The frame callback reads the latest render's detector
+  // through a ref. It stops on pause, on unmount, and once no review point
+  // lies ahead; play and seeked start it again.
+  const detectCrossingRef = useRef(detectCrossing);
+  detectCrossingRef.current = detectCrossing;
+  const frameRequestRef = useRef(null);
+
+  const stopFrameWatch = () => {
+    const request = frameRequestRef.current;
+    if (!request) return;
+    frameRequestRef.current = null;
+    if (request.video) request.video.cancelVideoFrameCallback(request.id);
+    else cancelAnimationFrame(request.id);
+  };
+
+  const startFrameWatch = () => {
+    if (frameRequestRef.current || reviewPoints.length === 0) return;
+    const lastPoint = reviewPoints[reviewPoints.length - 1];
+    const onFrame = () => {
+      frameRequestRef.current = null;
+      const video = videoRef.current;
+      if (!video || video.paused || video.ended) return;
+      detectCrossingRef.current();
+      if (video.paused || video.currentTime >= lastPoint.time) return;
+      schedule();
+    };
+    const schedule = () => {
+      const video = videoRef.current;
+      if (video && typeof video.requestVideoFrameCallback === "function") {
+        frameRequestRef.current = {
+          video,
+          id: video.requestVideoFrameCallback(onFrame),
+        };
+      } else {
+        frameRequestRef.current = { id: requestAnimationFrame(onFrame) };
+      }
+    };
+    schedule();
+  };
+
+  useEffect(() => stopFrameWatch, []);
+
+  const handleTimeUpdate = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    // Mid-seek positions are not watched time: they must not advance the
+    // furthest point.
+    if (video.seeking || seekInFlightRef.current) return;
+    const time = video.currentTime;
+    setCurrentTime(time);
+    if (activeQuestion) return;
+    advanceFurthest(time);
+    // The frame watch normally asks first. This stays as the backstop for
+    // when frames are not delivered (a background tab throttles them, but
+    // not playback), so playback still cannot run past a question.
+    detectCrossing();
   };
 
   // 031: a seek past the ceiling is undone to the ceiling once the seek
@@ -207,6 +290,7 @@ function Player({
     lastTimeRef.current = video.currentTime;
     setCurrentTime(video.currentTime);
     if (arrived) askQuestions([ceilingPoint]);
+    else if (!video.paused) startFrameWatch();
   };
 
   const seekTo = (time) => {
@@ -253,9 +337,19 @@ function Player({
     setActiveQuestion(null);
     setResult(null);
     setSelectedChoice(null);
+    // 039: resume from the pause time, so the next block's first word is
+    // heard whole after the rest of the silence. The point just asked is
+    // behind the detector (`lastTimeRef` is its time and a crossing needs
+    // `lastTime < time`); it asks again only once the playhead goes back
+    // before it.
+    const resumeAt = askedAtRef.current;
+    askedAtRef.current = null;
     const video = videoRef.current;
     if (video) {
-      lastTimeRef.current = video.currentTime;
+      if (resumeAt !== null && video.currentTime !== resumeAt) {
+        video.currentTime = resumeAt;
+      }
+      lastTimeRef.current = resumeAt ?? video.currentTime;
       video.play();
     }
   };
@@ -266,6 +360,7 @@ function Player({
   // records each answer and any re-answer is allowed.
   const askReviewQuestions = () => {
     if (lesson.questions.length === 0) return;
+    askedAtRef.current = null;
     pendingRef.current = lesson.questions.slice(1);
     openQuestion(lesson.questions[0]);
   };
@@ -280,6 +375,7 @@ function Player({
 
   const handleRewatch = () => {
     const block = lesson.blocks[activeQuestion.after_block - 1];
+    askedAtRef.current = null;
     pendingRef.current = [];
     setActiveQuestion(null);
     setResult(null);
@@ -341,6 +437,47 @@ function Player({
     setMuted(!muted);
   };
 
+  // 039: full screen takes the whole player (video, controls, question
+  // panel), so every seek still goes through this component's ceiling.
+  // Offered only where the Fullscreen API is; there is deliberately no
+  // `webkitEnterFullscreen` fallback, because iOS's native video player
+  // brings its own scrubber and would seek past unanswered questions.
+  const fullscreenAvailable = document.fullscreenEnabled === true;
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleChange = () =>
+      setFullscreen(
+        document.fullscreenElement != null &&
+          document.fullscreenElement === containerRef.current
+      );
+    document.addEventListener("fullscreenchange", handleChange);
+    return () => document.removeEventListener("fullscreenchange", handleChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // Already leaving; fullscreenchange updates the label.
+      }
+      return;
+    }
+    try {
+      await containerRef.current.requestFullscreen();
+    } catch {
+      return;
+    }
+    // Landscape recovers most of a 1920-wide slide on a phone. Most
+    // browsers refuse the lock (desktop, iOS); that is fine.
+    try {
+      await screen.orientation?.lock?.("landscape");
+    } catch {
+      // Not allowed here.
+    }
+  };
+
   return (
     <div
       className={styles.player}
@@ -363,9 +500,11 @@ function Player({
           onPlay={() => {
             setPlaying(true);
             setEnded(false);
+            startFrameWatch();
           }}
           onPause={() => {
             setPlaying(false);
+            stopFrameWatch();
             reportProgress();
           }}
           onEnded={() => {
@@ -524,7 +663,9 @@ function Player({
               className={
                 answered ? `${styles.tick} ${styles.tickAnswered}` : styles.tick
               }
-              style={{ left: `${duration ? (point.time / duration) * 100 : 0}%` }}
+              style={{
+                left: `${duration ? (point.endSeconds / duration) * 100 : 0}%`,
+              }}
               title={answered ? "Review question (answered)" : "Review question"}
             />
           );
@@ -570,6 +711,15 @@ function Player({
         >
           {muted ? "Unmute" : "Mute"}
         </button>
+        {fullscreenAvailable && (
+          <button
+            type="button"
+            className={styles.control}
+            onClick={toggleFullscreen}
+          >
+            {fullscreen ? "Exit full screen" : "Full screen"}
+          </button>
+        )}
       </div>
     </div>
   );

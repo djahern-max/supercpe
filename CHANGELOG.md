@@ -5407,3 +5407,153 @@ Shipped: 2026-09-15
   - `npm run build` succeeds.
   - `sync_brand.py --check` passes (14 files in sync).
   - `git status --porcelain` shows only this feature's files.
+
+## 039 — Review pauses land in the silence, and the player goes full screen
+Shipped: 2026-09-15
+
+The spec was headed "Feature 036" and drafted when 035 was the last entry.
+When this was built, the last entry was 038 (036, 037, and 038 are other
+features), so it ships as 039.
+
+**Recon (Task 0)**
+1. `timeupdate` drove the crossing detector. `handleTimeUpdate` tested
+   `lastTimeRef.current < point.time && point.time <= time`, with
+   `point.time` = the block's `end_seconds`.
+2. After Continue, playback resumed wherever the video had paused, which
+   was at or past `end_seconds` because the detector fired late.
+   `handleContinue` set `lastTimeRef.current = video.currentTime`, so the
+   point was behind the detector and `lastTime < point.time` could not
+   hold on the way on.
+3. The ceiling met `currentTime` at: `handleSeeked` (undo past
+   `ceiling + SEEK_TOLERANCE_SECONDS`, the `arrived` check at
+   `ceiling − SEEK_TOLERANCE_SECONDS`, the snap to `ceiling`); `seekTo`'s
+   `Math.min(time, ceiling)` (the bar, arrow keys, Rewind, Forward); and
+   resume on `loadedmetadata` via `ceilingFor(mediaDuration)`. The detector
+   read `point.time`, and so did the tick.
+4. `playsInline` was already set on the `<video>`.
+
+**What changed**
+- `frontend/src/components/Player/Player.jsx`:
+  - `REVIEW_PAUSE_LEAD_SECONDS = 0.3` beside `REWIND_SECONDS`.
+  - Each review point's `time` is
+    `max(block.start_seconds, block.end_seconds − lead)`, computed once in
+    `reviewPoints`. Every consumer from recon 3, the detector, and resume
+    after Continue read it. The point also carries `endSeconds`, which only
+    the tick reads.
+  - Crossing detection moved into `detectCrossing`. While playing it runs
+    on every video frame (`requestVideoFrameCallback`, else
+    `requestAnimationFrame`). The watch starts on `play` and after a
+    `seeked` that leaves the video playing. It stops on `pause`, on
+    unmount, and once no review point is ahead. `timeupdate` still updates
+    the furthest point and the time display, and also runs the detector.
+  - Continue seeks back to the pause time of the last point asked
+    (`askedAtRef`) when the video stopped a frame past it, and sets the
+    detector there, then plays.
+  - A "Full screen" / "Exit full screen" control ends the control row. It
+    is shown only when `document.fullscreenEnabled` is true, calls
+    `requestFullscreen()` on the player wrapper, then tries
+    `screen.orientation.lock("landscape")` and ignores refusal. The label
+    follows `fullscreenchange`.
+- `Player.module.css`: `.player:fullscreen` fills the screen on
+  `--color-bg`. The title is hidden, the stage takes the space above the
+  bar and controls, and the video uses `object-fit: contain`. The question
+  and end panels still cover the stage. The control row now wraps, so six
+  controls fit at phone width.
+- `Player.test.jsx`: `requestAnimationFrame` is stubbed and driven by
+  `runFrame`, and the stubbed `paused` follows `play()`/`pause()`.
+  New tests cover:
+  - the 29.7 s pause on a frame, with no `timeupdate`
+  - a block shorter than the lead pausing at its start
+  - resume at 29.7 after Continue, with no re-ask at 31
+  - re-ask after seeking back to 20
+  - the forward seek to 60 landing on 29.7
+  - Forward 15 s from 20
+  - Re-watch to `start_seconds`
+  - resume on load to 29.7
+  - the tick staying at `end_seconds`
+  - four full-screen tests: no button when unavailable, wrapper not video,
+    label flip, rejected orientation lock
+- 031/027 tests whose expected time was a pause at `end_seconds`, each
+  changed only in that number:
+  - "clamps a forward seek past the first unanswered review point": 40 → 39.7
+  - "honours a forward seek within the ceiling": second ArrowRight 40 → 39.7
+  - "Forward 15 s keeps playing from early on": second landing 40 → 39.7
+  - "after answering the first question a forward seek clamps at the
+    second": 40 → 39.7 and 80 → 79.7
+  - "resume lands on the ceiling, not past it": 80 → 79.7
+  - "a wrong answer's re-watch link": the clamp after re-watch 80 → 79.7
+    (the re-watch target, 0, is unchanged)
+- `docs/decisions/2026-09-15-review-pause-lead-and-fullscreen.md`.
+- COMPLIANCE.md: a 039 note on the 006 rows for 5.01.2 and 5.01.2.1. No
+  new rows.
+
+**Standards touched**
+- 5.01.2 (printed page 9, read from the PDF): engagement examples for
+  self study, including content reinforcement tools "as required by
+  5.01.2.1, such as review questions". Full screen runs through the same
+  player, so every question is still presented there.
+- 5.01.2.1 (printed page 9, read from the PDF): review questions "must be
+  placed throughout the program in sufficient intervals". Placement stays
+  `after_block` against measured `video.blocks` (contract rule 18). Asking
+  0.3 s before `end_seconds`, inside the same inter-block silence, only
+  changes when the player stops. It is a sponsor decision, not a Standards
+  requirement.
+- Nothing here touches a retained record, credit, or 9.02.
+
+**Decisions**
+- **0.3 s lead, inside the silence by construction.** `end_seconds` is where
+  the next block's MP3 begins. video-tool's `generate` appends a 0.6 s tail
+  to every block, and ElevenLabs puts almost no lead-in at the start of a
+  file. GPT-06 measured at least 0.5 s of silence before every boundary and
+  0.07–0.19 s after it. Any lead under 0.6 s pauses in the tail, and 0.3 s
+  leaves margin both sides.
+- **The pause time is the single source for detection, the ceiling, the
+  seek clamp, the land-on-ceiling check, and both resumes.** No pausing
+  path reads `end_seconds`, so a seek cannot land between where the player
+  pauses and where it clamps.
+- **The tick keeps `end_seconds`.** It marks the block's end, and 0.3 s is
+  invisible at bar scale.
+- **`timeupdate` keeps a backstop call to the detector.** Browsers stop
+  delivering animation frames in a background tab but keep playing.
+  Without the backstop, playback there would run through a question.
+  The frame watch normally asks first. Once it has, the video is paused
+  and the detector already stands at the point, so the backstop cannot ask
+  twice.
+- **Resume seeks back to the pause time only when the video stopped past
+  it.** A frame lands a few milliseconds late, and seeking back keeps the
+  full 0.3 s of silence before the next word. The point just asked is not
+  re-asked, because the detector is set to its time.
+- **Full screen takes the wrapper element, never the `<video>`.** iOS
+  native full screen (`webkitEnterFullscreen`) is refused: its scrubber
+  bypasses the 031 ceiling. Where `document.fullscreenEnabled` is false
+  (iPhone Safari), there is no control at all.
+- The title is hidden in full screen so the video gets the height.
+
+**Known gaps**
+- iPhone users have no full-screen path.
+- The lead assumes video-tool keeps a per-block tail of at least 0.3 s.
+  `TAIL_SECONDS` lives in video-tool and nothing here checks it.
+- Not yet run by the operator:
+  - acceptance 2: GPT-06 local preview, listening at each of the three
+    review points
+  - acceptance 3: local forward seek past an unanswered point, by ear
+  - acceptance 4: desktop Chrome and Safari full screen, answering a
+    question there, Escape
+  - acceptance 5: Android landscape
+  - acceptance 6: iPhone, no button and Play stays inline
+  - acceptance 7: production deploy, then 2 and 4 again
+  - jsdom has no media pipeline or Fullscreen API, so the tests prove the
+    wiring, not the audio or the layout
+- Verified in this session:
+  - Backend `pytest`: 655 passed. The first run errored because Docker was
+    not running; Docker and the local Postgres were started and the suite
+    re-run.
+  - Frontend vitest: 194 passed in 28 files (Player: 24).
+  - `pyflakes app tests` reports the same 10 pre-existing unused imports,
+    none touched here. No backend file changed.
+  - `oxlint` exits 0 with the same 11 pre-existing warnings, none in
+    Player.
+  - `npm run build` succeeds.
+  - `sync_brand.py --check` passes (14 files in sync).
+  - `git status --porcelain` shows only this feature's files and the
+    operator's `current-feature.md`.
